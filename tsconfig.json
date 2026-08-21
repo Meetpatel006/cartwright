@@ -1,0 +1,3 @@
+{
+  "extends": "@cartwright/config/tsconfig.base.json"
+}

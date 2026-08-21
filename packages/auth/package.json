@@ -1,0 +1,24 @@
+{
+  "name": "@cartwright/auth",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@cartwright/db": "workspace:*",
+    "@cartwright/env": "workspace:*",
+    "better-auth": "catalog:",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@cartwright/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}
