@@ -11,6 +11,7 @@
   },
   "scripts": {},
   "dependencies": {
+    "@cartwright/agent": "workspace:*",
     "@cartwright/auth": "workspace:*",
     "@cartwright/db": "workspace:*",
     "@cartwright/env": "workspace:*",
