@@ -43,6 +43,27 @@ bun run dev
 
 Open [http://localhost:3001](http://localhost:3001) in your browser to see the fullstack application.
 
+## Agent payment policy
+
+The shopper uses a wallet-style spending policy around the merchant's own checkout. It is a limit and audit boundary, not a bank account or Razorpay balance.
+
+```env
+WALLET_BALANCE_PAISE=1000000
+WALLET_CURRENCY=INR
+PAYMENT_AUTO_APPROVAL_LIMIT_PAISE=150000
+RAZORPAY_MODE=test
+RAZORPAY_TEST_UPI_ID=success@razorpay
+AGENT_RAZORPAY_ORDER_FALLBACK=false
+```
+
+In Test Mode, payments at or below the automatic limit may open the merchant's visible payment control automatically. Payments above the limit require user approval. Live Mode always requires user approval. Cartwright does not create a second payment order for a black-box merchant; the merchant must create its own Razorpay order, verify the signature, capture the payment, and process webhooks. Razorpay Test Mode is simulated and never moves real money.
+
+### Merchant payment contract
+
+The shopper only treats a payment as merchant-connected when the rendered merchant checkout exposes a visible payment control. The agent then retains that checkout session, applies the wallet policy, and either opens the control automatically for an eligible Test Mode payment or waits for user approval. The merchant remains responsible for its Razorpay `order_id`, signature verification, capture status, and webhooks. A page that merely loads `checkout.js` is not a payment integration and will be stopped without creating an order.
+
+`AGENT_RAZORPAY_ORDER_FALLBACK=true` explicitly enables the service-mediated adapter for a merchant with no visible payment UI. It creates a Razorpay Test order with the configured test account and labels the audit trail accordingly; it is not evidence that the merchant website itself created the order.
+
 ## UI Customization
 
 React web apps in this stack share shadcn/ui primitives through `packages/ui`.
