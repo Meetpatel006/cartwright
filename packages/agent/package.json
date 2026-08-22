@@ -1,0 +1,24 @@
+{
+  "name": "@cartwright/agent",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "test:local": "bun scripts/test-local.ts"
+  },
+  "dependencies": {
+    "@browserbasehq/stagehand": "^4.0.0",
+    "@cartwright/env": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@cartwright/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}
