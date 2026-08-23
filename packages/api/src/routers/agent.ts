@@ -1,55 +1,18 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { env } from "@cartwright/env/server";
 import {
-  createOrder,
-  fetchOrder,
-  fetchPayment,
   parseBudget,
-  approveMerchantPayment,
   runShoppingAgent,
-  verifyPaymentSignature,
   type AgentBrowserMode,
   type CheckoutResult,
   type Product,
 } from "@cartwright/agent";
 
-import { publicProcedure, router } from "../index";
-import { evaluatePaymentPolicy } from "../payment-policy";
-import {
-  bindWalletReservation,
-  releaseExpiredWalletReservations,
-  releaseWalletReservation,
-  reservationForSession,
-  reserveWallet,
-  settleWalletReservation,
-} from "../wallet-ledger";
-
-export interface PurchaseGateResult {
-  status:
-    | "awaiting_approval"
-    | "payment_submitted"
-    | "merchant_action_required"
-    | "insufficient_balance"
-    | "not_configured"
-    | "no_match"
-    | "error";
-  message: string;
-  orderId?: string;
-  /** Public Razorpay key id used by checkout.js; never expose the secret. */
-  keyId?: string;
-  amountInMinor?: number;
-  currency?: string;
-  /** What the charged amount was derived from — for the audit trail. */
-  basis?: "checkout_total" | "basket_total" | "product_price";
-  paymentProvider?: "razorpay" | "unknown";
-  paymentSource?: "merchant_ui" | "agent_razorpay";
-  policyDecision?: "auto_approve" | "user_approval" | "blocked";
-  autoApprovalLimitInMinor?: number;
-  policyReason?: string;
-  walletReservationId?: string;
-  walletRemainingInMinor?: number;
-}
+import { protectedProcedure, router } from "../index";
+import { createPurchaseTransaction } from "../transactions/transaction.service";
+import type { PurchaseProposal } from "../transactions/transaction.types";
 
 /**
  * Parse a human-readable amount like "$49.99", "₹7,995.00" or "1.299,00 €"
@@ -58,12 +21,12 @@ export interface PurchaseGateResult {
 function parseDisplayAmount(raw: string): { amountInMinor: number; currency: string } | null {
   if (!raw) return null;
   const symbolMap: Record<string, string> = {
-    "₹": "INR", "rs": "INR", "inr": "INR",
-    "$": "USD", "usd": "USD",
-    "€": "EUR", "eur": "EUR",
-    "£": "GBP", "gbp": "GBP",
-    "¥": "JPY", "jpy": "JPY",
-    "chf": "CHF",
+    "₹": "INR", rs: "INR", inr: "INR",
+    $: "USD", usd: "USD",
+    "€": "EUR", eur: "EUR",
+    "£": "GBP", gbp: "GBP",
+    "¥": "JPY", jpy: "JPY",
+    chf: "CHF",
   };
   let currency = "USD";
   for (const [sym, code] of Object.entries(symbolMap)) {
@@ -77,10 +40,8 @@ function parseDisplayAmount(raw: string): { amountInMinor: number; currency: str
   let num = raw.replace(/[^0-9.,]/g, "");
   if (!num) return null;
   if (hasComma && hasDot) {
-    // dot = thousands, comma = decimal: "1.299,00"
     num = num.replace(/\./g, "").replace(",", ".");
   } else if (hasComma && !hasDot) {
-    // "1,299" (thousands) vs "1,299.00"? treat ",XX" (2 digits) as decimal
     num = /,\d{2}$/.test(raw) ? num.replace(",", ".") : num.replace(/,/g, "");
   }
   const major = Number.parseFloat(num);
@@ -90,203 +51,29 @@ function parseDisplayAmount(raw: string): { amountInMinor: number; currency: str
 
 interface PurchaseRequest {
   picked: Product;
-  /** Currency of the original query/budget (e.g. "USD"). */
   queryCurrency: string;
-  /** Merchant the agent shopped on (for the audit trail). */
   store: string;
-  /** Browserbase session id, if any (for replay/audit). */
   sessionId?: string;
-  /** On-site add-to-cart / checkout result, if the agent reached checkout. */
   checkout?: CheckoutResult;
 }
 
 /**
- * Apply the purchase permission gate — bounded by the observed amount and
- * wallet balance. The merchant owns payment order creation and verification;
- * Cartwright never substitutes a second payment order.
+ * Derive the server-authoritative charged amount from the REAL checkout total
+ * when available, else the picked product price. The AI never sets the final
+ * amount — this is derived and then validated by the policy engine.
  */
-async function gatePurchase(req: PurchaseRequest): Promise<PurchaseGateResult> {
-  // 1. Derive the charge from the REAL checkout when we have it, else the pick.
+function deriveAmount(req: PurchaseRequest): { amountInMinor: number; currency: string } {
   const summaryTotal = req.checkout?.orderSummary?.total;
   const parsed = summaryTotal ? parseDisplayAmount(summaryTotal) : null;
-  let amountInMinor: number;
-  let currency: string;
-  let basis: PurchaseGateResult["basis"];
-
   if (parsed && parsed.amountInMinor > 0) {
-    amountInMinor = parsed.amountInMinor;
-    currency = parsed.currency;
-    basis = req.checkout?.orderSummarySource === "basket" ? "basket_total" : "checkout_total";
-  } else {
-    amountInMinor = Math.round(req.picked.priceValue * 100);
-    currency = req.queryCurrency;
-    basis = "product_price";
-  }
-
-  const policy = evaluatePaymentPolicy({
-    amountInMinor,
-    currency,
-    walletBalanceInMinor: env.WALLET_BALANCE_PAISE,
-    walletCurrency: env.WALLET_CURRENCY,
-    autoApprovalLimitInMinor: env.PAYMENT_AUTO_APPROVAL_LIMIT_PAISE,
-    mode: env.RAZORPAY_MODE,
-  });
-  releaseExpiredWalletReservations();
-
-  if (policy.decision === "blocked") {
-    return {
-      status: policy.reason.includes("wallet spending balance") ? "insufficient_balance" : "error",
-      message: `${policy.reason} Purchase blocked.`,
-      amountInMinor,
-      currency,
-      basis,
-      policyDecision: policy.decision,
-      autoApprovalLimitInMinor: policy.autoApprovalLimitInMinor,
-      policyReason: policy.reason,
-    };
-  }
-
-  const merchantGate = req.checkout?.paymentGate;
-  const reservation = reserveWallet({
-    amountInMinor,
-    currency,
-    walletBalanceInMinor: env.WALLET_BALANCE_PAISE,
-    walletCurrency: env.WALLET_CURRENCY,
-  });
-  if (!reservation.ok) {
-    return {
-      status: "insufficient_balance",
-      message: `${reservation.reason} Purchase blocked.`,
-      amountInMinor,
-      currency,
-      basis,
-      policyDecision: "blocked",
-      autoApprovalLimitInMinor: policy.autoApprovalLimitInMinor,
-      policyReason: reservation.reason,
-    };
-  }
-  if (!merchantGate) {
-    if (env.AGENT_RAZORPAY_ORDER_FALLBACK === "true") {
-      if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
-        releaseWalletReservation(reservation.reservationId);
-        return {
-          status: "not_configured",
-          message: "The agent Razorpay adapter is enabled, but Razorpay test keys are not configured.",
-          amountInMinor,
-          currency,
-          basis,
-          policyDecision: policy.decision,
-          autoApprovalLimitInMinor: policy.autoApprovalLimitInMinor,
-          policyReason: policy.reason,
-        };
-      }
-      if (env.RAZORPAY_MODE !== "test" || !env.RAZORPAY_KEY_ID.startsWith("rzp_test_")) {
-        releaseWalletReservation(reservation.reservationId);
-        return {
-          status: "error",
-          message: "Refusing the agent Razorpay adapter: only rzp_test_ keys are allowed while RAZORPAY_MODE is test.",
-          amountInMinor,
-          currency,
-          basis,
-          policyDecision: policy.decision,
-          autoApprovalLimitInMinor: policy.autoApprovalLimitInMinor,
-          policyReason: policy.reason,
-        };
-      }
-      try {
-        const order = await createOrder(
-          { keyId: env.RAZORPAY_KEY_ID, keySecret: env.RAZORPAY_KEY_SECRET },
-          {
-            amountInMinor,
-            currency,
-            receipt: `cartwright-agent-${Date.now()}`,
-            notes: {
-              merchant: req.store,
-              source: "cartwright-agent-razorpay-adapter",
-              mode: "test",
-              basis: basis ?? "product_price",
-            },
-          },
-        );
-        return {
-          status: "awaiting_approval",
-          message: `Razorpay TEST order ${order.id} created by the explicit agent adapter for ${currency} ${(amountInMinor / 100).toLocaleString()}. This is not the merchant UI checkout; it uses the configured merchant/test account and still requires the Checkout approval button.`,
-          orderId: order.id,
-          keyId: env.RAZORPAY_KEY_ID,
-          amountInMinor,
-          currency,
-          basis,
-          paymentSource: "agent_razorpay",
-          policyDecision: policy.decision,
-          autoApprovalLimitInMinor: policy.autoApprovalLimitInMinor,
-          policyReason: policy.reason,
-          walletReservationId: reservation.reservationId,
-          walletRemainingInMinor: reservation.remainingInMinor,
-        };
-      } catch (error) {
-        releaseWalletReservation(reservation.reservationId);
-        return {
-          status: "error",
-          message: `Could not create the agent Razorpay Test order: ${error instanceof Error ? error.message : "unknown error"}`,
-          amountInMinor,
-          currency,
-          basis,
-          policyDecision: policy.decision,
-          autoApprovalLimitInMinor: policy.autoApprovalLimitInMinor,
-          policyReason: policy.reason,
-        };
-      }
-    }
-    releaseWalletReservation(reservation.reservationId);
-    return {
-      status: "error",
-      message: "No merchant payment gate was detected from the black-box checkout. No Razorpay order was created and no payment was attempted.",
-      amountInMinor,
-      currency,
-      basis,
-      policyDecision: policy.decision,
-      autoApprovalLimitInMinor: policy.autoApprovalLimitInMinor,
-      policyReason: policy.reason,
-    };
-  }
-  if (req.sessionId) bindWalletReservation(req.sessionId, reservation.reservationId);
-  if (policy.decision === "auto_approve" && merchantGate.provider === "razorpay" && req.sessionId) {
-      const opened = await approveMerchantPayment(req.sessionId, { completeTestPayment: true });
-      if (opened.status !== "submitted") releaseWalletReservation(reservation.reservationId);
-      return {
-        status: opened.status === "submitted" ? "payment_submitted" : "error",
-        message: `${opened.message} Policy: ${policy.reason}`,
-        amountInMinor,
-        currency,
-        basis,
-        paymentProvider: merchantGate.provider,
-        policyDecision: policy.decision,
-        autoApprovalLimitInMinor: policy.autoApprovalLimitInMinor,
-        policyReason: policy.reason,
-        walletReservationId: reservation.reservationId,
-        walletRemainingInMinor: reservation.remainingInMinor,
-      };
+    return { amountInMinor: parsed.amountInMinor, currency: parsed.currency };
   }
   return {
-    status: "merchant_action_required",
-    message: `Merchant payment gate detected (${merchantGate.provider}) as “${merchantGate.label}”. ${policy.reason} Cartwright did not create a second Razorpay order. The merchant checkout must create and verify its own order after explicit payment approval.`,
-    amountInMinor,
-    currency,
-    basis,
-    paymentProvider: merchantGate.provider,
-    policyDecision: policy.decision,
-    autoApprovalLimitInMinor: policy.autoApprovalLimitInMinor,
-    policyReason: policy.reason,
-    walletReservationId: reservation.reservationId,
-    walletRemainingInMinor: reservation.remainingInMinor,
+    amountInMinor: Math.round(req.picked.priceValue * 100),
+    currency: req.queryCurrency,
   };
 }
 
-/**
- * Decide which browser backend the shopping agent runs on:
- * - SHOPPING_AGENT_BROWSER env flag wins when set ("local" | "browserbase")
- * - otherwise: "browserbase" in production, free local Chrome in development/test
- */
 function resolveAgentBrowserMode(): AgentBrowserMode {
   if (env.SHOPPING_AGENT_BROWSER) return env.SHOPPING_AGENT_BROWSER;
   return env.NODE_ENV === "production" ? "browserbase" : "local";
@@ -306,14 +93,17 @@ function parseRavenBasket(query: string, store: string | undefined) {
 }
 
 export const agentRouter = router({
-  shop: publicProcedure
+  shop: protectedProcedure
     .input(
       z.object({
         query: z.string().min(3).describe('e.g. "wireless headphones under $100"'),
         store: z.string().min(1).optional().describe('store preset or URL, e.g. "raven"'),
+        /** Client idempotency key for the purchase request (dedupes retries). */
+        idempotencyKey: z.string().min(1).optional(),
       }),
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
       const budget = parseBudget(
         input.query,
         input.store?.toLowerCase() === "raven" ? "INR" : env.WALLET_CURRENCY,
@@ -356,78 +146,30 @@ export const agentRouter = router({
       });
 
       if (!result.picked) {
-        const purchase: PurchaseGateResult = {
-          status: result.error ? "error" : "no_match",
-          message:
-            result.error ??
-            "No products under budget were found on this run.",
+        return {
+          ...result,
+          purchase: null,
         };
-        return { ...result, purchase };
       }
 
-      const purchase = await gatePurchase({
+      const { amountInMinor, currency } = deriveAmount({
         picked: result.picked,
         queryCurrency: result.currency,
         store: result.store,
         sessionId: result.sessionId,
         checkout: result.checkout,
       });
+
+      const proposal: PurchaseProposal = {
+        userId,
+        idempotencyKey: input.idempotencyKey ?? randomUUID(),
+        merchantName: result.store,
+        amountInMinor,
+        currency,
+        browserSessionId: result.sessionId,
+      };
+
+      const purchase = await createPurchaseTransaction(proposal);
       return { ...result, purchase };
-    }),
-  approveMerchantPayment: publicProcedure
-    .input(z.object({ sessionId: z.string().min(1), method: z.enum(["card", "wallet"]).optional().default("card") }))
-    .mutation(async ({ input }) => {
-      const result = await approveMerchantPayment(input.sessionId, { method: input.method });
-      const reservationId = reservationForSession(input.sessionId);
-      if (result.status === "failed" || result.status === "expired" || result.status === "not_found") {
-        releaseWalletReservation(reservationId);
-      }
-      return result;
-    }),
-  verifyPayment: publicProcedure
-    .input(
-      z.object({
-        orderId: z.string().min(1),
-        paymentId: z.string().min(1),
-        signature: z.string().min(1),
-        sessionId: z.string().min(1).optional(),
-        reservationId: z.string().min(1).optional(),
-      }),
-    )
-    .mutation(async ({ input }) => {
-      if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
-        return { status: "not_configured" as const, message: "Razorpay test keys are not configured." };
-      }
-
-      const config = { keyId: env.RAZORPAY_KEY_ID, keySecret: env.RAZORPAY_KEY_SECRET };
-      if (!verifyPaymentSignature(config, input)) {
-        if (input.sessionId) releaseWalletReservation(reservationForSession(input.sessionId));
-        return { status: "verification_failed" as const, message: "Razorpay signature verification failed." };
-      }
-
-      try {
-        const [payment, order] = await Promise.all([
-          fetchPayment(config, input.paymentId),
-          fetchOrder(config, input.orderId),
-        ]);
-        if (payment.order_id !== input.orderId || order.id !== input.orderId) {
-          return { status: "verification_failed" as const, message: "Payment does not belong to this order." };
-        }
-        if (payment.status !== "captured" && order.status !== "paid") {
-          return { status: "pending" as const, message: `Payment is ${payment.status}.` };
-        }
-        settleWalletReservation(input.reservationId ?? (input.sessionId ? reservationForSession(input.sessionId) : undefined));
-        return {
-          status: "paid" as const,
-          message: `Razorpay TEST payment ${payment.id} verified and captured.`,
-          orderId: input.orderId,
-          paymentId: payment.id,
-        };
-      } catch (error) {
-        return {
-          status: "verification_failed" as const,
-          message: error instanceof Error ? error.message : "Could not verify Razorpay payment.",
-        };
-      }
     }),
 });

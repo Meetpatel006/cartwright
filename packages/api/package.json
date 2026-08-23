@@ -9,7 +9,9 @@
       "default": "./src/*.ts"
     }
   },
-  "scripts": {},
+  "scripts": {
+    "test": "bun test --timeout 60000"
+  },
   "dependencies": {
     "@cartwright/agent": "workspace:*",
     "@cartwright/auth": "workspace:*",
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "@cartwright/config": "workspace:*",
+    "drizzle-orm": "^0.45.2",
     "typescript": "catalog:"
   }
 }
