@@ -1487,6 +1487,40 @@ export async function closeMerchantPaymentSession(sessionId: string): Promise<vo
   await session.browser.close().catch(() => {});
 }
 
+/**
+ * Best-effort read of the merchant's *current* checkout total from a retained
+ * browser session. Returns null when the session is missing, expired, or the
+ * total is unreadable. Used only to re-confirm the price before executing a
+ * payment — inability to read never blocks the transaction.
+ */
+export async function getSessionCheckoutTotal(
+  sessionId: string,
+): Promise<{ amountInMinor: number; currency: string } | null> {
+  const session = merchantPaymentSessions.get(sessionId);
+  if (!session) return null;
+  if (Date.now() - session.createdAt > 15 * 60_000) return null;
+  try {
+    const total = await Promise.race<string | null>([
+      session.page.evaluate(`
+        (() => {
+          const text = (document.body?.innerText || "").replace(/\\s+/g, " ").trim();
+          const m = text.match(/(?:₹|rs\\.?|inr|\\$|usd|eur|€|gbp|£|¥|jpy|chf)\\s?([\\d,]+(?:\\.\\d{1,2})?)/i);
+          return m?.[1] ?? null;
+        })()
+      `),
+      new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error("checkout total read timed out")), 5_000),
+      ),
+    ]);
+    if (!total) return null;
+    const num = Number.parseFloat(String(total).replace(/,/g, ""));
+    if (Number.isNaN(num) || num <= 0) return null;
+    return { amountInMinor: Math.round(num * 100), currency: "INR" };
+  } catch {
+    return null;
+  }
+}
+
 /** Identify a merchant payment control from rendered UI only. */
 async function detectPaymentGate(page: AgentPage): Promise<PaymentGate | undefined> {
   return (await page.evaluate(`
@@ -2125,6 +2159,14 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
         : {}),
     });
 
+    // Session-recording handles are declared in the function scope (above the
+    // `try`) so the matching `finally` can read them — `let` bindings declared
+    // inside a `try` block are not visible to its `finally` block.
+    let pwBrowser: import("playwright").Browser | undefined;
+    let pwPage: import("playwright").Page | undefined;
+    let recordingPath: string | undefined;
+    let recordingStarted = false;
+
     try {
       const page = (await browser.context.pages())[0]!;
 
@@ -2137,10 +2179,6 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       // request.recordSession). No cloud service is involved.
       const recordSession =
         process.env.RECORD_SESSION === "true" || request.recordSession === true;
-      let pwBrowser: import("playwright").Browser | undefined;
-      let pwPage: import("playwright").Page | undefined;
-      let recordingPath: string | undefined;
-      let recordingStarted = false;
       if (recordSession) {
         const cdpUrl = getStagehandCdpUrl(stagehand);
         if (cdpUrl) {

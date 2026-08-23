@@ -39,6 +39,8 @@ export const env = createEnv({
     PAYMENT_AUTO_APPROVAL_LIMIT_PAISE: z.coerce.number().int().nonnegative().default(150_000),
     /** Explicitly allow Cartwright to create a server-side Razorpay order when a black-box merchant has no payment UI. */
     AGENT_RAZORPAY_ORDER_FALLBACK: z.union([z.literal("true"), z.literal("false")]).default("false"),
+    /** Razorpay webhook secret — a SEPARATE credential from the API secret. */
+    RAZORPAY_WEBHOOK_SECRET: z.string().min(1).optional(),
   },
   runtimeEnv: process.env,
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,

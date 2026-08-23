@@ -98,6 +98,21 @@ export function verifyPaymentSignature(
   return expectedBytes.length === actualBytes.length && timingSafeEqual(expectedBytes, actualBytes);
 }
 
+/**
+ * Verify a Razorpay webhook signature. The webhook secret is a *different*
+ * credential from the API secret and must never be confused with it.
+ */
+export function verifyWebhookSignature(
+  webhookSecret: string,
+  rawBody: string,
+  signature: string,
+): boolean {
+  const expected = createHmac("sha256", webhookSecret).update(rawBody).digest("hex");
+  const expectedBytes = Buffer.from(expected, "utf8");
+  const actualBytes = Buffer.from(signature, "utf8");
+  return expectedBytes.length === actualBytes.length && timingSafeEqual(expectedBytes, actualBytes);
+}
+
 /** Fetch a payment so the server can confirm its final status after signature verification. */
 export async function fetchPayment(config: RazorpayConfig, paymentId: string): Promise<RazorpayPayment> {
   const response = await fetch(`${RAZORPAY_API_BASE}/payments/${paymentId}`, {
