@@ -26,6 +26,47 @@ and (opt-in, **Test Mode only**) completes a Razorpay card payment end-to-end.
    `closeMerchantPaymentSession`, which closes its browser + Stagehand so the
    process exits instead of leaving Chrome open.
 
+## Razorpay Test Mode wallet flow (what the agent actually does)
+
+Driven by `completeRazorpayTestWalletPayment` (selected via `--pay-method wallet`,
+or `method: "wallet"` through `approveMerchantPayment`). Mirrors the card flow but
+drives the **Wallets** payment method instead of a card form. Supported wallets
+(per `payments/payment-methods/wallets.md`) that are enabled by default in Test
+Mode are **MobiKwik**, **Ola Money** and **Airtel Money**; the rest require
+dashboard approval. The default wallet is `olamoney` (override with `RAZORPAY_TEST_WALLET` or
+`--wallet <code>`). **MobiKwik** additionally shows an OTP screen right after
+selecting the wallet in Test Mode; the agent auto-fills `RAZORPAY_TEST_OTP`
+(default `123456`) and clicks the **visible** verify/submit control (the OTP
+form's `button[type=submit]`, e.g. the "Continue" button), with Enter-key and
+`stagehand.act()` fallbacks. Ola Money and Airtel Money complete directly via the
+provider mock (no OTP).
+
+1. **Select Wallets tab** — locator-first via `clickRazorpayElement` using
+   `iframe[src*="razorpay"] >> [data-testid="wallet"]` (the tab `<label>` carries
+   `data-testid="wallet"` / `data-value="wallet"`; visible text "Wallet"), with a
+   `stagehand.act("click the Wallets payment method tab")` fallback.
+2. **Pick a wallet** — locator-first via `clickRazorpayElement` using
+   `[data-value="<code>"]` (e.g. `data-value="olamoney"`), with an
+   `act("click <Label> in the Wallets list")` fallback.
+3. **Trigger** — selecting the wallet option is what fires the flow: Razorpay
+   opens the wallet provider's **mock page** in a NEW browser window/tab at
+   `…/gateway/mocksharp/payment?key_id=…` (the same shape as the card mock-bank
+   window) showing Success / Failure. There is **no separate "Pay" button** for
+   Ola Money / Airtel Money; an in-checkout "Pay" control is attempted
+   best‑effort but is non‑fatal (the new window is the real trigger).
+4. **Success** — the shared `clickRazorpayMockSuccess` helper polls for that new
+   window and clicks **Success** (`button[data-val="S"]` / `button.success` /
+   `button:has-text("Success")`), with a single `stagehand.act()` fallback. This
+   posts the callback that fires the merchant `handler`.
+5. **Confirmation + cleanup** — same as the card flow: captures the merchant
+   order confirmation (`captureOrderConfirmation`) and closes stray Razorpay /
+   wallet mock popups (`closeRazorpayWindows`).
+
+The card and wallet flows share the mock-success helper and the window-detection
+regexes (`razorpayActivePage`, `findMerchantPage`, `closeRazorpayWindows` all
+match `wallet|mock` URLs), so a wallet provider's mock page is treated exactly
+like the card mock-bank page.
+
 ## Razorpay Test Mode flow (what the agent actually does)
 
 Driven by `completeRazorpayTestPayment` in `src/shopping-agent.ts`:
@@ -67,7 +108,9 @@ Driven by `completeRazorpayTestPayment` in `src/shopping-agent.ts`:
 
 ```bash
 # From packages/agent
-bun scripts/test-local.ts --pay-now "Dark Ocean"
+bun scripts/test-local.ts --pay-now "Dark Ocean"                 # card (default)
+bun scripts/test-local.ts --pay-now --pay-method wallet "Dark Ocean"          # wallet (default olamoney)
+bun scripts/test-local.ts --pay-now --pay-method wallet --wallet olamoney "Dark Ocean"
 ```
 
 Expected tail output:
@@ -105,6 +148,8 @@ Closed 1 leftover Razorpay window(s).
 | `RAZORPAY_TEST_CARD_NUMBER` | Default `4100 2800 0000 1007`. |
 | `RAZORPAY_TEST_CARD_CVV` | Default `567`. |
 | `RAZORPAY_TEST_CARD_EXPIRY` | Default `02/28`. |
+| `RAZORPAY_TEST_WALLET` | Wallet code for the wallet Test Mode flow. Default `olamoney`. Other default-enabled codes: `mobikwik`, `airtelmoney`. |
+| `RAZORPAY_TEST_OTP` | Test OTP auto-filled for OTP-gated wallets (MobiKwik). Default `123456`. |
 | Merchant store auth (e.g. `meetpatel@gmail.com`) | Injected from `apps/web/.env`. |
 
 ## Debug logging
