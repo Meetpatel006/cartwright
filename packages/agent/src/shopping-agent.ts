@@ -532,7 +532,11 @@ async function clickVisibleText(page: AgentPage, pattern: RegExp): Promise<boole
  */
 async function inspectRazorpayDom(page: AgentPage, label: string): Promise<void> {
   try {
-    const info = (await page.evaluate(`
+    // Bound the evaluate with a timeout race: if the page/CDP is dead (e.g. a
+    // resumed checkout session whose browser was reclaimed), page.evaluate would
+    // otherwise hang forever with no rejection. Fail fast instead.
+    const info = (await Promise.race([
+      page.evaluate(`
       (() => {
         const iframes = Array.from(document.querySelectorAll("iframe")).map((f) => {
           let innerCard = false;
@@ -561,7 +565,14 @@ async function inspectRazorpayDom(page: AgentPage, label: string): Promise<void>
         const mainInputs = document.querySelectorAll("input").length;
         return { iframes: iframes, mainCard: mainCard, mainInputs: mainInputs, count: iframes.length };
       })()
-    `)) as {
+    `),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("inspectRazorpayDom evaluate timed out (page/CDP unresponsive)")),
+          10_000,
+        ),
+      ),
+    ])) as {
       iframes: { src: string; name: string; id: string; sameOriginReadable: boolean; innerCard: boolean; innerInputs: number }[];
       mainCard: boolean;
       mainInputs: number;
