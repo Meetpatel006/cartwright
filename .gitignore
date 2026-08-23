@@ -57,3 +57,5 @@ coverage
 tmp
 temp
 packages/agent/recordings/
+packages/db/src/migrations/
+todo/
