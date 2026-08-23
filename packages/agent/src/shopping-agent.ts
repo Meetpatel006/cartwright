@@ -4,6 +4,11 @@ import {
   Stagehand,
 } from "@browserbasehq/stagehand";
 import { randomUUID } from "node:crypto";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import { mkdir, unlink } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import ffmpegStatic from "ffmpeg-static";
 import { z } from "zod";
 
 import { createOpenAICompatibleLLM, type CustomModelEndpoint } from "./custom-llm";
@@ -265,6 +270,10 @@ export interface ShoppingRequest {
   basket?: Array<{ name: string; quantity: number }>;
   /** Keep a merchant checkout session alive for an explicit approval action. */
   preserveCheckoutSession?: boolean;
+  /** Record the automation to recordings/session-YYYY-MM-DD_HH-mm-ss.mp4 using
+   *  Playwright's native page.screencast() (WebM), transcoded to MP4 afterward.
+   *  Also toggled via RECORD_SESSION=true. */
+  recordSession?: boolean;
 }
 
 export interface CheckoutStep {
@@ -446,18 +455,54 @@ interface MerchantPaymentSession {
   stagehand: Stagehand;
   page: AgentPage;
   createdAt: number;
+  /** Optional Playwright client + target page used for session recording. */
+  recording?: {
+    pwBrowser: import("playwright").Browser;
+    pwPage: import("playwright").Page;
+    path: string;
+  };
 }
 
 const merchantPaymentSessions = new Map<string, MerchantPaymentSession>();
+
+/**
+ * Finalize the recording attached to a retained session (if any) BEFORE
+ * Stagehand/browser teardown, so the .webm is flushed to disk. Safe to call
+ * when no recording is attached.
+ */
+async function stopSessionRecording(session: MerchantPaymentSession): Promise<void> {
+  if (!session.recording) return;
+  try {
+    await session.recording.pwPage.screencast.stop();
+  } catch {
+    /* ignore teardown errors */
+  }
+  try {
+    await session.recording.pwBrowser.close();
+  } catch {
+    /* ignore teardown errors */
+  }
+  // Playwright records WebM only; transcode to a real MP4 for the final file.
+  const finalPath = await transcodeWebmToMp4(session.recording.path);
+  if (finalPath) session.recording.path = finalPath;
+  console.log(`[agent] session recording saved → ${session.recording.path}`);
+}
 
 function retainMerchantPaymentSession(
   browser: AgentBrowser,
   stagehand: Stagehand,
   page: AgentPage,
+  recording?: MerchantPaymentSession["recording"],
   requestedId?: string,
 ): string {
   const sessionId = requestedId ?? `merchant-${randomUUID()}`;
-  merchantPaymentSessions.set(sessionId, { browser, stagehand, page, createdAt: Date.now() });
+  merchantPaymentSessions.set(sessionId, {
+    browser,
+    stagehand,
+    page,
+    createdAt: Date.now(),
+    ...(recording ? { recording } : {}),
+  });
   return sessionId;
 }
 
@@ -1436,6 +1481,8 @@ export async function closeMerchantPaymentSession(sessionId: string): Promise<vo
   const session = merchantPaymentSessions.get(sessionId);
   if (!session) return;
   merchantPaymentSessions.delete(sessionId);
+  // Finalize the screencast BEFORE tearing down Stagehand so the .webm is saved.
+  await stopSessionRecording(session);
   await session.stagehand.close().catch(() => {});
   await session.browser.close().catch(() => {});
 }
@@ -1492,6 +1539,7 @@ export async function approveMerchantPayment(
   if (!session) return { status: "not_found", message: "Merchant checkout session was not found or has expired." };
   if (Date.now() - session.createdAt > 15 * 60_000) {
     merchantPaymentSessions.delete(sessionId);
+    await stopSessionRecording(session);
     await session.stagehand.close().catch(() => {});
     await session.browser.close().catch(() => {});
     return { status: "expired", message: "Merchant checkout session expired; run the agent again." };
@@ -1875,6 +1923,70 @@ async function runCheckout(
  * Uses Stagehand v4 primitives (act -> extract). Server-side caching is a
  * Browserbase-only feature, so it is only enabled in that mode.
  */
+/** Build a filesystem-safe timestamp, e.g. 2026-08-23_14-05-09. */
+function sessionTimestamp(now = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}` +
+    `_${p(now.getHours())}-${p(now.getMinutes())}-${p(now.getSeconds())}`
+  );
+}
+
+/**
+ * Stagehand 4 launches real Chrome and keeps a CDP connection to it, but its
+ * public `StagehandBrowser` handle hides the CDP URL in private internals. The
+ * `Stagehand` instance, however, keeps the RPC client whose `cdp` transport is
+ * the browser-level CDP WebSocket URL — the same value Stagehand used to
+ * connect. We read it so a Playwright client can attach to the SAME browser
+ * for native screencast recording.
+ */
+function getStagehandCdpUrl(stagehand: Stagehand): string | undefined {
+  const handle = stagehand as unknown as {
+    rpcClient?: { cdp?: { webSocketDebuggerUrl?: string } };
+  };
+  return handle.rpcClient?.cdp?.webSocketDebuggerUrl;
+}
+
+/**
+ * Playwright's native screencast only writes WebM (VP8, video-only), so a real
+ * .mp4 requires a post-record transcode. This uses the bundled `ffmpeg-static`
+ * binary (no system install, no cloud service) to re-encode the WebM into an
+ * H.264 MP4 that plays in any standard player.
+ *
+ * Returns the final .mp4 path on success, or `null` if ffmpeg is unavailable or
+ * the transcode fails — in which case the original .webm is kept.
+ */
+async function transcodeWebmToMp4(webmPath: string): Promise<string | null> {
+  const ffmpeg = typeof ffmpegStatic === "string" ? ffmpegStatic : null;
+  if (!ffmpeg) {
+    console.warn("[agent] ffmpeg-static not available; keeping .webm recording.");
+    return null;
+  }
+  const mp4Path = webmPath.replace(/\.webm$/i, ".mp4");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(ffmpeg, [
+        "-y",
+        "-i", webmPath,
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-crf", "23",
+        "-preset", "veryfast",
+        "-an", // screencast has no audio track
+        "-movflags", "+faststart",
+        mp4Path,
+      ]);
+      proc.on("error", reject);
+      proc.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`exit ${code}`))));
+    });
+    await unlink(webmPath).catch(() => {});
+    return mp4Path;
+  } catch (e) {
+    console.warn(`[agent] MP4 transcode failed (${(e as Error).message}); keeping .webm.`);
+    return null;
+  }
+}
+
 export async function runShoppingAgent(request: ShoppingRequest): Promise<ShoppingResult> {
   const store = resolveStore(request.store);
   const result: ShoppingResult = {
@@ -1939,6 +2051,57 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
     try {
       const page = (await browser.context.pages())[0]!;
 
+      // ── Session recording (Playwright native screencast → MP4) ─────────────
+      // Stagehand 4 does not embed Playwright and its Page wrapper has no
+      // `screencast()` method, so we attach a Playwright client to the SAME
+      // Chrome instance Stagehand launched (over CDP) and record the underlying
+      // tab. Playwright records WebM only, so we transcode it to MP4 with the
+      // bundled ffmpeg-static afterward. Toggle with RECORD_SESSION=true (or
+      // request.recordSession). No cloud service is involved.
+      const recordSession =
+        process.env.RECORD_SESSION === "true" || request.recordSession === true;
+      let pwBrowser: import("playwright").Browser | undefined;
+      let pwPage: import("playwright").Page | undefined;
+      let recordingPath: string | undefined;
+      let recordingStarted = false;
+      if (recordSession) {
+        const cdpUrl = getStagehandCdpUrl(stagehand);
+        if (cdpUrl) {
+          try {
+            const { chromium } = await import("playwright");
+            pwBrowser = await chromium.connectOverCDP(cdpUrl);
+            // The first page of the first context is the tab Stagehand drives.
+            pwPage = pwBrowser.contexts()[0]?.pages()[0];
+            if (pwPage) {
+              const recordingsDir = fileURLToPath(
+                new URL("../recordings", import.meta.url),
+              );
+              await mkdir(recordingsDir, { recursive: true });
+              recordingPath = path.join(
+                recordingsDir,
+                `session-${sessionTimestamp()}.webm`,
+              );
+              await pwPage.screencast.start({
+                path: recordingPath,
+                size: { width: 1280, height: 800 },
+              });
+              recordingStarted = true;
+              console.log(`[agent] recording session → ${recordingPath}`);
+            } else {
+              console.warn("[agent] RECORD_SESSION: no page found to record; skipping.");
+            }
+          } catch (recErr) {
+            console.warn(
+              `[agent] RECORD_SESSION enabled but screencast failed to start: ${(recErr as Error).message}`,
+            );
+          }
+        } else {
+          console.warn(
+            "[agent] RECORD_SESSION enabled but Stagehand's CDP URL was not available; skipping recording.",
+          );
+        }
+      }
+
       // ── Step 0: Ensure a logged-in account (so the order isn't a guest) ──
       await ensureAccount(page, stagehand, store);
 
@@ -1949,7 +2112,14 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
         result.basket = basketResult.basket;
         result.checkout = basketResult.checkout;
         if (request.preserveCheckoutSession && result.checkout.paymentGate) {
-          result.sessionId = retainMerchantPaymentSession(browser, stagehand, page);
+          result.sessionId = retainMerchantPaymentSession(
+            browser,
+            stagehand,
+            page,
+            recordingStarted && pwBrowser && pwPage && recordingPath
+              ? { pwBrowser, pwPage, path: recordingPath }
+              : undefined,
+          );
           keepCheckoutSession = true;
         }
         return result;
@@ -2032,7 +2202,14 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
         console.log(`[agent] performing on-site checkout actions for: ${result.picked.name}`);
         result.checkout = await runCheckout(page, browser.context, stagehand, result.picked.url);
         if (request.preserveCheckoutSession && result.checkout.paymentGate) {
-          result.sessionId = retainMerchantPaymentSession(browser, stagehand, page);
+          result.sessionId = retainMerchantPaymentSession(
+            browser,
+            stagehand,
+            page,
+            recordingStarted && pwBrowser && pwPage && recordingPath
+              ? { pwBrowser, pwPage, path: recordingPath }
+              : undefined,
+          );
           keepCheckoutSession = true;
         }
       } else if (request.checkout !== false && result.picked && !result.picked.url) {
@@ -2043,7 +2220,30 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
         };
       }
     } finally {
-      if (!keepCheckoutSession) await stagehand.close().catch(() => {});
+      if (!keepCheckoutSession) {
+        // Finalize the screencast BEFORE closing Stagehand so the .webm is
+        // flushed to disk (calling stagehand.close() first would tear down the
+        // browser's CDP session mid-recording and corrupt the file).
+        if (recordingStarted && pwPage) {
+          try {
+            await pwPage.screencast.stop();
+          } catch {
+            /* ignore teardown errors */
+          }
+          try {
+            await pwBrowser?.close();
+          } catch {
+            /* ignore teardown errors */
+          }
+          if (recordingPath) {
+            const finalPath = await transcodeWebmToMp4(recordingPath);
+            console.log(
+              `[agent] session recording saved → ${finalPath ?? recordingPath}`,
+            );
+          }
+        }
+        await stagehand.close().catch(() => {});
+      }
     }
   } catch (error) {
     result.error =
