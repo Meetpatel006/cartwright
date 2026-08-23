@@ -1987,6 +1987,83 @@ async function transcodeWebmToMp4(webmPath: string): Promise<string | null> {
   }
 }
 
+/**
+ * Injected into the recorded page so the screencast isn't a "blank" with
+ * invisible automation. CDP-driven input (Stagehand's clicks) has no OS cursor,
+ * so we render our own: a DOM cursor that follows real mouse/pointer moves and a
+ * red ripple on each press. Because it listens to DOM events, it tracks input
+ * dispatched by ANY client — including Stagehand's separate CDP Page — not just
+ * Playwright's own page.mouse.
+ */
+const SESSION_CURSOR_OVERLAY = `
+(function () {
+  var C = '__agent_cursor';
+  var lastDown = 0;
+  var pos = { x: -300, y: -300 };
+  function ensure() {
+    var cur = document.getElementById(C);
+    if (cur && cur.parentNode) return;
+    cur = document.createElement('div');
+    cur.id = C;
+    cur.setAttribute('style',
+      'position:fixed;left:0;top:0;width:26px;height:26px;z-index:2147483647;' +
+      'pointer-events:none;will-change:transform;' +
+      'transform:translate(' + pos.x + 'px,' + pos.y + 'px);' +
+      'transition:transform 50ms linear;');
+    // Build the cursor with createElementNS (not innerHTML) — YouTube enforces
+    // Trusted Types, which blocks string innerHTML assignment.
+    var NS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('width', '26');
+    svg.setAttribute('height', '26');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    var sp = document.createElementNS(NS, 'path');
+    sp.setAttribute('d', 'M4 2 L4 21 L9 16 L12 23 L15 22 L12 15 L19 15 Z');
+    sp.setAttribute('fill', '#111');
+    sp.setAttribute('stroke', '#fff');
+    sp.setAttribute('stroke-width', '1.5');
+    sp.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(sp);
+    cur.appendChild(svg);
+    (document.documentElement || document.body).appendChild(cur);
+    window.__agentCursor = cur;
+  }
+  function move(x, y) {
+    pos.x = x; pos.y = y;
+    ensure();
+    var cur = window.__agentCursor;
+    if (cur) cur.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+  }
+  function ripple(x, y) {
+    var now = Date.now();
+    if (now - lastDown < 80) return;
+    lastDown = now;
+    ensure();
+    var r = document.createElement('div');
+    r.setAttribute('style',
+      'position:fixed;left:' + x + 'px;top:' + y + 'px;width:12px;height:12px;' +
+      'border-radius:50%;background:rgba(255,64,64,0.6);z-index:2147483646;' +
+      'pointer-events:none;transform:translate(-50%,-50%) scale(1);opacity:1;' +
+      'transition:transform 450ms ease-out,opacity 450ms ease-out;');
+    (document.documentElement || document.body).appendChild(r);
+    requestAnimationFrame(function () {
+      r.style.transform = 'translate(-50%,-50%) scale(7)';
+      r.style.opacity = '0';
+    });
+    setTimeout(function () { r.remove(); }, 500);
+  }
+  window.addEventListener('mousemove', function (e) { move(e.clientX, e.clientY); }, true);
+  window.addEventListener('pointermove', function (e) { move(e.clientX, e.clientY); }, true);
+  window.addEventListener('mousedown', function (e) { ripple(e.clientX, e.clientY); }, true);
+  window.addEventListener('pointerdown', function (e) { ripple(e.clientX, e.clientY); }, true);
+  // Self-heal: heavy SPAs (e.g. YouTube) re-render and strip foreign DOM nodes,
+  // so re-append the cursor if it gets removed.
+  setInterval(ensure, 400);
+  document.addEventListener('DOMContentLoaded', ensure);
+  ensure();
+})();
+`;
+
 export async function runShoppingAgent(request: ShoppingRequest): Promise<ShoppingResult> {
   const store = resolveStore(request.store);
   const result: ShoppingResult = {
@@ -2087,6 +2164,19 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
               });
               recordingStarted = true;
               console.log(`[agent] recording session → ${recordingPath}`);
+
+              // Draw a visible cursor + click ripples in the recording. CDP-driven
+              // automation has no OS cursor, so without this the screencast looks
+              // blank. The overlay listens to real input events, which fire for
+              // Stagehand's CDP-dispatched clicks too.
+              try {
+                const ctx = pwBrowser.contexts()[0];
+                if (ctx) await ctx.addInitScript(SESSION_CURSOR_OVERLAY).catch(() => {});
+                await pwPage.addInitScript(SESSION_CURSOR_OVERLAY).catch(() => {});
+                await pwPage.evaluate(SESSION_CURSOR_OVERLAY).catch(() => {});
+              } catch {
+                /* non-fatal: recording still works without a visible cursor */
+              }
             } else {
               console.warn("[agent] RECORD_SESSION: no page found to record; skipping.");
             }
