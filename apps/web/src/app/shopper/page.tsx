@@ -70,6 +70,7 @@ export default function ShopperPage() {
   const result = shop.data as ShopResult | undefined;
   const currency = result?.currency ?? "USD";
   const basketItemCount = result?.basket?.reduce((count, item) => count + item.quantity, 0) ?? 0;
+  const [payMethod, setPayMethod] = useState<"card" | "wallet">("card");
 
   useEffect(() => {
     const existing = document.querySelector<HTMLScriptElement>('script[data-razorpay-checkout]');
@@ -308,13 +309,32 @@ export default function ShopperPage() {
                     </p>
                   )}
                   {result.purchase.status === "merchant_action_required" && result.sessionId && (
-                    <Button
-                      className="mt-3"
-                      onClick={() => approveMerchantPayment.mutate({ sessionId: result.sessionId! })}
-                      disabled={approveMerchantPayment.isPending}
-                    >
-                      {approveMerchantPayment.isPending ? "Opening merchant checkout…" : "Approve merchant payment"}
-                    </Button>
+                    <div className="mt-3 grid gap-2">
+                      <div className="flex gap-2" role="group" aria-label="Payment method">
+                        <Button
+                          variant={payMethod === "card" ? "default" : "outline"}
+                          onClick={() => setPayMethod("card")}
+                        >
+                          Card
+                        </Button>
+                        <Button
+                          variant={payMethod === "wallet" ? "default" : "outline"}
+                          onClick={() => setPayMethod("wallet")}
+                        >
+                          Wallet
+                        </Button>
+                      </div>
+                      <Button
+                        onClick={() =>
+                          approveMerchantPayment.mutate({ sessionId: result.sessionId!, method: payMethod })
+                        }
+                        disabled={approveMerchantPayment.isPending}
+                      >
+                        {approveMerchantPayment.isPending
+                          ? "Opening merchant checkout…"
+                          : `Approve merchant payment (${payMethod})`}
+                      </Button>
+                    </div>
                   )}
                   {result.purchase.status === "awaiting_approval" && result.purchase.orderId && (
                     <Button

@@ -695,6 +695,71 @@ async function clickRazorpayButton(page: AgentPage, selectors: string[]): Promis
 }
 
 /**
+ * Click the FIRST *visible* element matching `selector` (pierced into the
+ * Razorpay iframe). Unlike `clickRazorpayButton`, this skips hidden matches, so
+ * it is safe to aim at a broad selector like `button[type="submit"]` — only the
+ * visible (real) control gets clicked, never the hidden form-submits elsewhere
+ * in the iframe. Returns true if a visible element was clicked.
+ */
+async function clickFirstVisible(page: AgentPage, selector: string): Promise<boolean> {
+  try {
+    const loc = page.locator(selector);
+    const n = await loc.count();
+    for (let i = 0; i < n; i++) {
+      const el = loc.nth(i);
+      if (await el.isVisible().catch(() => false)) {
+        console.log(`[agent:clickFirstVisible] ▶ clicking visible "${selector}" #${i}`);
+        await el.click().catch(async () => {
+          await el.click();
+        });
+        return true;
+      }
+    }
+  } catch {
+    /* ignore — caller falls through to the next strategy */
+  }
+  return false;
+}
+
+/**
+ * Generalized version of `clickRazorpayButton` that clicks ANY element (not just
+ * buttons) inside the Razorpay checkout via the same iframe-piercing locators.
+ * Needed for the wallet flow, where the payment-method picker and wallet list
+ * are <label>/<div> rows (not <button>s) living in the cross-origin iframe.
+ * `stagehand.act()` cannot reach cross-origin iframe content (it resolves an
+ * xpath like /html/body/div/iframe/html/... that CDP rejects), so deterministic
+ * locators are the reliable path — the same reason the card Continue button is
+ * driven by `clickRazorpayButton`.
+ */
+async function clickRazorpayElement(page: AgentPage, selectors: string[]): Promise<boolean> {
+  const pierce = (inner: string) => [
+    `iframe[src*="razorpay"] >> ${inner}`,
+    `iframe >> ${inner}`,
+    inner,
+    `iframe >> iframe >> ${inner}`,
+  ];
+  for (const sel of selectors) {
+    for (const v of pierce(sel)) {
+      try {
+        const loc = page.locator(v);
+        const count = await loc.count();
+        if (count > 0) {
+          console.log(`[agent:clickRazorpayElement] ▶ clicking "${v}" (count=${count})`);
+          await loc.first().click().catch(async () => {
+            await loc.first().click();
+          });
+          return true;
+        }
+      } catch {
+        /* try next variant */
+      }
+    }
+  }
+  console.log(`[agent:clickRazorpayElement] ✘ no element matched: ${selectors.join(" | ")}`);
+  return false;
+}
+
+/**
  * Dismiss Razorpay's "Save your card as per RBI guidelines?" tokenization
  * dialog by clicking "Maybe later" (button[name="pay_without_saving_card"]).
  * Per the user, this path completes the payment WITHOUT an OTP step. The dialog
@@ -818,10 +883,11 @@ async function razorpayActivePage(context: AgentBrowserContext, main: AgentPage)
       urls.map((u, i) => `${i === pages.indexOf(main) ? "MAIN" : i}: ${u.slice(0, 72)}`).join(" | "),
   );
   const others = [...pages].reverse().filter((p) => p !== main);
-  // Prefer a Razorpay/checkout/mock-bank window (the mocksharp payment page).
+  // Prefer a Razorpay/checkout/mock-bank window (the mocksharp payment page,
+  // or a wallet provider's mock page opened after selecting a wallet).
   for (const p of others) {
     const url = await p.url().catch(() => "");
-    if (/razorpay|checkout|mocksharp|gateway|payments|secure|bank|acs/i.test(url)) return p;
+    if (/razorpay|checkout|mocksharp|gateway|payments|secure|bank|acs|wallet|mock/i.test(url)) return p;
   }
   // Fallback: any non-blank extra window (e.g. a bank/ACS mock in Test Mode).
   for (const p of others) {
@@ -849,7 +915,7 @@ async function findMerchantPage(context: AgentBrowserContext, current: AgentPage
   const pages = await context.pages().catch(() => [] as AgentPage[]);
   for (const p of pages) {
     const url = await p.url().catch(() => "");
-    if (!/razorpay|mocksharp|gateway|secure\.razorpay/i.test(url)) return p;
+    if (!/razorpay|mocksharp|gateway|secure\.razorpay|wallet|mock/i.test(url)) return p;
   }
   return current;
 }
@@ -903,7 +969,7 @@ async function closeRazorpayWindows(context: AgentBrowserContext, keep: AgentPag
   for (const p of pages) {
     if (p === keep) continue;
     const url = await p.url().catch(() => "");
-    if (/razorpay|mocksharp|gateway|secure\.razorpay|about:blank/i.test(url)) {
+    if (/razorpay|mocksharp|gateway|secure\.razorpay|wallet|mock|about:blank/i.test(url)) {
       await p.close().catch(() => {});
       closed++;
     }
@@ -912,13 +978,220 @@ async function closeRazorpayWindows(context: AgentBrowserContext, keep: AgentPag
 }
 
 /**
- * Complete only Razorpay's documented Test Mode card flow. This is intentionally
- * opt-in at the policy layer and never runs with live mode or arbitrary providers.
+ * Default-by-availability wallet codes for Razorpay Checkout Test Mode, mapped to
+ * the human label shown in the wallet picker. Per the Razorpay docs
+ * (payments/payment-methods/wallets.md) MobiKwik, Ola Money and Airtel Money are
+ * available by default; the rest require dashboard approval.
+ */
+const WALLET_LABELS: Record<string, string> = {
+  mobikwik: "MobiKwik",
+  olamoney: "Ola Money",
+  airtelmoney: "Airtel Money",
+  payzapp: "PayZapp",
+  phonepe: "PhonePe",
+  phonepeswitch: "PhonePe Switch",
+  amazonpay: "Amazon Pay",
+  paypal: "PayPal",
+  bajajpay: "Bajaj Pay",
+};
+
+/** Wallets that prompt for an OTP after "Pay" in Razorpay Test Mode (vs. Ola
+ *  Money / Airtel Money which complete via the provider mock directly). The
+ *  agent fills a test OTP for these instead of waiting for an SMS. */
+const OTP_WALLETS = new Set(["mobikwik"]);
+
+/**
+ * Poll for Razorpay's mock bank / wallet / provider result window (a NEW browser
+ * window/tab) and click its "Success" control, then capture the merchant
+ * confirmation. This is shared by BOTH the card and wallet Test Mode flows — both
+ * open a provider mock page (e.g. .../gateway/mocksharp/payment or a wallet
+ * provider's mock) after submitting, and that window posts the callback that
+ * fires the merchant handler.
+ */
+async function clickRazorpayMockSuccess(
+  context: AgentBrowserContext,
+  main: AgentPage,
+  stagehand: Stagehand,
+): Promise<boolean> {
+  let successClicked = false;
+  for (let i = 0; i < 15; i++) {
+    const active = await razorpayActivePage(context, main);
+    if (active !== main) {
+      await context.setActivePage(active).catch(() => {}); // focus the popup for Stagehand
+      const ok = await clickRazorpayButton(active, [
+        `button[data-val="S"]`,
+        `button.success`,
+        `button:has-text("Success")`,
+      ]);
+      if (ok) {
+        successClicked = true;
+        console.log(`[agent:rzPay] ✔ clicked Success (locator) on new window (attempt ${i + 1})`);
+        break;
+      }
+    } else {
+      // Main page: clear any lingering RBI save-card / tokenization dialog that
+      // would otherwise block completion of the payment.
+      await clickRazorpayButton(active, [
+        `button[name="pay_without_saving_card"]`,
+        `button:has-text("Maybe later")`,
+      ]);
+    }
+    if (i < 14) await main.waitForTimeout(1_500).catch(() => {});
+  }
+  // Phase 2: one LLM-driven attempt if a new window is still open (act is
+  // frame-aware and can perceive the cross-origin popup).
+  if (!successClicked) {
+    const active = await razorpayActivePage(context, main);
+    if (active !== main) {
+      await context.setActivePage(active).catch(() => {});
+      const act = await stagehand.act(
+        "Click the Success button to complete this Razorpay test payment.",
+        { page: active },
+      ).catch(() => undefined);
+      successClicked = !!(act?.data?.success && (act?.data?.actions?.length ?? 0) > 0);
+      console.log(`[agent:rzPay] success act: success=${act?.data?.success} actions=${act?.data?.actions?.length}`);
+    }
+  }
+  console.log(`[agent:rzPay] successClicked=${successClicked}`);
+  return successClicked;
+}
+
+/**
+ * Some wallets (e.g. MobiKwik) show an OTP screen after "Pay" in Test Mode.
+ * Detect an OTP input — on the current Razorpay page OR a newly opened window —
+ * fill it with the test OTP (`RAZORPAY_TEST_OTP`, default "123456"), and click
+ * the verify/submit control so the provider mock page (Success / Failure) appears.
+ * Returns true if an OTP field was found and filled. No-op for wallets that don't
+ * ask for an OTP (Ola Money, Airtel Money).
+ */
+async function handleRazorpayOtp(
+  context: AgentBrowserContext,
+  main: AgentPage,
+  stagehand: Stagehand,
+): Promise<boolean> {
+  const otp = process.env.RAZORPAY_TEST_OTP ?? "123456";
+  const otpInputSel = [
+    `input[inputmode="numeric"]`,
+    `input[name*="otp" i]`,
+    `input[autocomplete="one-time-code"]`,
+    `input[maxlength="6"]`,
+    `input[placeholder*="otp" i]`,
+  ];
+  // Verify controls (attribute/text based). Intentionally NOT `button[type=submit]`
+  // bare — the Razorpay iframe contains several *hidden* form-submit buttons that
+  // match it and would be clicked (and report success) without verifying. The
+  // primary verify mechanism is the form-scoped visible button above.
+  const submitSel = [
+    `button[name*="otp" i]`,
+    `button[id*="otp" i]`,
+    `button[data-test-id*="otp" i]`,
+    `button[class*="otp" i]`,
+    `button:has-text("Verify")`,
+    `button:has-text("Submit")`,
+    `button:has-text("Confirm")`,
+    `button:has-text("Proceed")`,
+    `button:has-text("Pay")`,
+    `button:has-text("Next")`,
+    `button:has-text("Authenticate")`,
+    `button[aria-label*="verify" i]`,
+    `button[aria-label*="otp" i]`,
+    `button[title*="verify" i]`,
+  ];
+  // Only pierce INTO the Razorpay iframe (and nested) — never the bare main-page
+  // selector, which would risk filling a merchant field (e.g. pincode).
+  const pierce = (sel: string) => [
+    `iframe[src*="razorpay"] >> ${sel}`,
+    `iframe >> ${sel}`,
+    `iframe >> iframe >> ${sel}`,
+  ];
+  for (let i = 0; i < 12; i++) {
+    const pages = await context.pages().catch(() => [] as AgentPage[]);
+    for (const p of [main, ...pages.filter((x) => x !== main)]) {
+      for (const sel of otpInputSel) {
+        for (const v of pierce(sel)) {
+          try {
+            const loc = p.locator(v);
+            if ((await loc.count()) > 0) {
+              const input = loc.first();
+              await input.fill(otp).catch(async () => {
+                await input.type(otp);
+              });
+              console.log(`[agent:rzPay:otp] filled OTP (len=${otp.length}) via "${v}"`);
+              // Debug: enumerate buttons in the Razorpay iframe (locators pierce
+              // cross-origin, unlike page.evaluate) so we learn the real verify control.
+              try {
+                const all = p.locator(`iframe[src*="razorpay"] >> button`);
+                const ac = await all.count();
+                for (let b = 0; b < ac; b++) {
+                  const el = all.nth(b);
+                  const vis = await el.isVisible().catch(() => false);
+                  const t = (await el.innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+                  console.log(`[agent:rzPay:otp] btn#${b} vis=${vis} text="${t.slice(0, 30)}"`);
+                }
+              } catch (e) {
+                console.log(`[agent:rzPay:otp] enumerate error: ${(e as Error)?.message ?? e}`);
+              }
+              // Submit the OTP (no LLM): click the VISIBLE verify/submit control.
+              // Strategy order:
+              //   1) the visible `button[type=submit]` in the iframe (the OTP verify
+              //      button; hidden form-submits elsewhere are skipped via isVisible),
+              //   2) the visible button inside the OTP input's own <form>,
+              //   3) broad text/attribute selectors.
+              let clicked =
+                (await clickFirstVisible(p, `iframe[src*="razorpay"] >> button[type="submit"]`)) ||
+                (await clickFirstVisible(
+                  p,
+                  `iframe[src*="razorpay"] >> input[name*="otp" i] >> xpath=ancestor::form >> button`,
+                )) ||
+                (await clickRazorpayButton(p, submitSel));
+              if (clicked) {
+                console.log(`[agent:rzPay:otp] ✔ clicked verify/submit control`);
+                return true;
+              }
+              // Non-LLM fallback: focus the OTP field and dispatch Enter (submits the
+              // OTP form). Stagehand's Page exposes keyPress (Locators have no
+              // .press/.focus), so click to focus then keyPress on the page.
+              console.log(`[agent:rzPay:otp] no locator verify control — dispatching Enter`);
+              try {
+                await input.click();
+                await main.keyPress("Enter");
+              } catch {
+                /* ignore */
+              }
+              // Last resort: stagehand.act (LLM) — can hang on a flaky endpoint, so it
+              // is truly last and we still return true afterwards.
+              console.log(`[agent:rzPay:otp] Enter missed — using stagehand.act()`);
+              const act = await stagehand.act(
+                `In the Razorpay MobiKwik OTP screen, click the Verify or Submit button to authenticate the wallet with the OTP you just entered.`,
+                { page: p },
+              ).catch(() => undefined);
+              if (act?.data?.success && (act?.data?.actions?.length ?? 0) > 0) {
+                console.log(`[agent:rzPay:otp] ✔ act clicked verify (actions=${act.data.actions.length})`);
+              }
+              return true;
+            }
+          } catch {
+            /* try next variant */
+          }
+        }
+      }
+    }
+    if (i < 11) await main.waitForTimeout(1_000).catch(() => {});
+  }
+  return false;
+}
+
+/**
+ * Complete only Razorpay's documented Test Mode payment flow. `method` selects
+ * which payment method to drive: "card" (default) or "wallet". This is
+ * intentionally opt-in at the policy layer and never runs with live mode or
+ * arbitrary providers.
  */
 async function completeRazorpayTestPayment(
   page: AgentPage,
   stagehand: Stagehand,
   context: AgentBrowserContext,
+  method: "card" | "wallet" = "card",
 ): Promise<{
   status: "submitted" | "failed";
   message: string;
@@ -929,6 +1202,11 @@ async function completeRazorpayTestPayment(
   const cardCvv = process.env.RAZORPAY_TEST_CARD_CVV ?? "567";
   const cardExpiry = process.env.RAZORPAY_TEST_CARD_EXPIRY ?? "02/28";
   try {
+    // Route wallet payments to the dedicated wallet flow; default stays on card.
+    if (method === "wallet") {
+      const walletCode = (process.env.RAZORPAY_TEST_WALLET ?? "olamoney").toLowerCase();
+      return completeRazorpayTestWalletPayment(page, stagehand, context, walletCode);
+    }
     console.log(`[agent:rzPay] === completeRazorpayTestPayment START ===`);
     console.log(`[agent:rzPay] card=${cardNumber.slice(0,4)}**** expiry=${cardExpiry} cvv=***`);
 
@@ -993,48 +1271,11 @@ async function completeRazorpayTestPayment(
     // 4) The payment may complete directly, OR Razorpay opens its mock bank /
     //    result step in a NEW browser window (e.g. .../gateway/mocksharp/payment)
     //    showing Success / Failure buttons. That window posts the callback that
-    //    fires the merchant handler, so we must click "Success" there. Poll for
-    //    the window; on the main checkout page we only clear any save-card dialog.
+    //    fires the merchant handler, so we must click "Success" there. The shared
+    //    helper polls for the window, clears any save-card dialog on the main
+    //    page, and falls back to an LLM click when a locator can't reach it.
     console.log(`[agent:rzPay] awaiting payment confirmation (incl. new windows)…`);
-    let successClicked = false;
-    for (let i = 0; i < 15; i++) {
-      const active = await razorpayActivePage(context, page);
-      if (active !== page) {
-        await context.setActivePage(active).catch(() => {}); // focus the popup for Stagehand
-        const ok = await clickRazorpayButton(active, [
-          `button[data-val="S"]`,
-          `button.success`,
-          `button:has-text("Success")`,
-        ]);
-        if (ok) {
-          successClicked = true;
-          console.log(`[agent:rzPay] ✔ clicked Success (locator) on new window (attempt ${i + 1})`);
-          break;
-        }
-      } else {
-        // Main page: clear any lingering save-card dialog.
-        await clickRazorpayButton(active, [
-          `button[name="pay_without_saving_card"]`,
-          `button:has-text("Maybe later")`,
-        ]);
-      }
-      if (i < 14) await page.waitForTimeout(1_500).catch(() => {});
-    }
-    // Phase 2: one LLM-driven attempt if a new window is still open (act is
-    // frame-aware and can perceive the cross-origin popup).
-    if (!successClicked) {
-      const active = await razorpayActivePage(context, page);
-      if (active !== page) {
-        await context.setActivePage(active).catch(() => {});
-        const act = await stagehand.act(
-          "Click the Success button to complete this Razorpay test payment.",
-          { page: active },
-        ).catch(() => undefined);
-        successClicked = !!(act?.data?.success && (act?.data?.actions?.length ?? 0) > 0);
-        console.log(`[agent:rzPay] success act: success=${act?.data?.success} actions=${act?.data?.actions?.length}`);
-      }
-    }
-    console.log(`[agent:rzPay] successClicked=${successClicked}`);
+    await clickRazorpayMockSuccess(context, page, stagehand);
     // 5) Capture the merchant's order confirmation and close stray Razorpay
     //    windows so the run ends cleanly on the confirmation page.
     const merchantPage = await findMerchantPage(context, page);
@@ -1051,6 +1292,142 @@ async function completeRazorpayTestPayment(
   } catch (e) {
     console.warn(`[agent:rzPay] threw: ${(e as Error).message}`);
     return { status: "failed", message: "Could not operate the Razorpay Test Mode card checkout; payment was not attempted." };
+  }
+}
+
+/**
+ * Complete Razorpay's documented Test Mode WALLET flow (per
+ * payments/payment-methods/wallets.md). Wallets available by default in Test
+ * Mode are MobiKwik, Ola Money and Airtel Money. The flow is analogous to the
+ * card flow but without a card-number form:
+ *   1. Click the "Wallets" payment-method tab on the checkout.
+ *   2. Click the chosen wallet (e.g. MobiKwik) in the revealed list.
+ *   3. Click "Pay" — Razorpay opens the wallet provider's mock page in a NEW
+ *      window showing Success / Failure (same shape as the card mock-bank page).
+ *   4. Click "Success" on that mock page (shared clickRazorpayMockSuccess helper).
+ * Test Mode only — never runs against live Razorpay keys.
+ */
+async function completeRazorpayTestWalletPayment(
+  page: AgentPage,
+  stagehand: Stagehand,
+  context: AgentBrowserContext,
+  walletCode: string,
+): Promise<{
+  status: "submitted" | "failed";
+  message: string;
+  orderConfirmation?: OrderConfirmation | null;
+  closedWindows?: number;
+}> {
+  const walletLabel = WALLET_LABELS[walletCode] ?? walletCode;
+  try {
+    console.log(`[agent:rzPay:wallet] === completeRazorpayTestWalletPayment START (wallet=${walletCode} / ${walletLabel}) ===`);
+
+    await page.waitForSelector("iframe", { state: "visible", timeout: 15_000 }).catch(() => false);
+    await inspectRazorpayDom(page, "wallet:initial");
+
+    // 1) Reveal the Wallets tab. Drive it with iframe-piercing locators (the
+    //    proven mechanism for reaching the cross-origin Razorpay iframe — see
+    //    clickRazorpayButton). The tab is a <label> wrapping a radio with
+    //    data-testid="wallet" / data-value="wallet" (label text "Wallet").
+    const revealedWallet = await clickRazorpayElement(page, [
+      `[data-testid="wallet"]`,
+      `[data-value="wallet"]`,
+      `label:has-text("Wallet")`,
+      `div[role="button"][data-value="wallet"]`,
+      `[data-testid*="wallet" i]`,
+    ]);
+    if (!revealedWallet) {
+      const r = await stagehand.act(
+        `In the open Razorpay checkout, click the "Wallets" payment method tab (not Card, Netbanking or UPI) to reveal the list of available wallets.`,
+        { page },
+      ).catch(() => undefined);
+      if (!(r?.data?.success && (r?.data?.actions?.length ?? 0) > 0)) {
+        return {
+          status: "failed",
+          message: `Razorpay "Wallets" tab was not available in this checkout; payment was not attempted.`,
+        };
+      }
+    }
+    console.log(`[agent:rzPay:wallet] Wallets tab clicked=${revealedWallet}`);
+    await page.waitForTimeout(1_500).catch(() => {});
+    await inspectRazorpayDom(page, "wallet:afterTab");
+
+    // 2) Pick the requested wallet from the list (locator-first). Each option is
+    //    a <label> whose inner <div role="button"> carries data-value="<code>"
+    //    (e.g. data-value="mobikwik"); the visible text is the wallet name.
+    const pickedWallet = await clickRazorpayElement(page, [
+      `[data-value="${walletCode}"]`,
+      `label:has-text("${walletLabel}")`,
+      `div[role="button"][data-value="${walletCode}"]`,
+      `div:has-text("${walletLabel}")`,
+    ]);
+    if (!pickedWallet) {
+      const p = await stagehand.act(
+        `In the Wallets list, click "${walletLabel}" to select it as the payment method.`,
+        { page },
+      ).catch(() => undefined);
+      if (!(p?.data?.success && (p?.data?.actions?.length ?? 0) > 0)) {
+        return {
+          status: "failed",
+          message: `Razorpay wallet "${walletLabel}" was not available in the list; payment was not attempted.`,
+        };
+      }
+    }
+    console.log(`[agent:rzPay:wallet] wallet ${walletLabel} clicked=${pickedWallet}`);
+    await page.waitForTimeout(1_500).catch(() => {});
+    await inspectRazorpayDom(page, "wallet:afterPick");
+
+    // 3) Selecting the wallet option is what triggers the wallet flow: Razorpay
+    //    opens the provider's mock page in a NEW window
+    //    (…/gateway/mocksharp/payment — the same shape as the card mock-bank
+    //    window). There is no separate "Pay" control to click for Ola Money /
+    //    Airtel Money. Some wallet configs still surface an in-checkout "Pay"
+    //    button, so attempt it best-effort — but do NOT fail if it's absent, since
+    //    the new window is the real trigger and is handled in step 4.
+    console.log(`[agent:rzPay:wallet] attempting best-effort in-checkout Pay (if any)…`);
+    const clickedPay = await clickRazorpayButton(page, [
+      `button[data-test-id="wallet-pay"]`,
+      `button:has-text("Pay")`,
+      `button:has-text("Proceed")`,
+      `button:has-text("Continue")`,
+    ]).catch(() => false);
+    if (clickedPay) console.log(`[agent:rzPay:wallet] ✔ clicked Pay via locator`);
+    await page.waitForTimeout(1_500).catch(() => {});
+    await inspectRazorpayDom(page, "wallet:afterPick2");
+
+    // 3b) MobiKwik (and any OTP-gated wallet) shows an OTP screen after Pay;
+    //     fill the test OTP and submit so the provider mock page appears.
+    if (OTP_WALLETS.has(walletCode)) {
+      const otpHandled = await handleRazorpayOtp(context, page, stagehand);
+      console.log(`[agent:rzPay:wallet] otpHandled=${otpHandled} (wallet=${walletCode})`);
+    }
+
+    // 4) Wallet provider mock page (Success / Failure) — identical shape to the
+    //    card mock-bank page, so reuse the shared success-click helper.
+    console.log(`[agent:rzPay:wallet] awaiting wallet mock confirmation (incl. new windows)…`);
+    await clickRazorpayMockSuccess(context, page, stagehand);
+
+    // 5) Capture the merchant's order confirmation and close stray Razorpay /
+    //    wallet mock windows so the run ends cleanly on the confirmation page.
+    const merchantPage = await findMerchantPage(context, page);
+    const orderConfirmation = await captureOrderConfirmation(context, merchantPage);
+    const closedWindows = await closeRazorpayWindows(context, merchantPage);
+    console.log(
+      `[agent:rzPay:wallet] orderConfirmation=${orderConfirmation ? "captured" : "none"} closedWindows=${closedWindows}`,
+    );
+    await inspectRazorpayDom(page, "wallet:done");
+    return {
+      status: "submitted",
+      message: `Razorpay Test Mode wallet payment (${walletLabel}) was submitted through the merchant checkout; awaiting merchant server confirmation.`,
+      orderConfirmation,
+      closedWindows,
+    };
+  } catch (e) {
+    console.warn(`[agent:rzPay:wallet] threw: ${(e as Error).message}`);
+    return {
+      status: "failed",
+      message: `Could not operate the Razorpay Test Mode wallet checkout (${walletLabel}); payment was not attempted.`,
+    };
   }
 }
 
@@ -1103,7 +1480,7 @@ async function clickPaymentGate(page: AgentPage): Promise<PaymentGate | undefine
 
 export async function approveMerchantPayment(
   sessionId: string,
-  options: { completeTestPayment?: boolean } = {},
+  options: { completeTestPayment?: boolean; method?: "card" | "wallet" } = {},
 ): Promise<{
   status: "opened" | "submitted" | "expired" | "not_found" | "failed";
   message: string;
@@ -1126,7 +1503,12 @@ export async function approveMerchantPayment(
     if (options.completeTestPayment && gate.provider === "razorpay") {
       const paymentPage = await paymentPageAfterGate(session.browser.context, session.page);
       await session.browser.context.setActivePage(paymentPage).catch(() => {});
-      const payment = await completeRazorpayTestPayment(paymentPage, session.stagehand, session.browser.context);
+      const payment = await completeRazorpayTestPayment(
+        paymentPage,
+        session.stagehand,
+        session.browser.context,
+        options.method ?? "card",
+      );
       return { status: payment.status, message: payment.message, provider: gate.provider, orderConfirmation: payment.orderConfirmation, closedWindows: payment.closedWindows };
     }
     return {

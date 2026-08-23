@@ -375,9 +375,9 @@ export const agentRouter = router({
       return { ...result, purchase };
     }),
   approveMerchantPayment: publicProcedure
-    .input(z.object({ sessionId: z.string().min(1) }))
+    .input(z.object({ sessionId: z.string().min(1), method: z.enum(["card", "wallet"]).optional().default("card") }))
     .mutation(async ({ input }) => {
-      const result = await approveMerchantPayment(input.sessionId);
+      const result = await approveMerchantPayment(input.sessionId, { method: input.method });
       const reservationId = reservationForSession(input.sessionId);
       if (result.status === "failed" || result.status === "expired" || result.status === "not_found") {
         releaseWalletReservation(reservationId);

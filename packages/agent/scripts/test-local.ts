@@ -7,6 +7,8 @@
  *   bun scripts/test-local.ts --store nike "running shoes under 10000"
  *   bun scripts/test-local.ts --url https://www.adidas.com "ultraboost"
  *   bun scripts/test-local.ts --store amazon "wireless headphones under $100"
+ *   bun scripts/test-local.ts --pay-now --pay-method wallet "Dark Ocean"
+ *   bun scripts/test-local.ts --pay-now --pay-method wallet --wallet mobikwik "Dark Ocean"
  *
  * Default store is the local Raven merchant (http://localhost:5173) so the plain
  * command works with no external bot-walls and no cost. External stores (Google
@@ -38,6 +40,8 @@ let query: string | undefined;
 let exactBasket = false;
 let standaloneRazorpayTest = false;
 let payNow = false;
+let payMethod = "card";
+let payWallet = "";
 
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
@@ -51,6 +55,12 @@ for (let i = 0; i < args.length; i++) {
     standaloneRazorpayTest = true;
   } else if (arg === "--pay-now") {
     payNow = true;
+  } else if (arg === "--pay-method" && next) {
+    payMethod = next.toLowerCase();
+    i++;
+  } else if (arg === "--wallet" && next) {
+    payWallet = next.toLowerCase();
+    i++;
   } else if (arg === "--url" && next) {
     storeUrl = next;
     i++;
@@ -156,7 +166,13 @@ if (payNow) {
     console.error("Pay Now test stopped: the merchant payment gate was not retained.");
     process.exitCode = 1;
   } else {
-    const payment = await approveMerchantPayment(result.sessionId, { completeTestPayment: true });
+    // Let --wallet override the default wallet code (otherwise the agent reads
+    // RAZORPAY_TEST_WALLET from the environment, defaulting to MobiKwik).
+    if (payWallet) process.env.RAZORPAY_TEST_WALLET = payWallet;
+    const method = payMethod === "wallet" ? "wallet" : "card";
+    const walletNote = method === "wallet" ? ` via wallet ${process.env.RAZORPAY_TEST_WALLET ?? "olamoney"}` : "";
+    console.log(`\nPaying with Razorpay Test Mode (method=${method}${walletNote})…`);
+    const payment = await approveMerchantPayment(result.sessionId, { completeTestPayment: true, method });
     console.log(`\nMerchant Razorpay TEST payment: ${payment.status}`);
     console.log(`  ${payment.message}`);
     if (payment.orderConfirmation) {
