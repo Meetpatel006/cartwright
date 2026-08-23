@@ -26,6 +26,11 @@ and (opt-in, **Test Mode only**) completes a Razorpay card payment end-to-end.
    `closeMerchantPaymentSession`, which closes its browser + Stagehand so the
    process exits instead of leaving Chrome open.
 
+7. **Session recording** — opt-in video capture of the whole automation
+    (`RECORD_SESSION=true` or `request.recordSession`). Records the tab with
+    Playwright's native `page.screencast()`, transcodes the WebM to a real MP4,
+    and writes `recordings/session-<timestamp>.mp4`.
+
 ## Razorpay Test Mode wallet flow (what the agent actually does)
 
 Driven by `completeRazorpayTestWalletPayment` (selected via `--pay-method wallet`,
@@ -104,6 +109,45 @@ Driven by `completeRazorpayTestPayment` in `src/shopping-agent.ts`:
 - The merchant `verifyPayment` server check is the real source of truth; the
   agent only drives the Test Mode UI.
 
+## Session recording
+
+Opt-in video capture of the automation, useful for debugging a run or sharing it.
+Toggle with the `RECORD_SESSION=true` env var or `request.recordSession: true`
+(off by default). A visible cursor + click-ripple overlay is injected into the
+page so you can see exactly where the agent clicked — CDP-driven automation has
+no OS cursor, so without it the screencast would look blank.
+
+### How it works
+1. **CDP attach** — Stagehand 4 does not embed Playwright and its `Page` wrapper
+   has no `screencast()` method, so the agent attaches a *separate* Playwright
+   client to the **same** Chrome instance Stagehand launched, over CDP
+   (`chromium.connectOverCDP` using `stagehand.rpcClient.cdp.webSocketDebuggerUrl`).
+2. **Capture** — `pwPage.screencast.start({ path, size })` records the underlying
+   tab to a WebM (1280×800).
+3. **Finalize-before-close** — the screencast is always stopped (and the Playwright
+   client closed) **before** `stagehand.close()`, so the file is never corrupted
+   by a mid-recording CDP teardown. For retained checkout sessions,
+   `stopSessionRecording()` finalizes on `closeMerchantPaymentSession()` or on
+   expiry inside `approveMerchantPayment()`.
+4. **MP4 transcode** — Playwright can only record WebM, so the capture is
+   transcoded to a real H.264 MP4 with the bundled `ffmpeg-static` binary (no
+   system install, no cloud) and the intermediate WebM is deleted. If ffmpeg is
+   unavailable, the original WebM is kept.
+
+### Output
+- `packages/agent/recordings/session-<YYYY-MM-DD_HH-mm-ss>.mp4`
+- `recordings/` is gitignored.
+
+### Demo harness
+`scripts/record-web-demo.ts` exercises the exact same recording mechanism on a
+normal site (Google → YouTube → "minecraft song" → play) without needing the
+shopping agent or an LLM endpoint — handy for verifying capture/transcode in
+isolation:
+
+```bash
+bun scripts/record-web-demo.ts
+```
+
 ## Running it
 
 ```bash
@@ -111,6 +155,10 @@ Driven by `completeRazorpayTestPayment` in `src/shopping-agent.ts`:
 bun scripts/test-local.ts --pay-now "Dark Ocean"                 # card (default)
 bun scripts/test-local.ts --pay-now --pay-method wallet "Dark Ocean"          # wallet (default olamoney)
 bun scripts/test-local.ts --pay-now --pay-method wallet --wallet olamoney "Dark Ocean"
+
+# Record the run to recordings/session-<timestamp>.mp4 (MP4 via ffmpeg-static)
+RECORD_SESSION=true bun scripts/test-local.ts "gardenia under 5000"
+RECORD_SESSION=true bun scripts/test-local.ts --pay-now "Dark Ocean"
 ```
 
 Expected tail output:
@@ -151,6 +199,7 @@ Closed 1 leftover Razorpay window(s).
 | `RAZORPAY_TEST_WALLET` | Wallet code for the wallet Test Mode flow. Default `olamoney`. Other default-enabled codes: `mobikwik`, `airtelmoney`. |
 | `RAZORPAY_TEST_OTP` | Test OTP auto-filled for OTP-gated wallets (MobiKwik). Default `123456`. |
 | Merchant store auth (e.g. `meetpatel@gmail.com`) | Injected from `apps/web/.env`. |
+| `RECORD_SESSION` | Set `true` to capture the run as an MP4 (`recordings/session-<timestamp>.mp4`). Can also be enabled per-call via `request.recordSession`. Off by default. |
 
 ## Debug logging
 
