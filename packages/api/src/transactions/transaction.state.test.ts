@@ -29,7 +29,6 @@ describe("transaction state machine", () => {
       "PAYMENT_SUCCEEDED",
       "PAYMENT_FAILED",
       "PRICE_CHANGED",
-      "DUPLICATE_REQUEST",
       "CANCELLED",
     ];
     for (const s of terminals) {
@@ -45,7 +44,6 @@ describe("transaction state machine", () => {
         "PAYMENT_SUCCEEDED",
         "PAYMENT_FAILED",
         "PRICE_CHANGED",
-        "DUPLICATE_REQUEST",
         "CANCELLED",
       ];
       for (const to of all) {

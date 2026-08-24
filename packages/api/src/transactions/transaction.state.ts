@@ -19,7 +19,6 @@ const VALID_TRANSITIONS: Record<TransactionStatus, TransactionStatus[]> = {
   PAYMENT_SUCCEEDED: [],
   PAYMENT_FAILED: [],
   PRICE_CHANGED: [],
-  DUPLICATE_REQUEST: [],
   CANCELLED: [],
 };
 

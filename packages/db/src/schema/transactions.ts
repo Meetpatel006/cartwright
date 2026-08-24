@@ -18,7 +18,6 @@ export const transactionStatus = pgEnum("transaction_status", [
   "PAYMENT_SUCCEEDED",
   "PAYMENT_FAILED",
   "PRICE_CHANGED",
-  "DUPLICATE_REQUEST",
   "CANCELLED",
 ]);
 

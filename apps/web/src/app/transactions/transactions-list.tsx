@@ -32,7 +32,6 @@ const STATUS_TONE: Record<string, string> = {
   PAYMENT_SUCCEEDED: "bg-green-500/10 text-green-600",
   PAYMENT_FAILED: "bg-red-500/10 text-red-600",
   PRICE_CHANGED: "bg-red-500/10 text-red-600",
-  DUPLICATE_REQUEST: "bg-red-500/10 text-red-600",
   CANCELLED: "bg-gray-500/10 text-gray-600",
 };
 
