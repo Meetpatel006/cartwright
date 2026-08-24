@@ -3,6 +3,7 @@ import { Input } from "@cartwright/ui/components/input";
 import { Label } from "@cartwright/ui/components/label";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "next/navigation";
+import type { Route } from "next";
 import { toast } from "sonner";
 import z from "zod";
 
@@ -10,7 +11,13 @@ import { authClient } from "@/lib/auth-client";
 
 import Loader from "./loader";
 
-export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () => void }) {
+export default function SignUpForm({
+  onSwitchToSignIn,
+  redirectTo = "/dashboard",
+}: {
+  onSwitchToSignIn: () => void;
+  redirectTo?: string;
+}) {
   const router = useRouter();
   const { isPending } = authClient.useSession();
 
@@ -29,7 +36,7 @@ export default function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () 
         },
         {
           onSuccess: () => {
-            router.push("/dashboard");
+            router.push(redirectTo as Route);
             toast.success("Sign up successful");
           },
           onError: (error) => {
