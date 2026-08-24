@@ -35,6 +35,15 @@ export const env = createEnv({
     WALLET_BALANCE_PAISE: z.coerce.number().int().positive().default(1_000_000),
     /** ISO 4217 currency of the wallet balance above (default "INR"). */
     WALLET_CURRENCY: z.string().length(3).default("INR"),
+    /** How long (minutes) a retained browser/checkout session stays usable
+     *  before it is lazily expired and its underlying browser is cleaned up. */
+    BROWSER_SESSION_TTL_MINUTES: z.coerce.number().int().positive().default(30),
+    /** How long (minutes) a shopping session stays selectable before it is
+     *  lazily expired and its retained browser session is cleaned up. */
+    SHOPPING_SESSION_TTL_MINUTES: z.coerce.number().int().positive().default(30),
+    /** Maximum execution time (seconds) for the entire shopping agent run.
+     *  Individual operation timeouts do not bound the overall workflow. */
+    AGENT_RUN_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
     /** Maximum Test Mode payment that may be opened without a user approval action. */
     PAYMENT_AUTO_APPROVAL_LIMIT_PAISE: z.coerce.number().int().nonnegative().default(150_000),
     /** Explicitly allow Cartwright to create a server-side Razorpay order when a black-box merchant has no payment UI. */
