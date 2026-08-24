@@ -1,4 +1,4 @@
-import type { PaymentDecision } from "../payment-policy";
+import type { PaymentDecision } from "../payments/payment-policy.service";
 import type { TransactionStatus } from "./transaction.state";
 
 /** How a transaction's payment is actually executed. */

@@ -5,7 +5,9 @@ import {
   getEffectivePolicy,
   type EffectivePolicy,
 } from "@cartwright/db/repositories/payment-policy.repository";
-import type { PaymentDecision } from "../payment-policy";
+
+/** The decision the policy authority may return for a proposed payment. */
+export type PaymentDecision = "auto_approve" | "user_approval" | "blocked";
 
 export interface PolicyEvaluationInput {
   userId: string;
