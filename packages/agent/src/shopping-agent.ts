@@ -5,8 +5,8 @@ import {
 } from "@browserbasehq/stagehand";
 import { randomUUID } from "node:crypto";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import { mkdir, unlink } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import ffmpegStatic from "ffmpeg-static";
 import { z } from "zod";
@@ -2011,6 +2011,27 @@ function sessionTimestamp(now = new Date()): string {
 }
 
 /**
+ * Locate this package's `recordings/` output dir without `import.meta.url`
+ * (which bundlers like webpack/Turbopack cannot resolve and warn about).
+ * Walks up from the process cwd so it works whether the agent is run from
+ * the repo root, `packages/agent`, or an app package (e.g. `apps/web`).
+ */
+function findRecordingsDir(): string {
+  let dir = process.cwd();
+  for (;;) {
+    const candidate = path.join(dir, "packages", "agent");
+    if (existsSync(path.join(candidate, "package.json"))) {
+      return path.join(candidate, "recordings");
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break; // reached filesystem root
+    dir = parent;
+  }
+  // Fallback: cwd-relative, same as before.
+  return path.resolve(process.cwd(), "packages/agent/recordings");
+}
+
+/**
  * Stagehand 4 launches real Chrome and keeps a CDP connection to it, but its
  * public `StagehandBrowser` handle hides the CDP URL in private internals. The
  * `Stagehand` instance, however, keeps the RPC client whose `cdp` transport is
@@ -2250,9 +2271,7 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
             // The first page of the first context is the tab Stagehand drives.
             pwPage = pwBrowser.contexts()[0]?.pages()[0];
             if (pwPage) {
-              const recordingsDir = fileURLToPath(
-                new URL("../recordings", import.meta.url),
-              );
+              const recordingsDir = findRecordingsDir();
               await mkdir(recordingsDir, { recursive: true });
               recordingPath = path.join(
                 recordingsDir,
