@@ -1,0 +1,4 @@
+[test]
+# Part B domain tests are pure (no Neon/Drizzle dependency). They run without the
+# DB-warming preload used by @cartwright/api so they stay fast and hermetic.
+preload = []

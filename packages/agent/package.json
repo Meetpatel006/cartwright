@@ -10,7 +10,8 @@
     }
   },
   "scripts": {
-    "test:local": "bun scripts/test-local.ts"
+    "test:local": "bun scripts/test-local.ts",
+    "test": "bun test"
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^4.0.0",
