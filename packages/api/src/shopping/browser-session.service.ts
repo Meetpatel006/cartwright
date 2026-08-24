@@ -24,6 +24,7 @@ import {
   listActiveBrowserSessionsByShoppingSession,
   listExpiredActiveBrowserSessions,
 } from "@cartwright/db/repositories/browser-session.repository";
+import { recordAuditEvent } from "../audit/audit.service";
 
 /** Disposes the live browser identified by `providerSessionId`. */
 export type BrowserSessionCloseAdapter = (
@@ -136,7 +137,18 @@ export async function closeBrowserSession(
 
   const closed = await repoCloseBrowserSession(id);
   const closeProvider = opts.closeProvider ?? closeMerchantPaymentSession;
-  await closeProvider(session.providerSessionId, session.provider).catch(() => {});
+  try {
+    await closeProvider(session.providerSessionId, session.provider);
+  } catch (error) {
+    await recordAuditEvent({
+      eventType: "BROWSER_OPERATION_FAILED",
+      userId: session.ownerUserId,
+      reason: error instanceof Error ? error.message : "Browser close failed",
+      outcome: "FAILURE",
+      failureClassification: "BROWSER_OPERATION_FAILED",
+      metadata: { browserSessionId: id, provider: session.provider },
+    });
+  }
   return closed;
 }
 
@@ -168,7 +180,19 @@ export async function cleanupExpiredBrowserSessions(
   for (const session of expired) {
     // Mark expired first so a concurrent/retried sweep never double-processes.
     await repoExpireBrowserSession(session.id);
-    await closeProvider(session.providerSessionId, session.provider).catch(() => {});
+    try {
+      await closeProvider(session.providerSessionId, session.provider);
+    } catch {
+      // Browser already gone — best-effort cleanup; the row is already expired.
+    }
+    await recordAuditEvent({
+      eventType: "BROWSER_SESSION_EXPIRED",
+      userId: session.ownerUserId,
+      shoppingSessionId: session.shoppingSessionId,
+      resultingState: "expired",
+      outcome: "SUCCESS",
+      metadata: { provider: session.provider },
+    });
     disposed += 1;
   }
   return disposed;
@@ -189,7 +213,19 @@ export async function cleanupBrowserSessionsForShoppingSession(
   let disposed = 0;
   for (const session of sessions) {
     await repoExpireBrowserSession(session.id);
-    await closeProvider(session.providerSessionId, session.provider).catch(() => {});
+    try {
+      await closeProvider(session.providerSessionId, session.provider);
+    } catch {
+      // Browser already gone — best-effort cleanup; the row is already expired.
+    }
+    await recordAuditEvent({
+      eventType: "BROWSER_SESSION_EXPIRED",
+      userId: session.ownerUserId,
+      shoppingSessionId: session.shoppingSessionId,
+      resultingState: "expired",
+      outcome: "SUCCESS",
+      metadata: { provider: session.provider, cleanupReason: "shopping_session_expired" },
+    });
     disposed += 1;
   }
   return disposed;

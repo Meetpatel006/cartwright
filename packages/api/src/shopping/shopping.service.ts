@@ -67,6 +67,7 @@ import type {
 
 import { createPurchaseTransaction } from "../transactions/transaction.service";
 import { createBrowserSession } from "./browser-session.service";
+import { recordAuditEvent } from "../audit/audit.service";
 import type { ShoppingSessionView, SelectProductOutput } from "./shopping.types";
 
 function resolveAgentBrowserMode(): "local" | "browserbase" {
@@ -229,6 +230,7 @@ export async function runShoppingSession(
     query: string;
     store?: string;
     idempotencyKey?: string;
+    correlationId?: string;
   },
   deps: ShoppingServiceDeps = {},
 ): Promise<ShoppingSessionView> {
@@ -292,7 +294,34 @@ export async function runShoppingSession(
       }),
   };
 
-  const draft = await executeShoppingRequest(intent, orchestratorDeps);
+  let draft;
+  try {
+    draft = await executeShoppingRequest(intent, orchestratorDeps);
+  } catch (error) {
+    await recordAuditEvent({
+      eventType: "DISCOVERY_FAILED",
+      userId: input.userId,
+      correlationId: input.correlationId,
+      reason: error instanceof Error ? error.message : "Discovery failed",
+      outcome: "FAILURE",
+      failureClassification: error instanceof Error && error.name === "AbortError" ? "AGENT_TIMEOUT" : "BROWSER_OPERATION_FAILED",
+      metadata: { query: input.query, store: input.store ?? null },
+    });
+    throw error;
+  }
+
+  await recordAuditEvent({
+    eventType: "DISCOVERY_COMPLETED",
+    userId: input.userId,
+    correlationId: input.correlationId,
+    outcome: "SUCCESS",
+    metadata: {
+      candidateCount: draft.normalized.length,
+      recommendationCount: draft.recommendations.length,
+      filteredCount: draft.filteredOut.length,
+      rejectedCount: draft.rejectedCandidates.length,
+    },
+  });
 
   const idempotencyKey = input.idempotencyKey;
   let session: ShoppingSessionRow;
@@ -418,9 +447,33 @@ export async function runShoppingSession(
     await updateShoppingSession(session.id, {
       checkoutSessionId: browserSession.id,
     });
+    await recordAuditEvent({
+      eventType: "BROWSER_SESSION_CREATED",
+      userId: input.userId,
+      correlationId: input.correlationId,
+      shoppingSessionId: session.id,
+      outcome: "SUCCESS",
+      metadata: { provider: mode, browserSessionId: browserSession.id },
+    });
   }
 
   const persisted = await getShoppingSessionById(session.id);
+
+  await recordAuditEvent({
+    eventType: "SHOPPING_SESSION_CREATED",
+    userId: input.userId,
+    correlationId: input.correlationId,
+    shoppingSessionId: session.id,
+    resultingState: "recommended",
+    outcome: "SUCCESS",
+    metadata: {
+      rawQuery: input.query,
+      store: input.store ?? null,
+      candidateCount: draft.normalized.length,
+      recommendationCount: draft.recommendations.length,
+    },
+  });
+
   return mapSessionToView(persisted ?? session, draft.recommendations);
 }
 
@@ -446,8 +499,17 @@ export async function getReachableShoppingSession(
     session.expiresAt.getTime() <= Date.now() &&
     canExpireShoppingSession(session.status)
   ) {
+    const previousStatus = session.status;
     await expireShoppingSession(session.id);
     await cleanupBrowserSessionsForShoppingSession(session.id);
+    await recordAuditEvent({
+      eventType: "SHOPPING_SESSION_EXPIRED",
+      userId,
+      shoppingSessionId: session.id,
+      previousState: previousStatus,
+      resultingState: "expired",
+      outcome: "SUCCESS",
+    });
     return undefined;
   }
 
@@ -469,9 +531,18 @@ export async function cleanupExpiredShoppingSessions(
   let expiredCount = 0;
   for (const session of expired) {
     // Validate the transition through the centralized machine before writing.
+    const previousStatus = session.status;
     assertExpireShoppingSession(session.status);
     await expireShoppingSession(session.id);
     await cleanupBrowserSessionsForShoppingSession(session.id, opts);
+    await recordAuditEvent({
+      eventType: "SHOPPING_SESSION_EXPIRED",
+      userId: session.userId,
+      shoppingSessionId: session.id,
+      previousState: previousStatus,
+      resultingState: "expired",
+      outcome: "SUCCESS",
+    });
     expiredCount += 1;
   }
   return expiredCount;
@@ -489,6 +560,7 @@ export async function selectProductForSession(
     sessionId: string;
     productId: string;
     idempotencyKey?: string;
+    correlationId?: string;
   },
   deps: ShoppingServiceDeps = {},
 ): Promise<SelectProductOutput> {
@@ -518,7 +590,18 @@ export async function selectProductForSession(
   // Centralized lifecycle guard: only a `recommended` session may be selected.
   // `converted`/`expired` (and any other non-selectable state) are rejected by
   // the state machine, with the original user-facing messages preserved.
-  if (!canTransitionShoppingSession(session.status, "selected")) {
+  if (!canTransitionShoppingSession(session.status, "selected")) {      await recordAuditEvent({
+        eventType: "PRODUCT_SELECTED",
+        userId: input.userId,
+        correlationId: input.correlationId,
+        shoppingSessionId: session.id,
+        previousState: session.status,
+        outcome: "FAILURE",
+        failureClassification: session.status === "expired" ? "SESSION_EXPIRED" : "INVALID_STATE_TRANSITION",
+        reason: session.status === "converted"
+          ? "Session already converted"
+          : `Session in non-selectable state: ${session.status}`,
+      });
     const message =
       session.status === "converted"
         ? "This shopping session has already been converted to a purchase."
@@ -595,6 +678,21 @@ export async function selectProductForSession(
     }
   }
 
+  // Record the authoritative amount resolution for the audit trail.
+  if (session.checkoutSessionId) {
+    await recordAuditEvent({
+      eventType: "AUTHORITATIVE_AMOUNT_RESOLVED",
+      userId: input.userId,
+      correlationId: input.correlationId,
+      shoppingSessionId: session.id,
+      metadata: {
+        discoveredAmount: plan.expectedAmountInMinor,
+        chargedAmountInMinor,
+        source: chargedAmountInMinor !== plan.expectedAmountInMinor ? "verified" : "provisional",
+      },
+    });
+  }
+
   assertShoppingSessionTransition(session.status, "selected");
   await updateShoppingSession(session.id, {
     status: "selected",
@@ -608,6 +706,7 @@ export async function selectProductForSession(
     amountInMinor: chargedAmountInMinor,
     currency: chargedCurrency,
     browserSessionId: session.checkoutSessionId ?? undefined,
+    correlationId: input.correlationId,
   });
 
   // Centralized lifecycle: selected -> converted (handed to Part A's gate).
@@ -615,6 +714,22 @@ export async function selectProductForSession(
   await updateShoppingSession(session.id, {
     status: "converted",
     transactionId: purchase.transactionId,
+  });
+
+  await recordAuditEvent({
+    eventType: "PRODUCT_SELECTED",
+    userId: input.userId,
+    correlationId: input.correlationId,
+    shoppingSessionId: session.id,
+    transactionId: purchase.transactionId,
+    resultingState: "converted",
+    outcome: "SUCCESS",
+    metadata: {
+      productId: input.productId,
+      transactionId: purchase.transactionId,
+      chargedAmountInMinor,
+      chargedCurrency,
+    },
   });
 
   return { plan, purchase };

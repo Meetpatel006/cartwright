@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getCandidatesForSession } from "@cartwright/db/repositories/shopping.repository";
 
 import { protectedProcedure, router } from "../index";
+import { generateCorrelationId } from "../audit/audit.service";
 import {
   getReachableShoppingSession,
   runShoppingSession,
@@ -28,11 +29,13 @@ export const shoppingRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const correlationId = generateCorrelationId();
       return runShoppingSession({
         userId: ctx.session.user.id,
         query: input.query,
         store: input.store,
         idempotencyKey: input.idempotencyKey,
+        correlationId,
       });
     }),
 
@@ -81,11 +84,13 @@ export const shoppingRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const correlationId = generateCorrelationId();
       return selectProductForSession({
         userId: ctx.session.user.id,
         sessionId: input.sessionId,
         productId: input.productId,
         idempotencyKey: input.idempotencyKey,
+        correlationId,
       });
     }),
 });
