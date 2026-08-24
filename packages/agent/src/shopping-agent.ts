@@ -12,6 +12,8 @@ import ffmpegStatic from "ffmpeg-static";
 import { z } from "zod";
 
 import { createOpenAICompatibleLLM, type CustomModelEndpoint } from "./custom-llm";
+import { liveBrowserSessionRegistry } from "./browser-session-registry";
+import { parseCheckoutTotal } from "./checkout-total";
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -193,51 +195,10 @@ function resolveAbsoluteUrl(url: string, base: string): string {
 }
 
 // ── Budget parsing (currency-aware) ──────────────────────────────────────────
-
-export interface ParsedBudget {
-  /** Numeric budget in the currency's MINOR units (e.g. 5000 for $50.00, 1000000 for ₹10,000). */
-  amountInMinor: number;
-  /** ISO 4217 currency code, e.g. "USD", "INR", "EUR". */
-  currency: string;
-}
-
-const CURRENCY_HINTS: Array<{ re: RegExp; code: string }> = [
-  { re: /(?:₹|rs\.?|inr)/i, code: "INR" },
-  { re: /(?:\$|usd)/i, code: "USD" },
-  { re: /(?:€|eur)/i, code: "EUR" },
-  { re: /(?:£|gbp)/i, code: "GBP" },
-  { re: /(?:¥|jpy)/i, code: "JPY" },
-  { re: /chf/i, code: "CHF" },
-];
-
-function detectCurrency(query: string, defaultCurrency = "USD"): string {
-  for (const { re, code } of CURRENCY_HINTS) if (re.test(query)) return code;
-  // No explicit symbol — callers may provide the merchant's known currency.
-  return defaultCurrency;
-}
-
-/**
- * Parse a budget from a natural-language query.
- * Handles: "$50", "under $100", "under 10k inr", "below ₹30000", "less than 500 usd".
- * Returns the value in MINOR units (major × 100) plus the detected ISO currency,
- * or null when no budget is found.
- */
-export function parseBudget(query: string, defaultCurrency = "USD"): ParsedBudget | null {
-  const match = query.match(
-    /(?:under|below|less than|max|upto|up to)\s*(?:rs\.?|₹|inr|\$|usd|eur|€|gbp|£|¥|chf)?\s*([\d.,]+)\s*(k|lakh|l|cr|m|million)?\s*(?:rs\.?|₹|inr|\$|usd|eur|€|gbp|£|¥|chf)?/i,
-  );
-  if (!match || match[1] === undefined) return null;
-  const value = Number.parseFloat(match[1].replace(/,/g, ""));
-  if (Number.isNaN(value)) return null;
-  const suffix = match[2]?.toLowerCase();
-  const multiplier =
-    suffix === "k" ? 1_000 : suffix === "lakh" || suffix === "l" ? 100_000 :
-    suffix === "cr" ? 10_000_000 : suffix === "m" || suffix === "million" ? 1_000_000 : 1;
-  return {
-    amountInMinor: Math.round(value * multiplier * 100),
-    currency: detectCurrency(query, defaultCurrency),
-  };
-}
+// `ParsedBudget` and `parseBudget` now live in `request/budget.ts` so the Part B
+// request parser can reuse them without pulling in the Stagehand runtime. They
+// are re-exported here to keep the `@cartwright/agent` public surface stable.
+export { parseBudget, type ParsedBudget } from "./request/budget";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -274,6 +235,9 @@ export interface ShoppingRequest {
    *  Playwright's native page.screencast() (WebM), transcoded to MP4 afterward.
    *  Also toggled via RECORD_SESSION=true. */
   recordSession?: boolean;
+  /** AbortSignal for top-level timeout/cancellation. When the signal fires,
+   *  the agent stops browser work and returns with an error. */
+  signal?: AbortSignal;
 }
 
 export interface CheckoutStep {
@@ -309,6 +273,9 @@ export interface BasketItem {
 
 export interface ShoppingResult {
   sessionId?: string;
+  /** Provider session handle (Browserbase session id when available, else the
+   *  local registry key). Persisted by the API for recovery/reconnect. */
+  providerSessionId?: string;
   query: string;
   store: string;
   currency: string;
@@ -450,7 +417,7 @@ type AgentBrowserContext = AgentBrowser["context"];
 type AgentPage = Exclude<Awaited<ReturnType<AgentBrowserContext["pages"]>>[number], undefined>;
 type BrowserRoot = Pick<AgentPage, "locator">;
 
-interface MerchantPaymentSession {
+export interface MerchantPaymentSession {
   browser: AgentBrowser;
   stagehand: Stagehand;
   page: AgentPage;
@@ -462,8 +429,6 @@ interface MerchantPaymentSession {
     path: string;
   };
 }
-
-const merchantPaymentSessions = new Map<string, MerchantPaymentSession>();
 
 /**
  * Finalize the recording attached to a retained session (if any) BEFORE
@@ -488,22 +453,35 @@ async function stopSessionRecording(session: MerchantPaymentSession): Promise<vo
   console.log(`[agent] session recording saved → ${session.recording.path}`);
 }
 
+/** Read the documented Browserbase session id (undefined for LOCAL runs). */
+function getProviderSessionId(stagehand: Stagehand): string | undefined {
+  return (stagehand as { browserbaseSessionID?: string }).browserbaseSessionID;
+}
+
+export interface RetainedSession {
+  /** Internal registry key (handle to the live instance in this process). */
+  sessionId: string;
+  /** Provider session handle for durable recovery/reconnect. */
+  providerSessionId: string;
+}
+
 function retainMerchantPaymentSession(
   browser: AgentBrowser,
   stagehand: Stagehand,
   page: AgentPage,
   recording?: MerchantPaymentSession["recording"],
   requestedId?: string,
-): string {
+): RetainedSession {
   const sessionId = requestedId ?? `merchant-${randomUUID()}`;
-  merchantPaymentSessions.set(sessionId, {
+  const providerSessionId = getProviderSessionId(stagehand) ?? sessionId;
+  liveBrowserSessionRegistry.register(sessionId, {
     browser,
     stagehand,
     page,
     createdAt: Date.now(),
     ...(recording ? { recording } : {}),
   });
-  return sessionId;
+  return { sessionId, providerSessionId };
 }
 
 async function actWithFallback(
@@ -1478,9 +1456,8 @@ async function completeRazorpayTestWalletPayment(
 
 /** Dispose a retained merchant payment session, closing its browser + Stagehand. */
 export async function closeMerchantPaymentSession(sessionId: string): Promise<void> {
-  const session = merchantPaymentSessions.get(sessionId);
+  const session = liveBrowserSessionRegistry.remove(sessionId);
   if (!session) return;
-  merchantPaymentSessions.delete(sessionId);
   // Finalize the screencast BEFORE tearing down Stagehand so the .webm is saved.
   await stopSessionRecording(session);
   await session.stagehand.close().catch(() => {});
@@ -1488,34 +1465,78 @@ export async function closeMerchantPaymentSession(sessionId: string): Promise<vo
 }
 
 /**
+ * Reconnect to a retained Browserbase session by its durable session id.
+ *
+ * This only works for sessions created with `keepAlive: true` (set on every
+ * Browserbase launch in this module), which per Stagehand/Browserbase docs
+ * keeps the cloud browser alive after `close()`/process exit so it can be
+ * re-attached with `browserbase.connect({ sessionId })`. The reconnected
+ * instance is registered under the PROVIDER session id, which is exactly the
+ * handle persisted in the DB `browser_sessions.provider_session_id` column —
+ * so recovery works after a restart or from another API process.
+ *
+ * Returns true when a live handle is now registered under `providerSessionId`.
+ * Best-effort: any failure returns false (callers degrade to not_found).
+ */
+export async function reconnectMerchantPaymentSession(
+  providerSessionId: string,
+  opts: { browserbaseApiKey: string },
+): Promise<boolean> {
+  if (liveBrowserSessionRegistry.has(providerSessionId)) return true;
+  try {
+    const browser = await browserbase.connect({
+      apiKey: opts.browserbaseApiKey,
+      sessionId: providerSessionId,
+    });
+    const stagehand = await Stagehand.create({ browser, cache: true });
+    const page = (await browser.context.pages())[0];
+    if (!page) {
+      await stagehand.close().catch(() => {});
+      await browser.close().catch(() => {});
+      return false;
+    }
+    liveBrowserSessionRegistry.register(providerSessionId, {
+      browser,
+      stagehand,
+      page,
+      createdAt: Date.now(),
+    });
+    return true;
+  } catch {
+    // Session gone (released/expired/timed out) or provider error.
+    return false;
+  }
+}
+
+/**
  * Best-effort read of the merchant's *current* checkout total from a retained
  * browser session. Returns null when the session is missing, expired, or the
- * total is unreadable. Used only to re-confirm the price before executing a
- * payment — inability to read never blocks the transaction.
+ * total is unreadable. The amount is reported in the page's own currency (not
+ * assumed INR) so price re-validation works for any merchant currency. Used only
+ * to re-confirm the price before executing a payment — inability to read never
+ * blocks the transaction.
  */
 export async function getSessionCheckoutTotal(
   sessionId: string,
 ): Promise<{ amountInMinor: number; currency: string } | null> {
-  const session = merchantPaymentSessions.get(sessionId);
+  const session = liveBrowserSessionRegistry.get(sessionId);
   if (!session) return null;
   if (Date.now() - session.createdAt > 15 * 60_000) return null;
   try {
-    const total = await Promise.race<string | null>([
+    const text = await Promise.race<string | null>([
       session.page.evaluate(`
         (() => {
-          const text = (document.body?.innerText || "").replace(/\\s+/g, " ").trim();
-          const m = text.match(/(?:₹|rs\\.?|inr|\\$|usd|eur|€|gbp|£|¥|jpy|chf)\\s?([\\d,]+(?:\\.\\d{1,2})?)/i);
-          return m?.[1] ?? null;
+          const t = (document.body?.innerText || "").replace(/\\s+/g, " ").trim();
+          return t || null;
         })()
       `),
       new Promise<null>((_, reject) =>
         setTimeout(() => reject(new Error("checkout total read timed out")), 5_000),
       ),
     ]);
-    if (!total) return null;
-    const num = Number.parseFloat(String(total).replace(/,/g, ""));
-    if (Number.isNaN(num) || num <= 0) return null;
-    return { amountInMinor: Math.round(num * 100), currency: "INR" };
+    if (!text) return null;
+    // Pure, currency-aware parse (unit-tested in checkout-total.test.ts).
+    return parseCheckoutTotal(text);
   } catch {
     return null;
   }
@@ -1559,9 +1580,22 @@ async function clickPaymentGate(page: AgentPage): Promise<PaymentGate | undefine
   return (await clickVisibleText(page, pattern).catch(() => false)) ? gate : undefined;
 }
 
+export interface MerchantPaymentDriveOptions {
+  completeTestPayment?: boolean;
+  method?: "card" | "wallet";
+  /**
+   * Provider that owns the retained session ("local" | "browserbase"). When
+   * "browserbase", a session missing from THIS process is reconnected using the
+   * durable Browserbase session id instead of failing with not_found.
+   */
+  provider?: string;
+  /** Browserbase API key used for the reconnect above. */
+  browserbaseApiKey?: string;
+}
+
 export async function approveMerchantPayment(
   sessionId: string,
-  options: { completeTestPayment?: boolean; method?: "card" | "wallet" } = {},
+  options: MerchantPaymentDriveOptions = {},
 ): Promise<{
   status: "opened" | "submitted" | "expired" | "not_found" | "failed";
   message: string;
@@ -1569,10 +1603,20 @@ export async function approveMerchantPayment(
   orderConfirmation?: OrderConfirmation | null;
   closedWindows?: number;
 }> {
-  const session = merchantPaymentSessions.get(sessionId);
+  let session = liveBrowserSessionRegistry.get(sessionId);
+  if (!session && options.provider === "browserbase" && options.browserbaseApiKey) {
+    // Durability path: the live handle died with the creating process, but the
+    // Browserbase cloud session survives (keepAlive). Reconnect to the SAME
+    // session id and re-register it under its providerSessionId so subsequent
+    // lookups hit the registry directly.
+    const reconnected = await reconnectMerchantPaymentSession(sessionId, {
+      browserbaseApiKey: options.browserbaseApiKey,
+    });
+    if (reconnected) session = liveBrowserSessionRegistry.get(sessionId);
+  }
   if (!session) return { status: "not_found", message: "Merchant checkout session was not found or has expired." };
   if (Date.now() - session.createdAt > 15 * 60_000) {
-    merchantPaymentSessions.delete(sessionId);
+    liveBrowserSessionRegistry.remove(sessionId);
     await stopSessionRecording(session);
     await session.stagehand.close().catch(() => {});
     await session.browser.close().catch(() => {});
@@ -2098,7 +2142,19 @@ const SESSION_CURSOR_OVERLAY = `
 })();
 `;
 
+/**
+ * Throw if the caller-provided abort signal has fired. Called before each major
+ * blocking operation so the overall workflow respects the top-level timeout.
+ */
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException("Shopping agent run was cancelled", "AbortError");
+  }
+}
+
 export async function runShoppingAgent(request: ShoppingRequest): Promise<ShoppingResult> {
+  throwIfAborted(request.signal);
+
   const store = resolveStore(request.store);
   const result: ShoppingResult = {
     query: request.query,
@@ -2111,6 +2167,8 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
   let browser: Awaited<ReturnType<typeof localBrowser.launch>>;
   let keepCheckoutSession = false;
 
+  throwIfAborted(request.signal);
+
   if (request.mode === "browserbase") {
     if (!request.browserbaseApiKey) {
       result.error = "BROWSERBASE_API_KEY is not set; cannot run the agent on Browserbase.";
@@ -2118,6 +2176,10 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
     }
     browser = await browserbase.launch({
       apiKey: request.browserbaseApiKey,
+      // Keep the cloud session alive after close()/process exit so the durable
+      // `browser_sessions.provider_session_id` can be re-attached later via
+      // `browserbase.connect({ sessionId })` (Stagehand/Browserbase docs).
+      keepAlive: true,
     });
     result.sessionId = browser.sessionId;
   } else {
@@ -2233,6 +2295,8 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       // ── Step 0: Ensure a logged-in account (so the order isn't a guest) ──
       await ensureAccount(page, stagehand, store);
 
+      throwIfAborted(request.signal);
+
       if (request.basket?.length && store.name === "Raven Scents") {
         const basketResult = await runRavenBasket(page, browser.context, request.basket);
         result.matches = basketResult.matches;
@@ -2240,7 +2304,7 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
         result.basket = basketResult.basket;
         result.checkout = basketResult.checkout;
         if (request.preserveCheckoutSession && result.checkout.paymentGate) {
-          result.sessionId = retainMerchantPaymentSession(
+          const retained = retainMerchantPaymentSession(
             browser,
             stagehand,
             page,
@@ -2248,10 +2312,14 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
               ? { pwBrowser, pwPage, path: recordingPath }
               : undefined,
           );
+          result.sessionId = retained.sessionId;
+          result.providerSessionId = retained.providerSessionId;
           keepCheckoutSession = true;
         }
         return result;
       }
+
+      throwIfAborted(request.signal);
 
       // ── Step 1: Navigate to search results ──────────────────────────────
       if (store.searchMode === "url" && store.searchUrlTemplate) {
@@ -2273,6 +2341,8 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       }
 
       await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+
+      throwIfAborted(request.signal);
 
       // ── Step 2: Extract products ────────────────────────────────────────
       const extracted = await stagehand.extract(
@@ -2324,13 +2394,15 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       // Pick the cheapest match as the purchase candidate.
       result.picked = [...result.matches].sort((a, b) => a.priceValue - b.priceValue)[0];
 
+      throwIfAborted(request.signal);
+
       // ── Step 5: On-site add-to-cart / checkout (no payment) ────────────
       const doCheckout = request.checkout !== false && !!result.picked?.url;
       if (doCheckout && result.picked && result.picked.url) {
         console.log(`[agent] performing on-site checkout actions for: ${result.picked.name}`);
         result.checkout = await runCheckout(page, browser.context, stagehand, result.picked.url);
         if (request.preserveCheckoutSession && result.checkout.paymentGate) {
-          result.sessionId = retainMerchantPaymentSession(
+          const retained = retainMerchantPaymentSession(
             browser,
             stagehand,
             page,
@@ -2338,6 +2410,8 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
               ? { pwBrowser, pwPage, path: recordingPath }
               : undefined,
           );
+          result.sessionId = retained.sessionId;
+          result.providerSessionId = retained.providerSessionId;
           keepCheckoutSession = true;
         }
       } else if (request.checkout !== false && result.picked && !result.picked.url) {
