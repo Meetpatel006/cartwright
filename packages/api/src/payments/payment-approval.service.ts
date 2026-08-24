@@ -101,6 +101,10 @@ export async function approveTransaction(
         eventType: "PRICE_CHANGED",
         transactionId: transaction.id,
         userId: input.userId,
+        previousState: transaction.status,
+        resultingState: "PRICE_CHANGED",
+        outcome: "FAILURE",
+        failureClassification: "PRICE_CHANGED",
         reason: recheck.reason,
       });
     }
@@ -127,16 +131,20 @@ export async function approveTransaction(
         failureReason: reason,
       });
       if (updated) {
-        await recordAuditEvent({
-          eventType: "PRICE_CHANGED",
-          transactionId: transaction.id,
-          userId: input.userId,
-          reason,
-        });
-      }
-      await releaseReservation(transaction.id);
-      throw new PriceChangedError(reason!);
+      await recordAuditEvent({
+        eventType: "PRICE_CHANGED",
+        transactionId: transaction.id,
+        userId: input.userId,
+        previousState: transaction.status,
+        resultingState: "PRICE_CHANGED",
+        outcome: "FAILURE",
+        failureClassification: "PRICE_CHANGED",
+        reason,
+      });
     }
+    await releaseReservation(transaction.id);
+    throw new PriceChangedError(reason!);
+  }
   }
 
   if (fromAwaiting) {
@@ -207,6 +215,9 @@ export async function approveTransaction(
         eventType: "PAYMENT_SUCCEEDED",
         transactionId: transaction.id,
         userId: input.userId,
+        previousState: "PAYMENT_PROCESSING",
+        resultingState: "PAYMENT_SUCCEEDED",
+        outcome: "SUCCESS",
         reason: decision.reason,
         metadata: {
           merchantStatus: merchantResult.status,
@@ -223,9 +234,13 @@ export async function approveTransaction(
 
     if (decision.outcome === "pending") {
       await recordAuditEvent({
-        eventType: "PAYMENT_VERIFICATION_STARTED",
+        eventType: "PAYMENT_PENDING",
         transactionId: transaction.id,
         userId: input.userId,
+        previousState: "PAYMENT_PROCESSING",
+        resultingState: "PAYMENT_PROCESSING",
+        outcome: "PENDING",
+        failureClassification: undefined,
         reason: decision.reason,
         metadata: {
           merchantStatus: merchantResult.status,

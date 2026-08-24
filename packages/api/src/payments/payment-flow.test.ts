@@ -494,8 +494,76 @@ describe("payment flow (db-backed)", () => {
         .select()
         .from(auditEvents)
         .where(eq(auditEvents.transactionId, res.transactionId));
-      expect(events.some((e) => e.eventType === "PAYMENT_VERIFICATION_STARTED")).toBe(true);
+      expect(events.some((e) => e.eventType === "PAYMENT_PENDING")).toBe(true);
       expect(events.some((e) => e.eventType === "PAYMENT_SUCCEEDED")).toBe(false);
+    });
+  });
+
+  // ── Part D: provisional amount authority invariant ─────────────────────────
+  // When the live merchant checkout total is unavailable at approval time,
+  // the price revalidation permits the transaction to proceed with the
+  // previously-approved amount. This is SAFE because:
+  //   1. The amount was already validated by the policy engine at creation
+  //      time (maxTransactionAmount, maxTotalSpending, currency).
+  //   2. The amount was already validated again at approval time (policy
+  //      re-check in approveTransaction).
+  //   3. The approval re-validates policy against the same persisted amount.
+  // A live read failure does NOT bypass the policy — it just means the
+  // re-validation cannot detect a price increase since approval.
+  test("provisional amount fallback is policy-gated: approval with unavailable live checkout uses previously approved amount", async () => {
+    await withTestUser(async (userId) => {
+      const browserSession = await createBrowserSession({
+        ownerUserId: userId,
+        provider: "local",
+        providerSessionId: `prov-auth-${userId}`,
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+      });
+
+      const res = await createPurchaseTransaction({
+        userId,
+        idempotencyKey: `auth-inv-1`,
+        amountInMinor: 100_000,
+        currency: "INR",
+        browserSessionId: browserSession.id,
+      });
+
+      // The transaction was created with the amount above (auto-approved
+      // because it's within the test limit). The policy already validated it.
+      expect(res.status).toBe("APPROVED");
+      expect(res.amountInMinor).toBe(100_000);
+
+      // At approval time, the live checkout total is unavailable.
+      // Price revalidation must NOT block — it falls back to the approved amount.
+      const result = await approveTransaction(
+        { transactionId: res.transactionId, userId },
+        {
+          // Simulate: live checkout total unavailable (agent session gone)
+          readLiveCheckoutTotal: async () => null,
+          closeProvider: async () => {},
+          driveMerchantPayment: async () => ({
+            status: "submitted" as const,
+            message: "submitted",
+            orderConfirmation: null,
+          }),
+        },
+      );
+
+      // Payment proceeds using the previously-approved amount.
+      // The amount is NOT re-verified from the merchant page (it can't be),
+      // but the policy already validated it at creation AND approval time.
+      expect(result.result.amountInMinor).toBe(100_000);
+
+      // Verify the policy was indeed the gate: if we try with an amount
+      // that exceeds the policy limit, it would have been blocked at creation.
+      await expect(
+        createPurchaseTransaction({
+          userId,
+          idempotencyKey: `auth-inv-blocked`,
+          amountInMinor: 2_000_000, // Exceeds limit
+          currency: "INR",
+          browserSessionId: browserSession.id,
+        }),
+      ).resolves.toMatchObject({ status: "POLICY_BLOCKED" });
     });
   });
 

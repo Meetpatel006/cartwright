@@ -80,12 +80,30 @@ export async function handleRazorpayWebhook(
 ): Promise<WebhookHandleResult> {
   const secret = env.RAZORPAY_WEBHOOK_SECRET;
   if (!secret) {
+    await recordAuditEvent({
+      eventType: "WEBHOOK_FAILED",
+      outcome: "FAILURE",
+      failureClassification: "CONFIGURATION_MISSING",
+      reason: "Razorpay webhook secret not configured",
+    });
     throw new PaymentVerificationError("Razorpay webhook secret is not configured.");
   }
   if (!signature) {
+    await recordAuditEvent({
+      eventType: "WEBHOOK_FAILED",
+      outcome: "FAILURE",
+      failureClassification: "WEBHOOK_VERIFICATION_FAILED",
+      reason: "Missing Razorpay webhook signature",
+    });
     throw new PaymentVerificationError("Missing Razorpay webhook signature.");
   }
   if (!verifyWebhookSignature(secret, rawBody, signature)) {
+    await recordAuditEvent({
+      eventType: "WEBHOOK_FAILED",
+      outcome: "FAILURE",
+      failureClassification: "WEBHOOK_VERIFICATION_FAILED",
+      reason: "Razorpay webhook signature verification failed",
+    });
     throw new PaymentVerificationError("Razorpay webhook signature verification failed.");
   }
 
@@ -141,8 +159,30 @@ export async function handleRazorpayWebhook(
     }
   }
 
-  const success = await finalizeSettlement(transaction, payment);
-  return { handled: success, transactionId: transaction.id };
+  try {
+    const success = await finalizeSettlement(transaction, payment);
+    if (success) {
+      await recordAuditEvent({
+        eventType: "WEBHOOK_PROCESSED",
+        transactionId: transaction.id,
+        userId: transaction.userId,
+        outcome: "SUCCESS",
+        metadata: { event, orderId, paymentId: paymentId ?? null },
+      });
+    }
+    return { handled: success, transactionId: transaction.id };
+  } catch (error) {
+    await recordAuditEvent({
+      eventType: "WEBHOOK_FAILED",
+      transactionId: transaction.id,
+      userId: transaction.userId,
+      outcome: "FAILURE",
+      failureClassification: "WEBHOOK_PROCESSING_FAILED",
+      reason: error instanceof Error ? error.message : "Webhook processing failed",
+      metadata: { event, orderId, paymentId: paymentId ?? null },
+    });
+    throw error;
+  }
 }
 
 async function finalizeSettlement(
