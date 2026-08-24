@@ -21,11 +21,13 @@ import {
   verifyPayment,
 } from "../transactions/transaction.service";
 import {
+  InvalidTransactionStateError,
   PriceChangedError,
   TransactionOwnershipError,
 } from "../transactions/transaction.errors";
 import { approveTransaction } from "../payments/payment-approval.service";
 import { handleRazorpayWebhook } from "./razorpay-webhook.service";
+import { createBrowserSession } from "../shopping/browser-session.service";
 
 /** Stable secret matching the one pinned in test-setup.ts. */
 const WEBHOOK_SECRET = "test-webhook-secret";
@@ -344,6 +346,197 @@ describe("payment flow (db-backed)", () => {
       const second = await handleRazorpayWebhook(rawBody, signature);
       expect(second.handled).toBe(true);
       expect(second.reason).toContain("Already processed");
+    });
+  });
+
+  // ── Task 1: merchant-UI path must reach a REAL terminal state ─────────────
+  // The agent's returned status is never proof of payment; success requires the
+  // independently captured merchant order-confirmation page. These tests drive
+  // approveTransaction through its injected adapters (the production defaults
+  // are the real agent functions) against the real DB state machine.
+  test("merchant-UI payment with independent confirmation reaches PAYMENT_SUCCEEDED", async () => {
+    await withTestUser(async (userId) => {
+      const browserSession = await createBrowserSession({
+        ownerUserId: userId,
+        provider: "local",
+        providerSessionId: `prov-confirm-${userId}`,
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+      });
+      const res = await createPurchaseTransaction({
+        userId,
+        idempotencyKey: "mui-ok-1",
+        amountInMinor: 100_000,
+        currency: "INR",
+        browserSessionId: browserSession.id,
+      });
+      expect(res.status).toBe("APPROVED");
+
+      const result = await approveTransaction(
+        { transactionId: res.transactionId, userId },
+        {
+          readLiveCheckoutTotal: async () => null,
+          closeProvider: async () => {},
+          driveMerchantPayment: async () => ({
+            status: "submitted" as const,
+            message: "submitted; awaiting merchant server confirmation.",
+            orderConfirmation: {
+              url: "http://localhost:5173/order-confirmation",
+              title: "Order Confirmed | Raven Scents",
+              text: "Thank you for your order",
+              orderId: "RVN52FLH8XO1",
+              amount: null,
+              statusText: "Order Confirmed",
+            },
+          }),
+        },
+      );
+
+      // Real terminal state, not a stranded PAYMENT_PROCESSING row.
+      expect(result.result.status).toBe("PAYMENT_SUCCEEDED");
+
+      const reservation = await getReservationByTransactionId(res.transactionId);
+      expect(reservation?.status).toBe("SETTLED");
+
+      const events = await db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.transactionId, res.transactionId));
+      const success = events.find((e) => e.eventType === "PAYMENT_SUCCEEDED");
+      expect(success).toBeDefined();
+      // The audit must cite the INDEPENDENT confirmation, not the agent's word.
+      expect(success?.reason).toContain("Independently confirmed");
+    });
+  });
+
+  test("merchant-UI drive failure reaches PAYMENT_FAILED and releases the reservation", async () => {
+    await withTestUser(async (userId) => {
+      const browserSession = await createBrowserSession({
+        ownerUserId: userId,
+        provider: "local",
+        providerSessionId: `prov-fail-${userId}`,
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+      });
+      const res = await createPurchaseTransaction({
+        userId,
+        idempotencyKey: "mui-fail-1",
+        amountInMinor: 100_000,
+        currency: "INR",
+        browserSessionId: browserSession.id,
+      });
+
+      // The old code recorded PAYMENT_SUCCEEDED for exactly this outcome.
+      const result = await approveTransaction(
+        { transactionId: res.transactionId, userId },
+        {
+          readLiveCheckoutTotal: async () => null,
+          closeProvider: async () => {},
+          driveMerchantPayment: async () => ({
+            status: "not_found" as const,
+            message: "Merchant checkout session was not found or has expired.",
+          }),
+        },
+      );
+
+      expect(result.result.status).toBe("PAYMENT_FAILED");
+      expect(result.result.failureReason).toContain("did not complete");
+
+      const reservation = await getReservationByTransactionId(res.transactionId);
+      expect(reservation?.status).toBe("RELEASED");
+
+      const policy = await getPolicyRow(userId);
+      expect(policy?.consumedInMinor).toBe(0);
+
+      const events = await db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.transactionId, res.transactionId));
+      expect(events.some((e) => e.eventType === "PAYMENT_FAILED")).toBe(true);
+      // And no false success anywhere in the trail.
+      expect(events.some((e) => e.eventType === "PAYMENT_SUCCEEDED")).toBe(false);
+    });
+  });
+
+  test("submitted-but-unconfirmed stays PAYMENT_PROCESSING with the reservation held", async () => {
+    await withTestUser(async (userId) => {
+      const browserSession = await createBrowserSession({
+        ownerUserId: userId,
+        provider: "local",
+        providerSessionId: `prov-pend-${userId}`,
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+      });
+      const res = await createPurchaseTransaction({
+        userId,
+        idempotencyKey: "mui-pend-1",
+        amountInMinor: 100_000,
+        currency: "INR",
+        browserSessionId: browserSession.id,
+      });
+
+      const result = await approveTransaction(
+        { transactionId: res.transactionId, userId },
+        {
+          readLiveCheckoutTotal: async () => null,
+          closeProvider: async () => {},
+          driveMerchantPayment: async () => ({
+            status: "submitted" as const,
+            message: "submitted",
+            orderConfirmation: null,
+          }),
+        },
+      );
+
+      // Honest pending state — no fake success, no premature settle.
+      expect(result.result.status).toBe("PAYMENT_PROCESSING");
+      const reservation = await getReservationByTransactionId(res.transactionId);
+      expect(reservation?.status).toBe("RESERVED");
+
+      const events = await db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.transactionId, res.transactionId));
+      expect(events.some((e) => e.eventType === "PAYMENT_VERIFICATION_STARTED")).toBe(true);
+      expect(events.some((e) => e.eventType === "PAYMENT_SUCCEEDED")).toBe(false);
+    });
+  });
+
+  test("a second approval click cannot re-drive a processed merchant payment", async () => {
+    await withTestUser(async (userId) => {
+      const browserSession = await createBrowserSession({
+        ownerUserId: userId,
+        provider: "local",
+        providerSessionId: `prov-replay-${userId}`,
+        expiresAt: new Date(Date.now() + 10 * 60_000),
+      });
+      const res = await createPurchaseTransaction({
+        userId,
+        idempotencyKey: "mui-replay-1",
+        amountInMinor: 100_000,
+        currency: "INR",
+        browserSessionId: browserSession.id,
+      });
+
+      let drives = 0;
+      const deps = {
+        readLiveCheckoutTotal: async () => null,
+        closeProvider: async () => {},
+        driveMerchantPayment: async () => {
+          drives += 1;
+          return {
+            status: "not_found" as const,
+            message: "gone",
+          };
+        },
+      };
+
+      await approveTransaction({ transactionId: res.transactionId, userId }, deps);
+      expect(drives).toBe(1);
+
+      // The first drive moved the row to PAYMENT_PROCESSING/PAYMENT_FAILED, so
+      // a replay is rejected by the entry-state guard before any browser work.
+      await expect(
+        approveTransaction({ transactionId: res.transactionId, userId }, deps),
+      ).rejects.toBeInstanceOf(InvalidTransactionStateError);
+      expect(drives).toBe(1);
     });
   });
 });

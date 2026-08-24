@@ -113,14 +113,9 @@ HTTP codes (`NOT_FOUND`, `FORBIDDEN`, `PRECONDITION_FAILED`, `CONFLICT`,
 | `src/payments/payment-approval.service.ts` | `approveTransaction` (approve + merchant-UI drive). |
 | `src/payments/payment-idempotency.service.ts` | Idempotency lookups. |
 | `src/payments/razorpay-webhook.service.ts` | Webhook signature verify + settle. |
+| `src/payments/merchant-payment-outcome.ts` | Pure decision: may a merchant-UI drive settle/fail/stay pending? |
+| `src/payments/amount-authority.ts` | Pure decision: verified checkout total vs provisional discovery price at selection. |
 | `src/audit/audit.service.ts` | `recordAuditEvent` + `toAuditEventView` (single audit write path). |
-| `src/wallet-ledger.ts` | Legacy in-memory wallet reservation helpers (see note). |
-| `src/payment-policy.ts` | Legacy synchronous `evaluatePaymentPolicy` (see note). |
-
-> **Legacy note:** `wallet-ledger.ts` (in-memory `Map` reservations) and the
-> synchronous `payment-policy.ts` are superseded by the DB-backed
-> `spending.repository` + `payments/payment-policy.service.ts`. The durable,
-> DB-backed path is authoritative; prefer it for any new work.
 
 ## Environment variables
 
@@ -144,5 +139,7 @@ HTTP codes (`NOT_FOUND`, `FORBIDDEN`, `PRECONDITION_FAILED`, `CONFLICT`,
 bun test --timeout 60000      # run the test suite
 ```
 
-Tests cover: `payment-policy.test.ts`, `wallet-ledger.test.ts`,
-`payments/payment-flow.test.ts`, `transactions/transaction.state.test.ts`.
+Tests cover: `payments/payment-flow.test.ts` (incl. merchant-UI terminal states),
+`transactions/transaction.state.test.ts`, `shopping/*.test.ts`,
+`payments/amount-authority.test.ts`, `payments/merchant-payment-outcome.test.ts`,
+`payments/webhook-http.test.ts`.

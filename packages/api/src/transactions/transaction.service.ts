@@ -29,6 +29,7 @@ import {
   type PolicyEvaluationResult,
 } from "../payments/payment-policy.service";
 import { findExistingTransaction } from "../payments/payment-idempotency.service";
+import { reconcilePayment } from "../payments/payment-reconciliation";
 import {
   InvalidTransactionStateError,
   PaymentVerificationError,
@@ -378,13 +379,13 @@ export async function initiatePayment(
     },
   });
 
+  // APPROVED -> PAYMENT_PROCESSING through the centralised state machine
+  // (assertTransition inside applyTransition), then persist the order id.
+  await applyTransition(transaction, "PAYMENT_PROCESSING");
   const updated = await updateTransaction(transaction.id, {
     razorpayOrderId: order.id,
-    status: "PAYMENT_PROCESSING",
   });
   if (!updated) throw new TransactionNotFoundError();
-  // Validate the transition was legal (APPROVED -> PAYMENT_PROCESSING).
-  assertTransition("APPROVED", "PAYMENT_PROCESSING");
 
   await recordAuditEvent({
     eventType: "PAYMENT_ORDER_CREATED",
@@ -487,6 +488,14 @@ export async function verifyPayment(
     throw new PaymentVerificationError("Payment amount/currency does not match the transaction.");
   }
 
+  // Reconcile the captured amount against the authorized amount for the audit trail.
+  const reconciliation = reconcilePayment({
+    authorizedAmountInMinor: transaction.amountInMinor,
+    authorizedCurrency: transaction.currency,
+    capturedAmountInMinor: payment.amount,
+    capturedCurrency: payment.currency,
+  });
+
   let current = transaction;
   if (current.status === "APPROVED") {
     current = await applyTransition(current, "PAYMENT_PROCESSING");
@@ -494,9 +503,20 @@ export async function verifyPayment(
   current = await applyTransition(current, "PAYMENT_SUCCEEDED", {
     audit: {
       eventType: "PAYMENT_SUCCEEDED",
-      metadata: { razorpayPaymentId: payment.id, amountInMinor: payment.amount },
+      metadata: {
+        razorpayPaymentId: payment.id,
+        amountInMinor: payment.amount,
+        reconciliation: {
+          status: reconciliation.status,
+          discrepancyInMinor: reconciliation.discrepancyInMinor,
+          authorizedAmountInMinor: transaction.amountInMinor,
+          capturedAmountInMinor: payment.amount,
+          currency: payment.currency,
+        },
+      },
     },
   });
+  // Record the actually captured amount (not just the authorized one).
   await updateTransaction(current.id, {
     razorpayPaymentId: payment.id,
     approvedAmountInMinor: payment.amount,
