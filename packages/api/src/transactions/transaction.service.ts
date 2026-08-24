@@ -116,10 +116,13 @@ async function applyTransition(
   to: TransactionStatus,
   opts?: {
     reason?: string;
+    correlationId?: string;
     audit?: {
       eventType: Parameters<typeof recordAuditEvent>[0]["eventType"];
       reason?: string;
       metadata?: Record<string, unknown>;
+      outcome?: "SUCCESS" | "FAILURE" | "PENDING" | "TIMEOUT" | "CANCELLED" | "SKIPPED";
+      failureClassification?: string;
     };
   },
 ): Promise<TransactionRow> {
@@ -134,7 +137,12 @@ async function applyTransition(
       eventType: opts.audit.eventType,
       transactionId: transaction.id,
       userId: transaction.userId,
+      correlationId: opts.correlationId,
+      previousState: transaction.status,
+      resultingState: to,
       reason: opts.audit.reason,
+      outcome: opts.audit.outcome,
+      failureClassification: opts.audit.failureClassification,
       metadata: opts.audit.metadata,
     });
   }
@@ -159,9 +167,16 @@ export async function failTransaction(
   if (current.status === "PAYMENT_PROCESSING") {
     current = await applyTransition(current, "PAYMENT_FAILED", {
       reason,
-      audit: { eventType: "PAYMENT_FAILED", reason },
+      audit: { eventType: "PAYMENT_FAILED", reason, outcome: "FAILURE", failureClassification: "PAYMENT_FAILED" },
     });
     await releaseReservation(current.id);
+    await recordAuditEvent({
+      eventType: "RESERVATION_RELEASED",
+      transactionId: current.id,
+      userId: transaction.userId,
+      outcome: "SUCCESS",
+      metadata: { releaseReason: reason },
+    });
   } else {
     await recordAuditEvent({
       eventType: "PAYMENT_FAILED",
@@ -204,6 +219,7 @@ export async function createPurchaseTransaction(
     eventType: "PURCHASE_REQUESTED",
     transactionId: transaction.id,
     userId: proposal.userId,
+    correlationId: proposal.correlationId,
     metadata: {
       amountInMinor,
       currency,
@@ -215,10 +231,12 @@ export async function createPurchaseTransaction(
     eventType: "TRANSACTION_CREATED",
     transactionId: transaction.id,
     userId: proposal.userId,
+    correlationId: proposal.correlationId,
     metadata: { status: "CREATED" },
   });
 
   let current = await applyTransition(transaction, "POLICY_CHECKING", {
+    correlationId: proposal.correlationId,
     audit: { eventType: "POLICY_CHECK_STARTED" },
   });
 
@@ -232,7 +250,8 @@ export async function createPurchaseTransaction(
   if (policy.decision === "blocked") {
     current = await applyTransition(current, "POLICY_BLOCKED", {
       reason: policy.reason,
-      audit: { eventType: "POLICY_CHECK_FAILED", reason: policy.reason },
+      correlationId: proposal.correlationId,
+      audit: { eventType: "POLICY_CHECK_FAILED", reason: policy.reason, outcome: "FAILURE", failureClassification: "POLICY_BLOCKED" },
     });
     return mapToResult(current);
   }
@@ -243,9 +262,12 @@ export async function createPurchaseTransaction(
   if (!reserved) {
     current = await applyTransition(current, "POLICY_BLOCKED", {
       reason: `Payment exceeds the remaining spending budget (${policyRow.maxTotalSpending} ${policy.currency}).`,
+      correlationId: proposal.correlationId,
       audit: {
         eventType: "POLICY_CHECK_FAILED",
         reason: "Spending budget exhausted",
+        outcome: "FAILURE",
+        failureClassification: "POLICY_BUDGET_EXHAUSTED",
       },
     });
     return mapToResult(current);
@@ -261,6 +283,7 @@ export async function createPurchaseTransaction(
 
   if (policy.decision === "user_approval") {
     current = await applyTransition(current, "AWAITING_APPROVAL", {
+      correlationId: proposal.correlationId,
       audit: {
         eventType: "USER_APPROVAL_REQUIRED",
         reason: policy.reason,
@@ -269,6 +292,7 @@ export async function createPurchaseTransaction(
     });
   } else {
     current = await applyTransition(current, "APPROVED", {
+      correlationId: proposal.correlationId,
       audit: {
         eventType: "POLICY_CHECK_PASSED",
         reason: policy.reason,
@@ -281,6 +305,7 @@ export async function createPurchaseTransaction(
     eventType: "SPENDING_RESERVED",
     transactionId: transaction.id,
     userId: proposal.userId,
+    correlationId: proposal.correlationId,
     metadata: { amountInMinor, currency },
   });
 
@@ -499,10 +524,10 @@ export async function verifyPayment(
   let current = transaction;
   if (current.status === "APPROVED") {
     current = await applyTransition(current, "PAYMENT_PROCESSING");
-  }
-  current = await applyTransition(current, "PAYMENT_SUCCEEDED", {
+  }    current = await applyTransition(current, "PAYMENT_SUCCEEDED", {
     audit: {
       eventType: "PAYMENT_SUCCEEDED",
+      outcome: "SUCCESS",
       metadata: {
         razorpayPaymentId: payment.id,
         amountInMinor: payment.amount,
@@ -522,6 +547,13 @@ export async function verifyPayment(
     approvedAmountInMinor: payment.amount,
   });
   await settleReservation(current.id);
+  await recordAuditEvent({
+    eventType: "RESERVATION_SETTLED",
+    transactionId: current.id,
+    userId: transaction.userId,
+    outcome: "SUCCESS",
+    metadata: { amountInMinor: payment.amount, currency: payment.currency },
+  });
 
   return mapToResult(current);
 }
@@ -541,5 +573,12 @@ export async function cancelTransaction(
     audit: { eventType: "TRANSACTION_CANCELLED" },
   });
   await releaseReservation(transaction.id);
+  await recordAuditEvent({
+    eventType: "RESERVATION_RELEASED",
+    transactionId: transaction.id,
+    userId,
+    outcome: "SUCCESS",
+    metadata: { releaseReason: "transaction_cancelled" },
+  });
   return mapToResult(current);
 }

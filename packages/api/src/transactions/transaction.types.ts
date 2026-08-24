@@ -16,6 +16,8 @@ export interface PurchaseProposal {
   currency: string;
   /** Browserbase/Stagehand checkout session for the merchant-UI path. */
   browserSessionId?: string;
+  /** Correlation id linking all events in this shopping→payment flow. */
+  correlationId?: string;
 }
 
 /**
