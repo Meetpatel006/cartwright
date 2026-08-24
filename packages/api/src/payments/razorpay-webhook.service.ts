@@ -10,6 +10,7 @@ import { settleReservation } from "@cartwright/db/repositories/spending.reposito
 import { recordAuditEvent } from "../audit/audit.service";
 import { failTransaction } from "../transactions/transaction.service";
 import { PaymentVerificationError } from "../transactions/transaction.errors";
+import { reconcilePayment } from "./payment-reconciliation";
 
 interface WebhookPaymentEntity {
   order_id?: string;
@@ -31,6 +32,41 @@ export interface WebhookHandleResult {
   handled: boolean;
   transactionId?: string;
   reason?: string;
+}
+
+export interface WebhookHttpResponse {
+  status: number;
+  body: Record<string, unknown>;
+}
+
+/**
+ * Map a successful processing result to the HTTP response. `handled === false`
+ * covers permanent, non-retryable payloads (no order id / no matching
+ * transaction): ACKing them with 2xx is correct because a retry would fail the
+ * same way.
+ */
+export function classifyWebhookOutcome(result: WebhookHandleResult): WebhookHttpResponse {
+  return { status: 200, body: { received: true, ...result } };
+}
+
+/**
+ * Map a thrown error to the HTTP response (Task 3 / retry safety):
+ *  - PaymentVerificationError (bad/missing signature, malformed body) → 400.
+ *    Distinct from success and NOT retried as-if-successful.
+ *  - ANY other error (transient DB outage, bug) → 500 so Razorpay RETRIES the
+ *    delivery instead of permanently dropping the payment confirmation.
+ */
+export function classifyWebhookError(error: unknown): WebhookHttpResponse {
+  if (error instanceof PaymentVerificationError) {
+    return {
+      status: 400,
+      body: { received: false, error: error.message },
+    };
+  }
+  return {
+    status: 500,
+    body: { received: false, error: "internal_error" },
+  };
 }
 
 /**
@@ -105,18 +141,32 @@ export async function handleRazorpayWebhook(
     }
   }
 
-  const success = await finalizeSettlement(transaction, paymentId);
+  const success = await finalizeSettlement(transaction, payment);
   return { handled: success, transactionId: transaction.id };
 }
 
 async function finalizeSettlement(
   transaction: TransactionRow,
-  paymentId: string | undefined,
+  payment: WebhookPaymentEntity | undefined,
 ): Promise<boolean> {
+  // The amount actually captured by the provider (falls back to the authorized
+  // amount when the webhook omits the payment entity). In the normal path the
+  // gate above has already rejected amount/currency mismatches, so this equals
+  // the authorized amount.
+  const capturedAmountInMinor = payment?.amount ?? transaction.amountInMinor;
+  const capturedCurrency = payment?.currency ?? transaction.currency;
+
+  const reconciliation = reconcilePayment({
+    authorizedAmountInMinor: transaction.amountInMinor,
+    authorizedCurrency: transaction.currency,
+    capturedAmountInMinor,
+    capturedCurrency,
+  });
+
   const updated = await updateTransaction(transaction.id, {
     status: "PAYMENT_SUCCEEDED",
-    razorpayPaymentId: paymentId ?? null,
-    approvedAmountInMinor: transaction.amountInMinor,
+    razorpayPaymentId: payment?.id ?? null,
+    approvedAmountInMinor: capturedAmountInMinor,
   });
   if (!updated) return false;
   await recordAuditEvent({
@@ -124,7 +174,17 @@ async function finalizeSettlement(
     transactionId: transaction.id,
     userId: transaction.userId,
     reason: "Settled via Razorpay webhook",
-    metadata: { razorpayPaymentId: paymentId ?? null, amountInMinor: transaction.amountInMinor },
+    metadata: {
+      razorpayPaymentId: payment?.id ?? null,
+      amountInMinor: capturedAmountInMinor,
+      reconciliation: {
+        status: reconciliation.status,
+        discrepancyInMinor: reconciliation.discrepancyInMinor,
+        authorizedAmountInMinor: transaction.amountInMinor,
+        capturedAmountInMinor,
+        currency: capturedCurrency,
+      },
+    },
   });
   await settleReservation(transaction.id);
   return true;
