@@ -18,6 +18,8 @@ export const env = createEnv({
     AGENT_LLM_MODEL: z.string().min(1).optional(),
     AGENT_LLM_API_KEY: z.string().min(1).optional(),
     AGENT_LLM_API_KEY_FALLBACK: z.string().min(1).optional(),
+    AGENT_LLM_REASONING_EFFORT: z.enum(["low", "medium", "high"]).optional(),
+    AGENT_LLM_RESPONSE_FORMAT: z.enum(["provider", "prompt"]).optional(),
     /** Extra JSON merged into every LLM request body, e.g. {"chat_template_kwargs":{"enable_thinking":false}} */
     AGENT_LLM_EXTRA_BODY: z.string().min(1).optional(),
     /** Set to "true" or "1" for verbose agent + LLM request logging */
@@ -41,9 +43,6 @@ export const env = createEnv({
     /** How long (minutes) a shopping session stays selectable before it is
      *  lazily expired and its retained browser session is cleaned up. */
     SHOPPING_SESSION_TTL_MINUTES: z.coerce.number().int().positive().default(30),
-    /** Maximum execution time (seconds) for the entire shopping agent run.
-     *  Individual operation timeouts do not bound the overall workflow. */
-    AGENT_RUN_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
     /** Maximum Test Mode payment that may be opened without a user approval action. */
     PAYMENT_AUTO_APPROVAL_LIMIT_PAISE: z.coerce.number().int().nonnegative().default(150_000),
     /** Explicitly allow Cartwright to create a server-side Razorpay order when a black-box merchant has no payment UI. */

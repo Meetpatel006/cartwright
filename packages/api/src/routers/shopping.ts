@@ -4,6 +4,7 @@ import { getCandidatesForSession } from "@cartwright/db/repositories/shopping.re
 
 import { protectedProcedure, router } from "../index";
 import { generateCorrelationId } from "../audit/audit.service";
+import { getLiveFrame } from "@cartwright/agent";
 import {
   getReachableShoppingSession,
   runShoppingSession,
@@ -24,6 +25,8 @@ export const shoppingRouter = router({
       z.object({
         query: z.string().min(3).describe('e.g. "wireless headphones under $100"'),
         store: z.string().min(1).optional().describe('store preset or URL, e.g. "raven"'),
+        /** Browser backend for the agent run: local Chrome (free) or Browserbase cloud. */
+        browserMode: z.enum(["local", "browserbase"]).optional(),
         /** Client idempotency key; reused to dedupe repeated shopping requests. */
         idempotencyKey: z.string().min(1).optional(),
       }),
@@ -34,10 +37,21 @@ export const shoppingRouter = router({
         userId: ctx.session.user.id,
         query: input.query,
         store: input.store,
+        browserMode: input.browserMode,
         idempotencyKey: input.idempotencyKey,
         correlationId,
       });
     }),
+
+  /**
+   * Live feed of the agent's browser for the CURRENT user. Returns the latest
+   * JPEG frame captured from the browser the agent is driving (local Chrome or
+   * Browserbase), or null when no run is active. The web UI polls this while a
+   * search is in flight to show what the agent sees in real time.
+   */
+  liveFeed: protectedProcedure.query(({ ctx }) => {
+    return { frame: getLiveFrame(ctx.session.user.id) ?? null };
+  }),
 
   get: protectedProcedure
     .input(z.object({ sessionId: z.string().min(1) }))

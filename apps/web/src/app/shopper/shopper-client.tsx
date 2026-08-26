@@ -1,5 +1,5 @@
 "use client";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@cartwright/ui/components/button";
@@ -143,8 +143,9 @@ function availabilityTone(availability: NormalizedProduct["availability"]): stri
 /* -------------------------------------------------------------------------- */
 
 export default function ShopperPage() {
-  const [query, setQuery] = useState("wireless headphones under $100");
+  const [query, setQuery] = useState("wireless headphones under 5000");
   const [store, setStore] = useState("raven");
+  const [browserMode, setBrowserMode] = useState<"local" | "browserbase">("local");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const run = useMutation(trpc.shopping.run.mutationOptions());
@@ -154,8 +155,20 @@ export default function ShopperPage() {
   const verifyPayment = useMutation(trpc.transactions.verifyPayment.mutationOptions());
   const [razorpayReady, setRazorpayReady] = useState(false);
 
+  // Live view of the agent's browser: polled screenshot frames streamed from
+  // the server while the run is in flight.
+  const liveFeed = useQuery(
+    trpc.shopping.liveFeed.queryOptions(undefined, {
+      refetchInterval: 700,
+      enabled: run.isPending,
+    }),
+  );
+
   const runResult = run.data as ShoppingRunResult | undefined;
   const selectData = select.data as SelectResult | undefined;
+  // Once a selection has been converted into a purchase, the session is
+  // terminal — re-selecting would 409. Lock the recommendation buttons.
+  const selectionLocked = Boolean(selectData);
 
   const baseView = approve.data?.result ?? selectData?.purchase ?? null;
   const effectivePurchase: TransactionView | null =
@@ -201,9 +214,10 @@ export default function ShopperPage() {
 
   const onSubmit = (event: React.FormEvent) => {
     event.preventDefault();
+    select.reset();
     const key = crypto.randomUUID();
     setIdempotencyKey(key);
-    run.mutate({ query, store: store.trim() || undefined, idempotencyKey: key });
+    run.mutate({ query, store: store.trim() || undefined, browserMode, idempotencyKey: key });
   };
 
   const onSelect = (productId: string) => {
@@ -235,7 +249,7 @@ export default function ShopperPage() {
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder='e.g. "wireless headphones under $100 from sony"'
+            placeholder='e.g. "wireless headphones under 5000 from sony" (budgets are in ₹)'
           />
           <Button type="submit" disabled={run.isPending}>
             {run.isPending ? "Searching…" : "Search"}
@@ -247,15 +261,55 @@ export default function ShopperPage() {
           placeholder='Store preset or URL, e.g. "raven"'
           aria-label="Store preset or URL"
         />
+        <div className="flex items-center gap-2" role="group" aria-label="Browser backend">
+          <span className="text-xs text-muted-foreground">Browser:</span>
+          {(["local", "browserbase"] as const).map((mode) => (
+            <Button
+              key={mode}
+              type="button"
+              variant={browserMode === mode ? "default" : "outline"}
+              size="sm"
+              onClick={() => setBrowserMode(mode)}
+            >
+              {mode === "local" ? "Local Chrome" : "Browserbase (cloud)"}
+            </Button>
+          ))}
+        </div>
       </form>
 
       {run.isPending && (
-        <p className="mb-4 text-sm text-muted-foreground">
-          Launching a cloud browser session… watch it live at{" "}
-          <a className="underline" href="https://www.browserbase.com/sessions" target="_blank" rel="noreferrer">
-            browserbase.com/sessions
-          </a>
-        </p>
+        <>
+          <p className="mb-4 text-sm text-muted-foreground">
+            {browserMode === "browserbase"
+              ? "Running the agent on a Browserbase cloud session… watch it live at browserbase.com/sessions."
+              : "Running the agent on local Chrome… the session is recorded to packages/agent/recordings/."}
+          </p>
+          <Card className="mb-6 overflow-hidden">
+            <CardHeader className="py-3">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <span
+                  className="inline-block h-2 w-2 animate-pulse rounded-full bg-red-500"
+                  aria-hidden
+                />
+                Live agent view
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {liveFeed.data?.frame ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={liveFeed.data.frame}
+                  alt="Live view of the agent's browser"
+                  className="block w-full bg-black"
+                />
+              ) : (
+                <div className="flex h-56 items-center justify-center bg-zinc-950 text-sm text-zinc-400">
+                  Waiting for the agent's first frame…
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
       )}
 
       {run.isError && (
@@ -263,7 +317,9 @@ export default function ShopperPage() {
           <CardHeader>
             <CardTitle className="text-red-500">Agent error</CardTitle>
           </CardHeader>
-          <CardContent className="text-sm">{String(run.error)}</CardContent>
+          <CardContent className="text-sm">
+            {run.error instanceof Error ? run.error.message : String(run.error)}
+          </CardContent>
         </Card>
       )}
 
@@ -304,7 +360,7 @@ export default function ShopperPage() {
               key={rec.product.id}
               rank={index + 1}
               rec={rec}
-              busy={select.isPending}
+              busy={select.isPending || selectionLocked}
               onSelect={() => onSelect(rec.product.id)}
             />
           ))}

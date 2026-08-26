@@ -16,8 +16,10 @@ import { TRPCError } from "@trpc/server";
 import {
   type Availability,
   type NormalizedProduct,
+  NoProductsFoundError,
   type ProductCandidate,
   type Recommendation,
+  ShoppingError,
   type ShoppingIntent,
   type ShoppingSessionDraft,
   type SupportedCurrency,
@@ -89,6 +91,12 @@ function buildLlm(mode: "local" | "browserbase") {
         apiKeys: [env.AGENT_LLM_API_KEY, env.AGENT_LLM_API_KEY_FALLBACK].filter(
           Boolean,
         ) as string[],
+      }),
+      ...(env.AGENT_LLM_REASONING_EFFORT && {
+        reasoningEffort: env.AGENT_LLM_REASONING_EFFORT,
+      }),
+      ...(env.AGENT_LLM_RESPONSE_FORMAT && {
+        responseFormatMode: env.AGENT_LLM_RESPONSE_FORMAT,
       }),
       debug: env.AGENT_DEBUG !== undefined,
     };
@@ -229,6 +237,9 @@ export async function runShoppingSession(
     userId: string;
     query: string;
     store?: string;
+    /** Browser backend for this run. When omitted, falls back to
+     *  SHOPPING_AGENT_BROWSER, then auto: "local" in dev, "browserbase" in prod. */
+    browserMode?: "local" | "browserbase";
     idempotencyKey?: string;
     correlationId?: string;
   },
@@ -250,8 +261,9 @@ export async function runShoppingSession(
     }
   }
 
-  const defaultCurrency =
-    input.store?.toLowerCase() === "raven" ? "INR" : env.WALLET_CURRENCY;
+  // Hardcoded INR: the product is India-only and stores (incl. amazon.com from
+  // an India-geo session) display rupee prices, so budgets must parse as INR.
+  const defaultCurrency = "INR";
   const intent = parseShoppingRequest({
     query: input.query,
     store: input.store,
@@ -259,18 +271,9 @@ export async function runShoppingSession(
     fallbackBudgetInMinor: null,
   });
 
-  const mode = resolveAgentBrowserMode();
+  const mode = input.browserMode ?? resolveAgentBrowserMode();
   const stores = splitStoreInput(input.store);
   const discoveryState: { sessionId?: string; providerSessionId?: string } = {};
-
-  // Top-level execution budget: the entire discovery + browser workflow is
-  // bounded by a single timeout. Individual operation timeouts do NOT bound
-  // the overall workflow — a sequence of retried operations can run
-  // indefinitely without this. The signal propagates into `runShoppingAgent`
-  // so abort checks fire before each major blocking operation.
-  const agentSignal = AbortSignal.timeout(
-    env.AGENT_RUN_TIMEOUT_SECONDS * 1_000,
-  );
 
   const orchestratorDeps: ShoppingOrchestratorDeps = {
     discover:
@@ -286,7 +289,8 @@ export async function runShoppingSession(
           browserbaseApiKey:
             mode === "browserbase" ? env.BROWSERBASE_API_KEY : undefined,
           llm: buildLlm(mode),
-          signal: agentSignal,
+          recordSession: true,
+          liveFeedKey: input.userId,
         });
         discoveryState.sessionId = raw.sessionId;
         discoveryState.providerSessionId = raw.providerSessionId;
@@ -304,9 +308,20 @@ export async function runShoppingSession(
       correlationId: input.correlationId,
       reason: error instanceof Error ? error.message : "Discovery failed",
       outcome: "FAILURE",
-      failureClassification: error instanceof Error && error.name === "AbortError" ? "AGENT_TIMEOUT" : "BROWSER_OPERATION_FAILED",
+      failureClassification: "BROWSER_OPERATION_FAILED",
       metadata: { query: input.query, store: input.store ?? null },
     });
+    // Surface typed agent failures as readable client errors instead of an
+    // opaque 500. "No products found" is a normal outcome (e.g. the store
+    // doesn't stock the requested item, or extraction came back empty), so it
+    // maps to 422; other agent/browser failures keep the error message but use
+    // BAD_GATEWAY so clients can distinguish them from request problems.
+    if (error instanceof NoProductsFoundError) {
+      throw new TRPCError({ code: "UNPROCESSABLE_CONTENT", message: error.message });
+    }
+    if (error instanceof ShoppingError) {
+      throw new TRPCError({ code: "BAD_GATEWAY", message: error.message });
+    }
     throw error;
   }
 

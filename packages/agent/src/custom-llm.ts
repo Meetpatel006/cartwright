@@ -10,7 +10,7 @@ import type { ClientLLM } from "@browserbasehq/stagehand";
  */
 
 export interface CustomModelEndpoint {
-  /** e.g. "https://openrouter.ai/api/v1", "http://localhost:11434/v1" */
+  /** Base URL or full /chat/completions URL, e.g. ".../v1" or ".../v1/chat/completions" */
   baseURL: string;
   /** Any model id the endpoint serves, e.g. "meta-llama/llama-3.3-70b-instruct" */
   model: string;
@@ -27,9 +27,35 @@ export interface CustomModelEndpoint {
   /** Extra JSON merged into every request body, e.g. {"chat_template_kwargs":{"enable_thinking":false}} */
   extraBody?: Record<string, unknown>;
   /**
-   * Hard cap on tokens to generate. NVIDIA's `integrate.api.nvidia.com`
-   * REQUIRES `max_tokens` or it throws a server error / resets the connection,
-   * so this always defaults to a sane value (4096) if unset.
+   * Reasoning effort for reasoning/"thinking" models (OpenAI o-series,
+   * gpt-oss, DeepSeek-R1, Qwen3-thinking, …) that accept a top-level
+   * `reasoning_effort` field. Defaults to "low".
+   *
+   * ROOT-CAUSE FIX (2026-08): NVIDIA NIM (integrate.api.nvidia.com) hard-caps
+   * `max_tokens` at 4096 regardless of what we request — raising `maxTokens`
+   * cannot help. gpt-oss's chain-of-thought tokens count against that same
+   * fixed budget, and NIM defaults `reasoning_effort` to "medium" when unset.
+   * On large prompts (e.g. a ~24k-token product-listing accessibility tree)
+   * the model spends the ENTIRE 4096-token budget thinking and emits zero
+   * content, so every response_format fallback (json_schema/json_object/none)
+   * comes back empty and the call is wasted (~40s each, 3x per extract()).
+   * Requesting "low" reasoning leaves far more of the fixed budget for the
+   * actual answer. Set to `undefined` to omit the field entirely (e.g. for
+   * endpoints that reject unknown fields), or override via `extraBody`.
+   */
+  reasoningEffort?: "low" | "medium" | "high";
+  /** Structured-output strategy for providers with incomplete response_format support. */
+  responseFormatMode?: "provider" | "prompt";
+  /**
+   * Optional cap on tokens to generate. When unset, `max_tokens` is omitted
+   * entirely and the provider's own default/limit applies — we no longer
+   * impose our own ceiling (previously hardcoded to 4096 for every endpoint).
+   *
+   * NOTE: this can only raise/remove OUR limit. NVIDIA NIM hard-caps
+   * `openai/gpt-oss-20b` / `gpt-oss-120b` at 4096 server-side regardless of
+   * what is sent (per NVIDIA's own API docs) — no client-side value changes
+   * that. For that model, use `reasoningEffort: "low"` (above) so the fixed
+   * 4096 budget is spent on the answer instead of reasoning.
    */
   maxTokens?: number;
   /**
@@ -122,11 +148,14 @@ async function callEndpoint(
   keyIndex: number,
   body: Record<string, unknown>,
   retries = 6,
-  timeoutMs = endpoint.timeoutMs ?? 300_000,
+  timeoutMs: number | undefined = endpoint.timeoutMs,
 ): Promise<{ content: string; usage?: Record<string, number>; finishReason?: string }> {
   const keyLen = keys.length;
   const apiKey = keyLen ? keys[keyIndex % keyLen] : "";
   const keyTag = keyLen > 1 ? ` [key ${(keyIndex % keyLen) + 1}/${keyLen}]` : "";
+  const completionURL = endpoint.baseURL.replace(/\/$/, "").endsWith("/chat/completions")
+    ? endpoint.baseURL.replace(/\/$/, "")
+    : `${endpoint.baseURL.replace(/\/$/, "")}/chat/completions`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     // Force a fresh TCP connection per call so we never silently reuse a
@@ -139,14 +168,15 @@ async function callEndpoint(
   let response: Response;
   const startedAt = Date.now();
   if (endpoint.debug) {
-    console.log(`[custom-llm] -> POST ${endpoint.baseURL}/chat/completions model=${endpoint.model}${keyTag}`);
+    console.log(`[custom-llm] -> POST ${completionURL} model=${endpoint.model}${keyTag}`);
   }
   try {
-    response = await fetch(`${endpoint.baseURL.replace(/\/$/, "")}/chat/completions`, {
+    response = await fetch(completionURL, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
+      // ponytail: no timeout by default; set endpoint.timeoutMs to re-enable
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     });
   } catch (error) {
     // Transient socket/DNS/timeout failures — retry with escalating backoff,
@@ -194,7 +224,10 @@ async function callEndpoint(
   }
 
   const json = (await response.json()) as {
-    choices?: { message?: { content?: string }; finish_reason?: string }[];
+    choices?: {
+      message?: { content?: string | null; reasoning?: string; reasoning_content?: string };
+      finish_reason?: string;
+    }[];
     usage?: Record<string, number>;
   };
 
@@ -204,8 +237,18 @@ async function callEndpoint(
     );
   }
 
+  const message = json.choices?.[0]?.message;
+  const reasoning = message?.reasoning ?? message?.reasoning_content;
+  if (endpoint.debug && !message?.content) {
+    // ponytail: one-line probe for the gpt-oss "empty content" case — all
+    // completion tokens burned by the analysis channel (or capped by
+    // finish_reason=length) before the final channel emitted anything.
+    console.warn(
+      `[custom-llm] empty content (finish_reason=${json.choices?.[0]?.finish_reason ?? "?"}, completion=${json.usage?.completion_tokens ?? "?"} tokens), reasoning head: ${(typeof reasoning === "string" ? reasoning : "").slice(0, 200).replace(/\n/g, " ")}`,
+    );
+  }
   return {
-    content: json.choices?.[0]?.message?.content ?? "",
+    content: typeof message?.content === "string" ? message.content : "",
     usage: json.usage,
     finishReason: json.choices?.[0]?.finish_reason,
   };
@@ -282,10 +325,16 @@ export function createOpenAICompatibleLLM(endpoint: CustomModelEndpoint): Client
       const baseBody: Record<string, unknown> = {
         model: endpoint.model,
         messages,
-        // NVIDIA's LLM API requires max_tokens or it throws / resets the conn.
-        max_tokens: endpoint.maxTokens ?? 4096,
+        ...(endpoint.maxTokens !== undefined && { max_tokens: endpoint.maxTokens }),
         ...(params.temperature !== undefined && { temperature: params.temperature }),
         ...(params.stopSequences?.length && { stop: params.stopSequences }),
+        // Keep reasoning short so it doesn't eat the entire fixed max_tokens
+        // budget on reasoning models, leaving nothing for the answer (see
+        // `reasoningEffort` doc comment above). Defaults to "low"; callers can
+        // disable via `reasoningEffort: undefined` or override via extraBody.
+        ...((endpoint.reasoningEffort ?? "low") && {
+          reasoning_effort: endpoint.reasoningEffort ?? "low",
+        }),
         ...endpoint.extraBody,
       };
 
@@ -313,11 +362,10 @@ export function createOpenAICompatibleLLM(endpoint: CustomModelEndpoint): Client
       // are only fallbacks for endpoints that reject json_schema. NVIDIA is slow
       // on json_schema (~tens of seconds) but it produces correct, conforming
       // output, which is why this must remain the primary path.
-      const formats: Array<"json_schema" | "json_object" | "none"> = [
-        "json_schema",
-        "json_object",
-        "none",
-      ];
+      const formats: Array<"json_schema" | "json_object" | "none"> =
+        endpoint.responseFormatMode === "prompt"
+          ? ["none"]
+          : ["json_schema", "json_object", "none"];
 
       const buildMessages = (fmt: "json_schema" | "json_object" | "none") =>
         fmt === "none"
@@ -326,7 +374,7 @@ export function createOpenAICompatibleLLM(endpoint: CustomModelEndpoint): Client
               {
                 role: "system" as const,
                 content:
-                  "Respond with ONLY a JSON object conforming to the requested schema. No prose, no markdown fences.",
+                  `Respond with ONLY a JSON object conforming exactly to this JSON schema. No prose or markdown fences.\n\n${JSON.stringify(schema)}`,
               },
             ]
           : messages;

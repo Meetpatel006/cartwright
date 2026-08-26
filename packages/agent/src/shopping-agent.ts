@@ -4,8 +4,9 @@ import {
   Stagehand,
 } from "@browserbasehq/stagehand";
 import { randomUUID } from "node:crypto";
+import * as os from "node:os";
 import * as path from "node:path";
-import { mkdir, unlink } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, unlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import ffmpegStatic from "ffmpeg-static";
@@ -14,40 +15,120 @@ import { z } from "zod";
 import { createOpenAICompatibleLLM, type CustomModelEndpoint } from "./custom-llm";
 import { liveBrowserSessionRegistry } from "./browser-session-registry";
 import { parseCheckoutTotal } from "./checkout-total";
+import { startLiveFeedPump } from "./live-feed";
+import {
+  ensureLocalMerchantAccount,
+  findLocalMerchant,
+  findLocalMerchantForUrl,
+  merchantStorePreset,
+  runLocalMerchantBasket,
+  runLocalMerchantCheckout,
+  type LocalMerchantProfile,
+} from "./local-merchant";
+// Store search presets (registry + built-ins; see ./store-presets).
+import { findStorePreset, type StorePreset } from "./store-presets";
+// Budget parsing lives in ./request/budget (pure, unit-testable). parseBudget /
+// stripBudgetClause are re-exported below for the public surface.
+import { stripBudgetClause } from "./request/budget";
+
+// Shared Stagehand browser/page aliases (also used by ./local-merchant).
+import type { AgentBrowser, AgentBrowserContext, AgentPage } from "./browser-types";
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
 /**
  * Product listing extracted from a search-results page.
- * `price` is the human-readable string (kept for display); `priceValue` is the
- * numeric value in MAJOR units (e.g. 49.99 for $49.99, 7995 for ₹7,995) so the
- * agent can compare it against the budget without currency gymnastics.
- * `currency` (ISO 4217) and `url` are best-effort and kept optional so a single
- * store missing one field never fails extraction.
+ *
+ * The extraction schema deliberately uses LOOSE unions (string | number |
+ * null) because Stagehand converts it to JSON Schema for structured output
+ * (transforms are unsupported there) and small local models frequently swap
+ * scalar types ("49.99" vs 49.99 vs null). Everything is normalized into the
+ * strict `Product` shape by {@link normalizeExtractedProducts} right after.
+ *
+ * After normalization:
+ * - `price` is the human-readable string (kept for display);
+ * - `priceValue` is numeric MAJOR units (e.g. 49.99 for $49.99, 7995 for ₹7,995)
+ *   so the agent can compare against the budget;
+ * - `currency`/`rating`/`availability`/`url` stay optional so one bad field
+ *   never drops a real product.
  */
+const Scalar = z.union([z.string(), z.number(), z.null()]).optional();
+
 const ProductListSchema = z.object({
   products: z.array(
     z.object({
-      name: z.string().describe("the product title or name"),
-      price: z.string().describe("the price as displayed, including currency symbol"),
+      name: z.union([z.string(), z.number()]).describe("the product title or name"),
+      price: z
+        .union([z.string(), z.number()])
+        .nullable()
+        .describe("the price as displayed, including currency symbol"),
       priceValue: z
-        .number()
+        .union([z.string(), z.number()])
+        .nullable()
         .describe("the numeric price in MAJOR units of the store currency, without symbols or separators (e.g. 49.99 or 7995)"),
-      currency: z
-        .string()
-        .describe("ISO 4217 currency code inferred from the page, e.g. USD, EUR, INR, GBP")
-        .optional(),
-      rating: z.number().describe("average star rating 0-5 if visible").optional(),
-      availability: z
-        .string()
-        .describe("stock status if visible, e.g. 'In Stock', 'Only 3 left'")
-        .optional(),
-      url: z.string().describe("the absolute product page URL if visible").optional(),
+      currency: Scalar.describe("ISO 4217 currency code if visible, e.g. USD, EUR, INR, GBP"),
+      rating: Scalar.describe("average star rating 0-5 if visible"),
+      availability: Scalar.describe("stock status if visible, e.g. 'In Stock', 'Only 3 left'"),
+      url: Scalar.describe("the absolute product page URL if visible"),
     }),
   ),
 });
 
-export type Product = z.infer<typeof ProductListSchema>["products"][number];
+export type Product = {
+  name: string;
+  price: string;
+  priceValue: number;
+  currency?: string;
+  rating?: number;
+  availability?: string;
+  url?: string;
+};
+
+/** Tolerant scalar → string (undefined for null/undefined/non-text junk). */
+function scalarToString(v: string | number | null | undefined): string | undefined {
+  if (v == null) return undefined;
+  const s = String(v).trim();
+  return s.length > 0 ? s : undefined;
+}
+
+/** Coerce raw LLM-extracted product entries into the strict `Product` shape. */
+function normalizeExtractedProducts(
+  raw: Array<{
+    name: string | number;
+    price: string | number | null;
+    priceValue: string | number | null;
+    currency?: string | number | null;
+    rating?: string | number | null;
+    availability?: string | number | null;
+    url?: string | number | null;
+  }>,
+): Product[] {
+  const out: Product[] = [];
+  for (const p of raw) {
+    const name = String(p.name ?? "").trim();
+    if (!name) continue; // a listing without a name is useless
+    const priceValue =
+      typeof p.priceValue === "number"
+        ? p.priceValue
+        : Number.parseFloat(String(p.priceValue ?? "").replace(/[^0-9.]/g, ""));
+    const rating =
+      p.rating == null
+        ? undefined
+        : typeof p.rating === "number"
+          ? p.rating
+          : Number.parseFloat(String(p.rating));
+    out.push({
+      name,
+      price: String(p.price ?? ""),
+      priceValue: Number.isFinite(priceValue) ? priceValue : 0,
+      currency: scalarToString(p.currency),
+      rating: rating != null && Number.isFinite(rating) ? rating : undefined,
+      availability: scalarToString(p.availability),
+      url: scalarToString(p.url),
+    });
+  }
+  return out;
+}
 
 /** Order summary extracted from a checkout page (best-effort). */
 const OrderSummarySchema = z.object({
@@ -63,78 +144,13 @@ const OrderSummarySchema = z.object({
 
 export type OrderSummary = z.infer<typeof OrderSummarySchema>;
 
-// ── Store presets ─────────────────────────────────────────────────────────────
-// Each preset defines how to reach the store's search results page.
-// `searchMode: "url"` navigates directly to a constructed URL (fast, deterministic).
-// `searchMode: "act"` navigates to the homepage and lets the LLM drive the search box
-//   (works on ANY site — this is the generic fallback for unknown stores/URLs).
-
-export interface StorePreset {
-  /** Display name */
-  name: string;
-  /** Base URL of the store (e.g. "https://www.nike.com") */
-  baseUrl: string;
-  /** How to reach search results. "url" = construct search URL from pattern. */
-  searchMode: "url" | "act";
-  /** When searchMode is "url", a template with {query} placeholder. */
-  searchUrlTemplate?: string;
-  /** When searchMode is "act", the URL to navigate to before driving the search box */
-  actBaseUrl?: string;
-}
-
-/**
- * Well-known stores used as *accelerators*. Any store not listed here — or any
- * full URL — falls through to the natural-language ("act") search path, so the
- * agent is not limited to this list. Add more presets as needed.
- */
-export const STORES: Record<string, StorePreset> = {
-  nike: {
-    name: "Nike",
-    baseUrl: "https://www.nike.com",
-    searchMode: "url",
-    // Real Nike search route (the old /in/catalogsearch URL was a Magento pattern and 404'd).
-    searchUrlTemplate: "https://www.nike.com/w?q={query}",
-  },
-  amazon: {
-    name: "Amazon",
-    baseUrl: "https://www.amazon.com",
-    searchMode: "url",
-    searchUrlTemplate: "https://www.amazon.com/s?k={query}",
-  },
-  "amazon-in": {
-    name: "Amazon India",
-    baseUrl: "https://www.amazon.in",
-    searchMode: "url",
-    searchUrlTemplate: "https://www.amazon.in/s?k={query}",
-  },
-  adidas: {
-    name: "Adidas",
-    baseUrl: "https://www.adidas.com",
-    searchMode: "url",
-    searchUrlTemplate: "https://www.adidas.com/us/search?q={query}",
-  },
-  walmart: {
-    name: "Walmart",
-    baseUrl: "https://www.walmart.com",
-    searchMode: "url",
-    searchUrlTemplate: "https://www.walmart.com/search?q={query}",
-  },
-  flipkart: {
-    name: "Flipkart",
-    baseUrl: "https://www.flipkart.com",
-    searchMode: "act",
-    actBaseUrl: "https://www.flipkart.com",
-  },
-  // Sample merchant built for the buildathon (Raven-Scents). The search box lives
-  // on /shop (client-side filtering), so actBaseUrl points there — the agent drives
-  // the *visual* search box instead of constructing a URL query parameter.
-  raven: {
-    name: "Raven Scents",
-    baseUrl: "http://localhost:5173",
-    searchMode: "act",
-    actBaseUrl: "http://localhost:5173/shop",
-  },
-};
+// ── Store resolution ─────────────────────────────────────────────────────────
+// Well-known store search presets live in ./store-presets (pure data + a
+// registry). Any preset not listed there — or any full URL — falls through to
+// the natural-language ("act") search path or Google Shopping, so the agent is
+// not limited to any list. Add more via registerStorePreset().
+export { registerStorePreset, registerStorePresets, findStorePreset, getStorePresets } from "./store-presets";
+export type { StorePreset } from "./store-presets";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -198,7 +214,7 @@ function resolveAbsoluteUrl(url: string, base: string): string {
 // `ParsedBudget` and `parseBudget` now live in `request/budget.ts` so the Part B
 // request parser can reuse them without pulling in the Stagehand runtime. They
 // are re-exported here to keep the `@cartwright/agent` public surface stable.
-export { parseBudget, type ParsedBudget } from "./request/budget";
+export { parseBudget, stripBudgetClause, type ParsedBudget } from "./request/budget";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -220,8 +236,9 @@ export interface ShoppingRequest {
   browserbaseApiKey?: string;
   /** Required when mode is "local" — any OpenAI-compatible LLM endpoint (BYOK) */
   llm?: CustomModelEndpoint;
-  /** Target store. Either a key from STORES (e.g. "nike", "amazon") or a full URL
-   *  like "https://www.nike.com". When omitted, the agent falls back to Google Shopping. */
+  /** Target store. Either a registered preset key ("nike", "amazon", a local
+   *  merchant key like "raven") or a full URL like "https://www.nike.com".
+   *  When omitted, the agent falls back to Google Shopping. */
   store?: string;
   /** Whether to attempt on-site add-to-cart / proceed-to-checkout UI actions after
    *  picking a product. Defaults to true. The agent NEVER enters payment details —
@@ -233,8 +250,12 @@ export interface ShoppingRequest {
   preserveCheckoutSession?: boolean;
   /** Record the automation to recordings/session-YYYY-MM-DD_HH-mm-ss.mp4 using
    *  Playwright's native page.screencast() (WebM), transcoded to MP4 afterward.
-   *  Also toggled via RECORD_SESSION=true. */
+   *  Recording is ON by default; pass false to disable. */
   recordSession?: boolean;
+  /** Key under which live-feed screenshot frames are published while this run
+   *  is active (see src/live-feed.ts). Typically the user id. When omitted,
+   *  no live feed is captured. */
+  liveFeedKey?: string;
   /** AbortSignal for top-level timeout/cancellation. When the signal fires,
    *  the agent stops browser work and returns with an error. */
   signal?: AbortSignal;
@@ -300,8 +321,11 @@ function resolveStore(store?: string): StorePreset {
       searchUrlTemplate: "https://www.google.com/search?q={query}&tbm=shop",
     };
   }
-  // Check if it's a preset key
-  const preset = STORES[store.toLowerCase()];
+  // Registered local merchants first (they are pluggable, not built-in presets).
+  const localMerchant = findLocalMerchant(store);
+  if (localMerchant) return merchantStorePreset(localMerchant);
+  // Then well-known store presets (accelerators; see src/store-presets.ts).
+  const preset = findStorePreset(store);
   if (preset) return preset;
   // Check if it's a full URL — drive the search box via natural language (generic).
   try {
@@ -313,98 +337,19 @@ function resolveStore(store?: string): StorePreset {
       actBaseUrl: url.origin,
     };
   } catch {
-    // Not a valid URL — treat as a search term and fall back to Google Shopping
+    // Not a valid URL and not a known preset — treat `store` as a brand/site
+    // HINT and still substitute the real search query via {query} (fixed
+    // 2026-08-26: this used to bake `store` in twice and never contained the
+    // literal "{query}" token, so navigateToResults()'s .replace("{query}", …)
+    // was a silent no-op and the user's actual search text was dropped).
     return {
       name: "Google Shopping",
       baseUrl: "https://www.google.com",
       searchMode: "url",
-      searchUrlTemplate: `https://www.google.com/search?q=${encodeURIComponent(store)}+${encodeURIComponent(store)}&tbm=shop`,
+      searchUrlTemplate: `https://www.google.com/search?q=${encodeURIComponent(store)}+{query}&tbm=shop`,
     };
   }
 }
-
-// ── Account login (so the order is tied to a user, not a guest) ────────────────
-// The merchant's checkout attributes the order to the logged-in user (the request
-// carries the Supabase session). We sign in through the real /login UI with the
-// provided credentials so the browser holds a valid session; the cart then syncs
-// to that user and the placed order is attributed to the account.
-const TEST_ACCOUNT_EMAIL = "meetpatel@gmail.com";
-const TEST_ACCOUNT_PASSWORD = "12345678";
-
-async function ensureAccount(
-  page: AgentPage,
-  _stagehand: Stagehand,
-  store: StorePreset,
-): Promise<void> {
-  // Only relevant for the local Raven merchant (it has its own auth/login).
-  if (!store.baseUrl.includes("localhost")) {
-    console.log("[agent] external store — skipping account login (guest checkout)");
-    return;
-  }
-  const loginUrl = `${new URL(store.baseUrl).origin}/login`;
-
-  // Fill + submit the login form exactly (native setter so React registers it),
-  // then wait for navigation away from /login (success lands on /shop).
-  const loginViaUI = async (): Promise<boolean> => {
-    await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
-    await page.waitForLoadState("networkidle", 10_000).catch(() => {});
-    for (let i = 0; i < 20; i++) {
-      if (await page.evaluate(`!!document.querySelector('input[type="email"]')`)) break;
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    await page.evaluate(`
-      (function () {
-        function set(el, val) {
-          if (!el) return;
-          var d = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
-          d.set.call(el, val);
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-        set(document.querySelector('input[type="email"]'), ${JSON.stringify(TEST_ACCOUNT_EMAIL)});
-        set(document.querySelector('input[type="password"]'), ${JSON.stringify(TEST_ACCOUNT_PASSWORD)});
-      })();
-    `);
-    await page.evaluate(`document.querySelector('button[type="submit"]')?.click();`);
-    for (let i = 0; i < 30; i++) {
-      if (!(await page.evaluate(`location.pathname.includes("/login")`))) return true;
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    return false;
-  };
-
-  try {
-    const ok = await loginViaUI();
-    if (!ok) {
-      // Account missing/unconfirmed — create a confirmed one via the Auth admin
-      // API using the same credentials, then retry the login.
-      const supabaseUrl = process.env.SUPABASE_URL;
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (supabaseUrl && serviceKey) {
-        await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${serviceKey}`,
-            apikey: serviceKey,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email: TEST_ACCOUNT_EMAIL,
-            password: TEST_ACCOUNT_PASSWORD,
-            email_confirm: true,
-            user_metadata: { full_name: "Meet Patel" },
-          }),
-        }).catch(() => {});
-        await loginViaUI();
-      }
-    }
-    console.log(`[agent] signed in as ${TEST_ACCOUNT_EMAIL} (landed at ${await page.url()})`);
-  } catch (e) {
-    console.warn(`[agent] login failed — continuing as guest: ${(e as Error).message}`);
-  }
-}
-
-// ── Checkout (on-site UI actions, no payment) ────────────────────────────────
 
 /**
  * Try a primary natural-language action, falling back to an alternative phrasing
@@ -412,9 +357,6 @@ async function ensureAccount(
  * recovery layer — for state-changing UI steps we never blindly retry, we just
  * try a different description of the same intent.
  */
-type AgentBrowser = Awaited<ReturnType<typeof localBrowser.launch>>;
-type AgentBrowserContext = AgentBrowser["context"];
-type AgentPage = Exclude<Awaited<ReturnType<AgentBrowserContext["pages"]>>[number], undefined>;
 type BrowserRoot = Pick<AgentPage, "locator">;
 
 export interface MerchantPaymentSession {
@@ -1647,181 +1589,6 @@ export async function approveMerchantPayment(
   }
 }
 
-async function runLocalMerchantCheckout(page: AgentPage, alreadyAdded = false): Promise<CheckoutResult> {
-  const steps: CheckoutStep[] = [];
-  const log = (action: string, status: CheckoutStep["status"], detail?: string) =>
-    steps.push({ action, status, detail });
-
-  const added = alreadyAdded || (await clickVisibleText(page, /add to (cart|bag)/i).catch(() => false));
-  log("add_to_cart", added ? "done" : "failed");
-  if (!added) return { status: "failed", steps, error: "Add-to-cart button was not found." };
-  await page.waitForTimeout(300).catch(() => {});
-
-  const onCheckoutRoute = /\/checkout(?:[/?#]|$)/i.test(await page.url());
-  const proceeded = onCheckoutRoute || await clickVisibleText(page, /checkout|view cart|cart/i).catch(() => false);
-  log("proceed_to_checkout", proceeded ? "done" : "failed");
-  if (!proceeded) return { status: "failed", steps, error: "Checkout button was not found." };
-  await page.waitForLoadState("networkidle", 15_000).catch(() => {});
-
-  const fields: Array<[string, string]> = [
-    ['input[name*="first" i], input[placeholder*="first" i]', "Test"],
-    ['input[name*="last" i], input[placeholder*="last" i]', "Buyer"],
-    ['input[type="email"], input[name*="email" i]', "test@example.com"],
-    ['input[name*="phone" i], input[type="tel"]', "9999999999"],
-    ['input[name*="address" i], input[placeholder*="address" i]', "123 Test Street"],
-    ['input[name*="city" i], input[placeholder*="city" i]', "Mumbai"],
-    ['input[name*="pin" i], input[name*="zip" i], input[placeholder*="pin" i]', "400001"],
-  ];
-  // Raven's form labels are visual-only (the inputs have no name/for
-  // attributes), so fill its seven inputs by their stable DOM order.
-  const ravenInputs = page.locator("main input");
-  const ravenValues = ["Test", "Buyer", "test@example.com", "9999999999", "123 Test Street", "Mumbai", "400001"];
-  const ravenInputCount = await ravenInputs.count().catch(() => 0);
-  for (let i = 0; i < Math.min(ravenInputCount, ravenValues.length); i++) {
-    await ravenInputs.nth(i).fill(ravenValues[i] ?? "").catch(() => {});
-  }
-  for (const [selector, value] of fields) {
-    const input = page.locator(selector).first();
-    if ((await input.count().catch(() => 0)) > 0) await input.fill(value).catch(() => {});
-  }
-  const stateSelect = page.locator("select").first();
-  const hasStateSelect = (await stateSelect.count().catch(() => 0)) > 0;
-  if (hasStateSelect) {
-    await stateSelect.selectOption("Maharashtra").catch(() => {});
-  }
-  const stateSelected = !hasStateSelect || await page.evaluate(
-    `document.querySelector('select')?.value === 'Maharashtra'`,
-  ).catch(() => false);
-  if (!stateSelected) {
-    log("fill_shipping", "failed", "State dropdown was not set to Maharashtra");
-    return { status: "failed", steps, error: "Could not select Maharashtra in the State dropdown." };
-  }
-
-  const continued = await clickVisibleText(page, /continue|review|place order|proceed/i).catch(() => false);
-  log("fill_shipping", continued ? "done" : "skipped");
-  await page.waitForLoadState("networkidle", 15_000).catch(() => {});
-
-  const paymentGate = await detectPaymentGate(page);
-  log("reach_payment_gate", paymentGate ? "done" : "skipped", paymentGate?.label);
-  if (!paymentGate) {
-    return {
-      status: "checkout_reached",
-      steps,
-      error: "No merchant payment control was detected. No payment was attempted.",
-    };
-  }
-
-  return {
-    status: "checkout_reached",
-    steps,
-    paymentGate,
-    error: "Merchant payment control detected; stopped before payment approval.",
-  };
-}
-
-const RAVEN_TEST_BASKET: Record<string, { slug: string; priceValue: number; price: string }> = {
-  gardenia: { slug: "raven-gardenia", priceValue: 349, price: "₹349" },
-  "dark ocean": { slug: "raven-dark-ocean", priceValue: 999, price: "₹999" },
-  "bad boy": { slug: "raven-bad-boy", priceValue: 999, price: "₹999" },
-};
-
-async function runRavenBasket(
-  page: AgentPage,
-  context: AgentBrowserContext,
-  basket: Array<{ name: string; quantity: number }>,
-): Promise<{ matches: Product[]; picked: Product; basket: BasketItem[]; checkout: CheckoutResult }> {
-  const matches: Product[] = [];
-  const basketItems: BasketItem[] = [];
-  let total = 0;
-
-  for (const item of basket) {
-    const key = item.name.trim().toLowerCase();
-    const product = RAVEN_TEST_BASKET[key];
-    if (!product || !Number.isInteger(item.quantity) || item.quantity < 1) {
-      throw new Error(`Unsupported Raven test basket item: ${item.name} x${item.quantity}`);
-    }
-
-    const picked: Product = {
-      name: item.name,
-      price: product.price,
-      priceValue: product.priceValue,
-      currency: "INR",
-      url: `http://localhost:5173/product/${product.slug}`,
-    };
-    matches.push(picked);
-    basketItems.push({ ...picked, quantity: item.quantity, currency: "INR" });
-    total += product.priceValue * item.quantity;
-
-    await page.goto(`http://localhost:5173/product/${product.slug}`, { waitUntil: "domcontentloaded" });
-    await page.waitForLoadState("networkidle", 15_000).catch(() => {});
-    await context.setActivePage(page).catch(() => {});
-    await page.waitForTimeout(500).catch(() => {});
-    for (let i = 0; i < item.quantity; i++) {
-      if (!(await clickVisibleText(page, /add to (cart|bag)/i).catch(() => false))) {
-        throw new Error(`Could not add ${item.name} to the Raven cart.`);
-      }
-      const expectedQuantity = basketItems.reduce(
-        (sum, current) => sum + current.quantity,
-        0,
-      ) - item.quantity + i + 1;
-      for (let attempt = 0; attempt < 20; attempt++) {
-        const persistedQuantity = await page.evaluate(
-          `(() => {
-            try {
-              const raw = localStorage.getItem('raven-cart');
-              const state = raw ? JSON.parse(raw)?.state : null;
-              return (state?.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-            } catch { return 0; }
-          })()`,
-        ).catch(() => 0);
-        if (Number(persistedQuantity) >= expectedQuantity) break;
-        await page.waitForTimeout(250).catch(() => {});
-      }
-      await page.waitForTimeout(400).catch(() => {});
-    }
-  }
-
-  // Visit the rendered cart first. This lets the merchant finish its persisted
-  // cart update before checkout validates that at least one item is selected.
-  await page.goto("http://localhost:5173/cart", { waitUntil: "domcontentloaded" });
-  await page.waitForLoadState("networkidle", 15_000).catch(() => {});
-  await context.setActivePage(page).catch(() => {});
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const cartReady = await page.evaluate(
-      `(() => {
-        const text = (document.body.innerText || '').toLowerCase();
-        return text.includes('proceed to checkout') &&
-          (text.includes('dark ocean') || text.includes('gardenia') || text.includes('bad boy'));
-      })()`,
-    ).catch(() => false);
-    if (cartReady) break;
-    await page.waitForTimeout(250).catch(() => {});
-  }
-  const proceededFromCart = await clickVisibleText(page, /proceed to checkout/i).catch(() => false);
-  if (!proceededFromCart) {
-    const cartText = await page.evaluate(`(document.body.innerText || '').slice(0, 800)`).catch(() => "");
-    throw new Error(`Raven cart did not expose a checkout link with the requested item. Visible cart: ${cartText}`);
-  }
-  await page.waitForLoadState("networkidle", 15_000).catch(() => {});
-  await page.waitForTimeout(500).catch(() => {});
-  const checkout = await runLocalMerchantCheckout(page, true);
-  if (checkout.status !== "failed" && !checkout.orderSummary?.total) {
-    const shipping = total >= 5000 ? 0 : 299;
-    const merchantTotal = total + shipping;
-    checkout.orderSummary = {
-      items: basket.map((item) => ({
-        name: `${item.name} ×${item.quantity}`,
-        price: `₹${(RAVEN_TEST_BASKET[item.name.trim().toLowerCase()]!.priceValue * item.quantity).toLocaleString()}`,
-      })),
-      subtotal: `₹${total.toLocaleString()}`,
-      shipping: `₹${shipping.toLocaleString()}`,
-      total: `₹${merchantTotal.toLocaleString()}`,
-    };
-    checkout.orderSummarySource = "basket";
-  }
-
-  return { matches, picked: matches[0]!, basket: basketItems, checkout };
-}
 
 /**
  * Drive the picked product's page through add-to-cart and (best-effort) checkout,
@@ -1890,12 +1657,13 @@ async function runCheckout(
     })()`)
     .catch(() => {});
 
-  // Raven Scents is the local merchant used by the smoke test. Its controls
-  // are stable, so use CDP-backed DOM locators here instead of Stagehand's
-  // accessibility snapshot, whose cached frame is invalid after this route
-  // navigation in Stagehand 4.0.2.
-  if (new URL(targetUrl).hostname === "localhost") {
-    return runLocalMerchantCheckout(page);
+  // Registered local merchants (e.g. the Raven dev storefront) have stable,
+  // bot-free controls, so drive them with CDP-backed DOM locators via their
+  // profile instead of Stagehand's accessibility snapshot, whose cached frame
+  // is invalid after this route navigation in Stagehand 4.0.2.
+  const localProfile = findLocalMerchantForUrl(targetUrl);
+  if (localProfile) {
+    return runLocalMerchantCheckout(page, localProfile);
   }
 
   const added = await actWithFallback(
@@ -2050,16 +1818,25 @@ function getStagehandCdpUrl(stagehand: Stagehand): string | undefined {
  * Playwright's native screencast only writes WebM (VP8, video-only), so a real
  * .mp4 requires a post-record transcode. This uses the bundled `ffmpeg-static`
  * binary (no system install, no cloud service) to re-encode the WebM into an
- * H.264 MP4 that plays in any standard player.
+ * H.264 MP4 that plays in any standard player. If the bundled binary is
+ * missing (e.g. bun skipped ffmpeg-static's postinstall download), falls back
+ * to a system-wide `ffmpeg` on PATH.
  *
- * Returns the final .mp4 path on success, or `null` if ffmpeg is unavailable or
- * the transcode fails — in which case the original .webm is kept.
+ * Returns the final .mp4 path on success, or `null` if no ffmpeg is available
+ * or the transcode fails — in which case the original .webm is kept.
  */
 async function transcodeWebmToMp4(webmPath: string): Promise<string | null> {
-  const ffmpeg = typeof ffmpegStatic === "string" ? ffmpegStatic : null;
+  // Prefer the bundled binary, but verify it actually exists — bun doesn't run
+  // ffmpeg-static's postinstall by default, leaving only a placeholder path.
+  let ffmpeg: string | null =
+    typeof ffmpegStatic === "string" && existsSync(ffmpegStatic)
+      ? ffmpegStatic
+      : null;
   if (!ffmpeg) {
-    console.warn("[agent] ffmpeg-static not available; keeping .webm recording.");
-    return null;
+    ffmpeg = "ffmpeg"; // fall back to a system install on PATH
+    console.log(
+      "[agent] ffmpeg-static binary not found; using system ffmpeg from PATH.",
+    );
   }
   const mp4Path = webmPath.replace(/\.webm$/i, ".mp4");
   try {
@@ -2187,6 +1964,8 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
 
   let browser: Awaited<ReturnType<typeof localBrowser.launch>>;
   let keepCheckoutSession = false;
+  /** Per-run Chrome profile dir (local mode only); removed after the browser closes. */
+  let localUserDataDir: string | undefined;
 
   throwIfAborted(request.signal);
 
@@ -2206,14 +1985,23 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
   } else {
     if (!request.llm) {
       result.error =
-        "No LLM configured for local mode. Set AGENT_LLM_BASE_URL, AGENT_LLM_MODEL and AGENT_LLM_API_KEY.";
+        "No LLM configured for local mode. Set AGENT_LLM_BASE_URL and AGENT_LLM_MODEL.";
       return result;
     }
     console.log(
       `[agent] mode=local llm=${request.llm.model} @ ${request.llm.baseURL} store=${store.name}${request.llm.debug ? " (debug)" : ""}`,
     );
+    // Give Chrome its own per-run profile via Stagehand's `userDataDir`
+    // LAUNCH OPTION (not just an argv flag): chrome-launcher only skips its
+    // `%TEMP%/lighthouse.<random>` create-then-rmSync dance when the option is
+    // set, and that unguarded rmSync throws EBUSY/EPERM on Windows while Chrome
+    // still holds locks. We clean the dir up ourselves in the finally below.
+    const userDataDir = await mkdtemp(path.join(os.tmpdir(), "cartwright-chrome-"));
+    localUserDataDir = userDataDir;
     browser = await localBrowser.launch({
       headless: false,
+      userDataDir,
+      preserveUserDataDir: true,
       // Disable Chrome's "Save password?" / credential prompts. These render as
       // a browser-level infobar (outside the page DOM), so they can't be clicked
       // away via Playwright selectors and would otherwise intercept clicks
@@ -2235,8 +2023,12 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
             logging: {
               level: "info",
               format: "pretty",
-              onLog: (log: { level: string; message: string }) =>
-                console.log(`[stagehand:${log.level}] ${log.message}`),
+              onLog: (log: { level: string; message: string }) => {
+                // Stale-frame CDP retries during navigations — Stagehand
+                // recovers on the live frame every time; pure log spam.
+                if (log.message.includes("CDP response failed")) return;
+                console.log(`[stagehand:${log.level}] ${log.message}`);
+              },
             },
           }
         : {}),
@@ -2249,6 +2041,7 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
     let pwPage: import("playwright").Page | undefined;
     let recordingPath: string | undefined;
     let recordingStarted = false;
+    let stopLiveFeed: (() => void) | undefined;
 
     try {
       const page = (await browser.context.pages())[0]!;
@@ -2258,10 +2051,10 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       // `screencast()` method, so we attach a Playwright client to the SAME
       // Chrome instance Stagehand launched (over CDP) and record the underlying
       // tab. Playwright records WebM only, so we transcode it to MP4 with the
-      // bundled ffmpeg-static afterward. Toggle with RECORD_SESSION=true (or
-      // request.recordSession). No cloud service is involved.
-      const recordSession =
-        process.env.RECORD_SESSION === "true" || request.recordSession === true;
+      // bundled ffmpeg-static afterward.
+      // Recording is ON for every run by default; callers opt out explicitly
+      // with request.recordSession === false. No env-var gating.
+      const recordSession = request.recordSession !== false;
       if (recordSession) {
         const cdpUrl = getStagehandCdpUrl(stagehand);
         if (cdpUrl) {
@@ -2297,27 +2090,53 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
                 /* non-fatal: recording still works without a visible cursor */
               }
             } else {
-              console.warn("[agent] RECORD_SESSION: no page found to record; skipping.");
+              console.warn("[agent] recording: no page found to record; skipping.");
             }
           } catch (recErr) {
             console.warn(
-              `[agent] RECORD_SESSION enabled but screencast failed to start: ${(recErr as Error).message}`,
+              `[agent] recording enabled but screencast failed to start: ${(recErr as Error).message}`,
             );
           }
         } else {
           console.warn(
-            "[agent] RECORD_SESSION enabled but Stagehand's CDP URL was not available; skipping recording.",
+            "[agent] recording enabled but Stagehand's CDP URL was not available; skipping recording.",
           );
         }
       }
 
+      // ── Live feed (screenshot frames → in-memory buffer) ───────────────────
+      // Uses the same CDP-attached Playwright page as the recording, so it
+      // works for BOTH local Chrome and Browserbase sessions. Frames are
+      // published under `liveFeedKey` (typically the user id) for the API to
+      // serve to the web UI. Stopped in the `finally` below.
+      if (pwPage && request.liveFeedKey) {
+        stopLiveFeed = startLiveFeedPump(pwPage, request.liveFeedKey);
+        console.log(`[agent] live feed streaming → ${request.liveFeedKey}`);
+      }
+
+      // Resolve a registered local-merchant profile for this run (by store key
+      // or URL). Profiles carry merchant-specific config only; the automation
+      // logic is generic (see src/local-merchant.ts).
+      const localMerchantProfile: LocalMerchantProfile | undefined =
+        findLocalMerchant(request.store) ?? findLocalMerchantForUrl(store.baseUrl);
+
       // ── Step 0: Ensure a logged-in account (so the order isn't a guest) ──
-      await ensureAccount(page, stagehand, store);
+      if (localMerchantProfile?.account) {
+        await ensureLocalMerchantAccount(page, localMerchantProfile);
+      } else {
+        console.log("[agent] external store — skipping account login (guest checkout)");
+      }
 
       throwIfAborted(request.signal);
 
-      if (request.basket?.length && store.name === "Raven Scents") {
-        const basketResult = await runRavenBasket(page, browser.context, request.basket);
+      if (request.basket?.length && localMerchantProfile) {
+        const basketResult = await runLocalMerchantBasket(
+          page,
+          browser.context,
+          localMerchantProfile,
+          request.basket,
+          request.budgetInMinor,
+        );
         result.matches = basketResult.matches;
         result.picked = basketResult.picked;
         result.basket = basketResult.basket;
@@ -2341,31 +2160,66 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       throwIfAborted(request.signal);
 
       // ── Step 1: Navigate to search results ──────────────────────────────
-      if (store.searchMode === "url" && store.searchUrlTemplate) {
-        // Fast path: construct the search URL directly (no LLM needed)
-        const searchUrl = store.searchUrlTemplate.replace(
-          "{query}",
-          encodeURIComponent(request.query),
-        );
-        console.log(`[agent] navigating to ${searchUrl}`);
-        await page.goto(searchUrl);
-      } else {
-        // Generic path: navigate to homepage, then let the model find & use the search box.
-        // Works on ANY site, which is what makes the agent store-agnostic.
-        const startUrl = store.actBaseUrl ?? store.baseUrl;
-        console.log(`[agent] navigating to ${startUrl} (will drive search via LLM)`);
-        await page.goto(startUrl);
-        await page.waitForLoadState("networkidle", 15_000).catch(() => {});
-        await stagehand.act(`Find the search box and search for: ${request.query}`);
+      // The budget clause ("under $100", "below ₹3000", …) is a CONSTRAINT
+      // already enforced via budgetInMinor — it must NOT go into the store
+      // search, or the store matches nothing. Strip it from the search text.
+      const searchQuery = stripBudgetClause(request.query);
+      if (searchQuery !== request.query) {
+        console.log(`[agent] search query (budget stripped): "${searchQuery}"`);
       }
 
-      await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+      const navigateToResults = async (): Promise<void> => {
+        if (store.searchMode === "url" && store.searchUrlTemplate) {
+          // Fast path: construct the search URL directly (no LLM needed)
+          const searchUrl = store.searchUrlTemplate.replace(
+            "{query}",
+            encodeURIComponent(searchQuery),
+          );
+          console.log(`[agent] navigating to ${searchUrl}`);
+          await page.goto(searchUrl, { waitUntil: "domcontentloaded" });
+        } else {
+          // Generic path: navigate to homepage, then let the model find & use the search box.
+          // Works on ANY site, which is what makes the agent store-agnostic.
+          const startUrl = store.actBaseUrl ?? store.baseUrl;
+          console.log(`[agent] navigating to ${startUrl} (will drive search via LLM)`);
+          await page.goto(startUrl);
+          await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+          await stagehand.act(`Find the search box and search for: ${searchQuery}`);
+        }
+        await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+      };
+
+      // Detect an unrendered results page: some storefronts (notably amazon.com
+      // searched from outside the US) serve a near-empty error/dogpage ("Sorry!
+      // Something went wrong!", robot/captcha walls) to cookieless first-visit
+      // sessions. Visiting the store ORIGIN once establishes session cookies,
+      // and re-navigating then renders real results.
+      const pageIsAlive = (): Promise<boolean> =>
+        page
+          .evaluate(
+            `document.querySelectorAll('a[href]').length >= 5 &&
+             !/sorry|something went wrong|robot|captcha|unusual traffic|are you a human/i.test(document.title || "")`,
+          )
+          .then((v) => v === true)
+          .catch(() => false);
+
+      await navigateToResults();
+      for (let attempt = 1; attempt <= 2 && !(await pageIsAlive()); attempt++) {
+        console.warn(
+          `[agent] search page did not render (attempt ${attempt}) — warming up ${store.baseUrl} and retrying`,
+        );
+        await page.goto(store.baseUrl, { waitUntil: "domcontentloaded" }).catch(() => {});
+        await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+        await page.waitForTimeout(1_000).catch(() => {});
+        await navigateToResults();
+      }
 
       throwIfAborted(request.signal);
 
       // ── Step 2: Extract products ────────────────────────────────────────
       const extracted = await stagehand.extract(
-        "Extract all product listings visible on this page. " +
+        "Extract EVERY product listing visible on this page — a search results page " +
+          "typically shows 15-30 products, include them ALL, not just the first one. " +
           "For each product, include: the product name/title, the displayed price with its currency symbol, " +
           "the numeric price value in major units without symbols or separators, the currency code if visible, " +
           "the star rating and stock status if visible, and the product page URL if visible. " +
@@ -2376,7 +2230,7 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       // ── Step 3: Resolve real URLs ───────────────────────────────────────
       // Prefer the URL the model already returned; fall back to a fuzzy match
       // over every anchor on the page (no brittle per-site regex).
-      const products = extracted.data.products;
+      const products = normalizeExtractedProducts(extracted.data.products);
       try {
         const linksJson = (await page.evaluate(
           `JSON.stringify(Array.from(document.querySelectorAll("a[href]")).map(a => ({ text: (a.textContent || "").trim(), href: a.href })).filter(l => l.text.length > 3))`,
@@ -2402,9 +2256,21 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       const seen = new Set<string>();
       result.matches = products
         // priceValue is MAJOR units; budgetInMinor is MAJOR × 100, hence ×100 here.
-        .filter((p) => p.priceValue * 100 <= request.budgetInMinor)
+        // A missing budget arrives as 0 (null ?? 0 upstream) — treat that as
+        // "no constraint", otherwise every product is filtered out and the run
+        // dies with NoProductsFoundError after all the browser work.
+        // Currency is hardcoded INR end-to-end (India-only product), so the
+        // extracted rupee price always matches the budget's currency.
+        // priceValue 0 means the model couldn't read a price (null coerced to
+        // NaN → 0) — drop it, or it would win the cheapest-pick sort.
+        .filter((p) => p.priceValue > 0)
+        .filter((p) => request.budgetInMinor <= 0 || p.priceValue * 100 <= request.budgetInMinor)
         .filter((p) => {
-          const key = `${p.name.toLowerCase()}|${p.priceValue}`;
+          // Dedupe by title only (ignore price): the same listing is often
+          // extracted twice with slightly different parsed prices, and the
+          // duplicates collide into one productId downstream — breaking the
+          // "pick cheapest" sort and React keys in the UI.
+          const key = p.name.toLowerCase().replace(/\s+/g, " ").trim();
           if (seen.has(key)) return false;
           seen.add(key);
           return true;
@@ -2441,6 +2307,10 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
         };
       }
     } finally {
+      // Always stop the live-feed pump first so no capture fires against a
+      // closing browser (and the buffered frame is cleared for the next run).
+      stopLiveFeed?.();
+      stopLiveFeed = undefined;
       if (!keepCheckoutSession) {
         // Finalize the screencast BEFORE closing Stagehand so the .webm is
         // flushed to disk (calling stagehand.close() first would tear down the
@@ -2477,6 +2347,10 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
         await browser.close();
       } catch {
         // ignore cleanup failures
+      }
+      // Best-effort removal of the per-run Chrome profile (local mode only).
+      if (localUserDataDir) {
+        await rm(localUserDataDir, { recursive: true, force: true }).catch(() => {});
       }
     }
   }

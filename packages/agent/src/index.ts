@@ -3,8 +3,14 @@
 // Part A (discovery + browser automation + Razorpay) and Part B (commerce
 // intelligence) both live here. The API package imports from this barrel.
 
+// Built-in local-merchant profiles — imported for their side effect of
+// registering into src/local-merchant.ts's registry. Add new merchants here
+// (or register custom ones from your own code via `registerLocalMerchant`).
+import "./merchants/raven-scents";
+
 export * from "./razorpay";
 export * from "./shopping-agent";
+export * from "./live-feed";
 
 // ── Part B: Agentic Shopping & Commerce Intelligence ────────────────────────
 export * from "./errors";
