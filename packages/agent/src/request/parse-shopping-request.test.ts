@@ -17,13 +17,13 @@ describe("parseShoppingRequest — budget extraction", () => {
   });
 
   test("parses 'below ₹30000' as 3000000 INR minor units", () => {
-    const intent = parseShoppingRequest({ query: "phone below ₹30000" });
+    const intent = parseShoppingRequest({ query: "phone below ₹30000", defaultCurrency: "INR" });
     expect(intent.budgetInMinor).toBe(3_000_000);
     expect(intent.currency).toBe("INR");
   });
 
   test("parses 'k' suffix with explicit currency", () => {
-    const intent = parseShoppingRequest({ query: "laptop under 10k inr" });
+    const intent = parseShoppingRequest({ query: "laptop under 10k inr", defaultCurrency: "INR" });
     expect(intent.budgetInMinor).toBe(1_000_000);
     expect(intent.currency).toBe("INR");
   });

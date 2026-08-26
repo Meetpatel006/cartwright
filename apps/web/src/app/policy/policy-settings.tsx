@@ -144,12 +144,8 @@ export default function PolicySettings() {
 
             <div className="grid gap-1">
               <Label htmlFor="currency">Currency</Label>
-              <Input
-                id="currency"
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-                maxLength={3}
-              />
+              {/* Hard-INR product: currency is fixed, not editable. */}
+              <Input id="currency" value={currency} readOnly maxLength={3} />
             </div>
 
             <label className="flex items-center gap-2 text-sm">

@@ -170,7 +170,9 @@ export function parseShoppingRequest(input: ParseShoppingRequestInput): Shopping
   const defaultCurrency = input.defaultCurrency ?? "USD";
   const budget = parseBudget(query, defaultCurrency);
   const budgetInMinor = budget?.amountInMinor ?? (input.fallbackBudgetInMinor ?? null);
-  const currency = budget?.currency ?? defaultCurrency;
+  // Hard-INR product: budgets are ALWAYS interpreted in the caller's currency
+  // (INR), even when the query contains "$"/"dollars" — India-only deployment.
+  const currency = defaultCurrency;
 
   const { preferred, excluded } = extractMerchantPreferences(query);
 

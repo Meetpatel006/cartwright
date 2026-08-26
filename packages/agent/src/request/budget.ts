@@ -12,13 +12,15 @@ export interface ParsedBudget {
   currency: string;
 }
 
+// NOTE: word hints use \b boundaries so substrings can't false-positive
+// ("dollars" contains "rs"; "headphones" contains "one" etc.).
 export const CURRENCY_HINTS: Array<{ re: RegExp; code: string }> = [
-  { re: /(?:₹|rs\.?|inr)/i, code: "INR" },
-  { re: /(?:\$|usd)/i, code: "USD" },
-  { re: /(?:€|eur)/i, code: "EUR" },
-  { re: /(?:£|gbp)/i, code: "GBP" },
-  { re: /(?:¥|jpy)/i, code: "JPY" },
-  { re: /chf/i, code: "CHF" },
+  { re: /(?:₹|\brs\.|\b(?:inr|rupees?|paise)\b)/i, code: "INR" },
+  { re: /(?:\$|\b(?:usd|dollars?|bucks)\b)/i, code: "USD" },
+  { re: /(?:€|\b(?:eur|euros?)\b)/i, code: "EUR" },
+  { re: /(?:£|\b(?:gbp|pounds?|quid)\b)/i, code: "GBP" },
+  { re: /(?:¥|\b(?:jpy|yen)\b)/i, code: "JPY" },
+  { re: /\bchf\b|francs?/i, code: "CHF" },
 ];
 
 /** Minor-unit exponent per ISO currency (e.g. INR=2 → ₹1 = 100 paise). */
@@ -37,6 +39,9 @@ function detectCurrency(query: string, defaultCurrency = "USD"): string {
   return defaultCurrency;
 }
 
+/** Currency tokens (symbols + words) shared by the budget matchers. */
+const CURRENCY_TOKENS = String.raw`(?:rs\.?|₹|inr|rupees?|paise|\$|usd|dollars?|bucks|eur|€|euros?|gbp|£|pounds?|¥|jpy|chf)`;
+
 /**
  * Parse a budget from a natural-language query.
  * Handles: "$50", "under $100", "under 10k inr", "below ₹30000", "less than 500 usd".
@@ -45,7 +50,14 @@ function detectCurrency(query: string, defaultCurrency = "USD"): string {
  */
 export function parseBudget(query: string, defaultCurrency = "USD"): ParsedBudget | null {
   const match = query.match(
-    /(?:under|below|less than|max|upto|up to)\s*(?:rs\.?|₹|inr|\$|usd|eur|€|gbp|£|¥|chf)?\s*([\d.,]+)\s*(k|lakh|l|cr|m|million)?\s*(?:rs\.?|₹|inr|\$|usd|eur|€|gbp|£|¥|chf)?/i,
+    new RegExp(
+      String.raw`(?:under|below|less than|max|upto|up to)\s*` +
+        CURRENCY_TOKENS +
+        String.raw`?\s*([\d.,]+)\s*(k|lakh|l|cr|m|million)?\s*` +
+        CURRENCY_TOKENS +
+        String.raw`?`,
+      "i",
+    ),
   );
   if (!match || match[1] === undefined) return null;
   const value = Number.parseFloat(match[1].replace(/,/g, ""));
@@ -58,4 +70,31 @@ export function parseBudget(query: string, defaultCurrency = "USD"): ParsedBudge
     amountInMinor: Math.round(value * multiplier * 100),
     currency: detectCurrency(query, defaultCurrency),
   };
+}
+
+/**
+ * Remove the budget clause from a natural-language query, leaving just the
+ * product text. The budget is a CONSTRAINT (already captured separately by
+ * {@link parseBudget} / `budgetInMinor`), not part of the product name —
+ * searching a store for "wireless headphones under $100" matches nothing.
+ * Handles currency symbols/words before AND after the amount ("under ₹3000",
+ * "under 100 dollars"). Returns the input unchanged when no budget clause
+ * (or nothing left after stripping) is found.
+ */
+export function stripBudgetClause(query: string): string {
+  const stripped = query
+    .replace(
+      new RegExp(
+        String.raw`\b(?:under|below|less than|max(?:imum)?|upto|up to)\s*` +
+          CURRENCY_TOKENS +
+          String.raw`?\s*[\d.,]+\s*(?:k|lakh|l|cr|m|million)?\s*` +
+          CURRENCY_TOKENS +
+          String.raw`?`,
+        "gi",
+      ),
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+  return stripped.length > 0 ? stripped : query.trim();
 }
