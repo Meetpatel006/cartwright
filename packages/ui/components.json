@@ -20,5 +20,7 @@
   },
   "menuColor": "default",
   "menuAccent": "subtle",
-  "registries": {}
+  "registries": {
+    "@blocks-so": "https://blocks.so/r/{name}.json"
+  }
 }

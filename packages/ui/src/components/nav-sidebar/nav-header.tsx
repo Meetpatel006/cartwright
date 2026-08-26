@@ -1,0 +1,101 @@
+'use client';
+
+import { Search } from 'lucide-react';
+import * as React from 'react';
+import { useEffect } from 'react';
+import {
+  Command,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from '@cartwright/ui/components/command';
+import { SidebarHeader } from '@cartwright/ui/components/sidebar';
+import type { SidebarData } from '@cartwright/ui/components/nav-sidebar/types';
+
+interface NavHeaderProps {
+  data: SidebarData;
+}
+
+export function NavHeader({ data }: NavHeaderProps) {
+  const [open, setOpen] = React.useState(false);
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setOpen((open) => !open);
+      }
+    };
+    document.addEventListener('keydown', down);
+    return () => document.removeEventListener('keydown', down);
+  }, []);
+
+  return (
+    <>
+      <SidebarHeader>
+        <div
+          className="flex cursor-pointer items-center justify-between px-2 pt-3 pb-0"
+          onClick={() => setOpen(true)}
+        >
+          <div className="flex flex-1 items-center gap-3">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <span className="font-normal text-muted-foreground text-sm">
+              Search
+            </span>
+          </div>
+          <div className="flex items-center justify-center rounded-md border border-border px-2 py-1">
+            <kbd className="inline-flex font-[inherit] font-medium text-muted-foreground text-xs">
+              <span className="opacity-70">⌘K</span>
+            </kbd>
+          </div>
+        </div>
+      </SidebarHeader>
+
+      <CommandDialog onOpenChange={setOpen} open={open}>
+        <Command>
+          <CommandInput placeholder="Search everything..." />
+          <CommandList>
+            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandGroup heading="Navigation">
+              {data.navMain.map((item) => (
+                <CommandItem
+                  className="py-2!"
+                  key={item.id}
+                  onSelect={() => {
+                    setOpen(false);
+                  }}
+                >
+                  <item.icon className="mr-2 h-4 w-4" />
+                  <span>{item.title}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator className="my-2" />
+            {data.shoppingSessions && data.shoppingSessions.length > 0 && (
+              <CommandGroup heading="Chat / Sessions">
+                {data.shoppingSessions.map((session) => (
+                  <CommandItem
+                    className="py-2!"
+                    key={session.sessionId}
+                    onSelect={() => {
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="mr-2 font-mono text-xs text-muted-foreground">
+                      {session.sessionId.slice(0, 8)}…
+                    </span>
+                    <span>{session.rawQuery}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+          </CommandList>
+        </Command>
+      </CommandDialog>
+    </>
+  );
+}
