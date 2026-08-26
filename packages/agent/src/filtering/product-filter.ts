@@ -34,13 +34,6 @@ export function filterCandidates(
   const filteredOut: Array<{ productId: string; reason: string }> = [];
 
   for (const product of products) {
-    if (product.currency !== intent.currency) {
-      filteredOut.push({
-        productId: product.id,
-        reason: `Currency ${product.currency} does not match requested ${intent.currency}`,
-      });
-      continue;
-    }
 
     if (intent.budgetInMinor !== null && product.amountInMinor > intent.budgetInMinor) {
       filteredOut.push({

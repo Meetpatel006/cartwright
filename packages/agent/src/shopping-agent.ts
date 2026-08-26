@@ -107,10 +107,14 @@ function normalizeExtractedProducts(
   for (const p of raw) {
     const name = String(p.name ?? "").trim();
     if (!name) continue; // a listing without a name is useless
-    const priceValue =
-      typeof p.priceValue === "number"
+    let priceValue =
+      typeof p.priceValue === "number" && p.priceValue > 0
         ? p.priceValue
         : Number.parseFloat(String(p.priceValue ?? "").replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(priceValue) || priceValue <= 0) {
+      // Fallback: parse numeric value from displayed price string (e.g. "₹ 9,695" -> 9695)
+      priceValue = Number.parseFloat(String(p.price ?? "").replace(/[^0-9.]/g, ""));
+    }
     const rating =
       p.rating == null
         ? undefined
@@ -315,10 +319,10 @@ export interface ShoppingResult {
 function resolveStore(store?: string): StorePreset {
   if (!store) {
     return {
-      name: "Google Shopping",
-      baseUrl: "https://www.google.com",
+      name: "Google Shopping India",
+      baseUrl: "https://www.google.co.in",
       searchMode: "url",
-      searchUrlTemplate: "https://www.google.com/search?q={query}&tbm=shop",
+      searchUrlTemplate: "https://www.google.co.in/search?q={query}&tbm=shop",
     };
   }
   // Registered local merchants first (they are pluggable, not built-in presets).
@@ -337,16 +341,11 @@ function resolveStore(store?: string): StorePreset {
       actBaseUrl: url.origin,
     };
   } catch {
-    // Not a valid URL and not a known preset — treat `store` as a brand/site
-    // HINT and still substitute the real search query via {query} (fixed
-    // 2026-08-26: this used to bake `store` in twice and never contained the
-    // literal "{query}" token, so navigateToResults()'s .replace("{query}", …)
-    // was a silent no-op and the user's actual search text was dropped).
     return {
-      name: "Google Shopping",
-      baseUrl: "https://www.google.com",
+      name: "Google Shopping India",
+      baseUrl: "https://www.google.co.in",
       searchMode: "url",
-      searchUrlTemplate: `https://www.google.com/search?q=${encodeURIComponent(store)}+{query}&tbm=shop`,
+      searchUrlTemplate: `https://www.google.co.in/search?q=${encodeURIComponent(store)}+{query}&tbm=shop`,
     };
   }
 }

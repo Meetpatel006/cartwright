@@ -51,25 +51,17 @@ export function getStorePresets(): Record<string, StorePreset> {
 // ── Built-in presets ─────────────────────────────────────────────────────────
 
 const BUILT_IN_PRESETS: Record<string, StorePreset> = {
-  // Search-URL templates below were verified against live sites / current
-  // (2026) scraping documentation on 2026-08-25. All use simple query params
-  // and are safe to construct directly.
   nike: {
-    name: "Nike",
-    baseUrl: "https://www.nike.com",
+    name: "Nike India",
+    baseUrl: "https://www.nike.com/in",
     searchMode: "url",
-    // Verified 2026-08-25: /w?q= is Nike's canonical search route (US/GB
-    // live-checked). NOTE: some regional storefronts (e.g. nike.com/in) ignore
-    // ?q= and show the unfiltered catalog — verify per market before adding.
-    searchUrlTemplate: "https://www.nike.com/w?q={query}",
+    searchUrlTemplate: "https://www.nike.com/in/w?q={query}",
   },
   amazon: {
-    name: "Amazon",
-    baseUrl: "https://www.amazon.com",
+    name: "Amazon India",
+    baseUrl: "https://www.amazon.in",
     searchMode: "url",
-    // Verified 2026-08-25: s?k= is canonical on all Amazon marketplaces;
-    // qid/crid/ref params are tracking-only and not required.
-    searchUrlTemplate: "https://www.amazon.com/s?k={query}",
+    searchUrlTemplate: "https://www.amazon.in/s?k={query}",
   },
   "amazon-in": {
     name: "Amazon India",
@@ -78,13 +70,10 @@ const BUILT_IN_PRESETS: Record<string, StorePreset> = {
     searchUrlTemplate: "https://www.amazon.in/s?k={query}",
   },
   adidas: {
-    name: "Adidas",
-    baseUrl: "https://www.adidas.com",
+    name: "Adidas India",
+    baseUrl: "https://www.adidas.co.in",
     searchMode: "url",
-    // Verified 2026-08-25: /us/search?q= is still the US search route (Akamai-
-    // protected but resolves in a real browser). Other regions use their own
-    // domains (adidas.co.in, adidas.co.uk, …), not country path prefixes.
-    searchUrlTemplate: "https://www.adidas.com/us/search?q={query}",
+    searchUrlTemplate: "https://www.adidas.co.in/search?q={query}",
   },
   walmart: {
     name: "Walmart",

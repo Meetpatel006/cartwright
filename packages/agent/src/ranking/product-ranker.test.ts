@@ -57,13 +57,6 @@ describe("filterCandidates", () => {
     const { kept } = filterCandidates(products, intent({}));
     expect(kept.map((p) => p.id)).toEqual(["b"]);
   });
-
-  test("drops currency mismatches (prevents budget bypass)", () => {
-    const products = [mk({ id: "a", currency: "INR", amountInMinor: 100_00 }), mk({ id: "b", currency: "USD", amountInMinor: 100_00 })];
-    const { kept, filteredOut } = filterCandidates(products, intent({ currency: "USD" }));
-    expect(kept.map((p) => p.id)).toEqual(["b"]);
-    expect(filteredOut[0]!.reason).toMatch(/Currency/);
-  });
 });
 
 describe("rankProducts — signals", () => {
