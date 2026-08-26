@@ -142,15 +142,18 @@ function availabilityTone(availability: NormalizedProduct["availability"]): stri
 /*  Page                                                                      */
 /* -------------------------------------------------------------------------- */
 
-export default function ShopperPage() {
+interface ShopperPageProps {
+  initialSessionId?: string;
+}
+
+export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   const [query, setQuery] = useState("wireless headphones under 5000");
   const [store, setStore] = useState("raven");
   const [browserMode, setBrowserMode] = useState<"local" | "browserbase">("local");
   const [activeTab, setActiveTab] = useState<"differentiation" | "standard">("differentiation");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialSessionId ?? null);
 
-  const sessionsList = useQuery(trpc.shopping.list.queryOptions());
   const loadedSession = useQuery(
     trpc.shopping.get.queryOptions(
       { sessionId: selectedSessionId ?? "" },
@@ -162,7 +165,6 @@ export default function ShopperPage() {
     ...trpc.shopping.run.mutationOptions(),
     onSuccess: (data) => {
       setSelectedSessionId(data.sessionId);
-      sessionsList.refetch();
     },
   });
 
@@ -310,47 +312,6 @@ export default function ShopperPage() {
           </Button>
         </div>
       </header>
-
-      {/* ChatGPT-style Session History Selector (DB UUIDs) */}
-      {sessionsList.data && sessionsList.data.length > 0 && (
-        <Card className="mb-6 p-3 border-blue-500/30 bg-blue-950/5 dark:bg-blue-950/20">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300">
-              <span className="flex h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-              Chat / Session History (Database UUIDs)
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={selectedSessionId ?? runResult?.sessionId ?? ""}
-                onChange={(e) => {
-                  if (e.target.value) {
-                    setSelectedSessionId(e.target.value);
-                  }
-                }}
-                className="rounded border border-input bg-background px-3 py-1 text-xs font-mono max-w-sm truncate"
-              >
-                {sessionsList.data.map((s) => (
-                  <option key={s.sessionId} value={s.sessionId}>
-                    UUID: {s.sessionId.slice(0, 13)}… — "{s.rawQuery}" ({s.status})
-                  </option>
-                ))}
-              </select>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setSelectedSessionId(null);
-                  run.reset();
-                  select.reset();
-                }}
-              >
-                + New Session
-              </Button>
-            </div>
-          </div>
-        </Card>
-      )}
 
       {activeTab === "differentiation" && (
         <DifferentiationStatePanel
