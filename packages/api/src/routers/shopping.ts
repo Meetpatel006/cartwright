@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import { getCandidatesForSession } from "@cartwright/db/repositories/shopping.repository";
+import {
+  getCandidatesForSession,
+  listSessionsForUser,
+} from "@cartwright/db/repositories/shopping.repository";
 
 import { protectedProcedure, router } from "../index";
 import { generateCorrelationId } from "../audit/audit.service";
@@ -51,6 +54,21 @@ export const shoppingRouter = router({
    */
   liveFeed: protectedProcedure.query(({ ctx }) => {
     return { frame: getLiveFrame(ctx.session.user.id) ?? null };
+  }),
+
+  /**
+   * List all stored shopping sessions for the authenticated user, ordered by
+   * newest first. Gives the UI ChatGPT-style chat/session history by UUID.
+   */
+  list: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await listSessionsForUser(ctx.session.user.id);
+    return rows.map((s) => ({
+      sessionId: s.id,
+      rawQuery: s.rawQuery,
+      status: s.status,
+      createdAt: s.createdAt.toISOString(),
+      transactionId: s.transactionId,
+    }));
   }),
 
   get: protectedProcedure
