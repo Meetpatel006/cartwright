@@ -26,8 +26,8 @@ and (opt-in, **Test Mode only**) completes a Razorpay card payment end-to-end.
    `closeMerchantPaymentSession`, which closes its browser + Stagehand so the
    process exits instead of leaving Chrome open.
 
-7. **Session recording** — opt-in video capture of the whole automation
-    (`RECORD_SESSION=true` or `request.recordSession`). Records the tab with
+7. **Session recording** — always-on video capture of the whole automation
+    (disable per-call with `recordSession: false`). Records the tab with
     Playwright's native `page.screencast()`, transcodes the WebM to a real MP4,
     and writes `recordings/session-<timestamp>.mp4`.
 
@@ -111,9 +111,9 @@ Driven by `completeRazorpayTestPayment` in `src/shopping-agent.ts`:
 
 ## Session recording
 
-Opt-in video capture of the automation, useful for debugging a run or sharing it.
-Toggle with the `RECORD_SESSION=true` env var or `request.recordSession: true`
-(off by default). A visible cursor + click-ripple overlay is injected into the
+Always-on video capture of the automation, useful for debugging a run or sharing
+it. Every run records by default; disable per-call with `request.recordSession:
+false`. A visible cursor + click-ripple overlay is injected into the
 page so you can see exactly where the agent clicked — CDP-driven automation has
 no OS cursor, so without it the screencast would look blank.
 
@@ -156,9 +156,9 @@ bun scripts/test-local.ts --pay-now "Dark Ocean"                 # card (default
 bun scripts/test-local.ts --pay-now --pay-method wallet "Dark Ocean"          # wallet (default olamoney)
 bun scripts/test-local.ts --pay-now --pay-method wallet --wallet olamoney "Dark Ocean"
 
-# Record the run to recordings/session-<timestamp>.mp4 (MP4 via ffmpeg-static)
-RECORD_SESSION=true bun scripts/test-local.ts "gardenia under 5000"
-RECORD_SESSION=true bun scripts/test-local.ts --pay-now "Dark Ocean"
+# Every run records to recordings/session-<timestamp>.mp4 (MP4 via ffmpeg-static)
+bun scripts/test-local.ts "gardenia under 5000"
+bun scripts/test-local.ts --pay-now "Dark Ocean"
 ```
 
 Expected tail output:
@@ -198,8 +198,9 @@ Closed 1 leftover Razorpay window(s).
 | `RAZORPAY_TEST_CARD_EXPIRY` | Default `02/28`. |
 | `RAZORPAY_TEST_WALLET` | Wallet code for the wallet Test Mode flow. Default `olamoney`. Other default-enabled codes: `mobikwik`, `airtelmoney`. |
 | `RAZORPAY_TEST_OTP` | Test OTP auto-filled for OTP-gated wallets (MobiKwik). Default `123456`. |
-| Merchant store auth (e.g. `meetpatel@gmail.com`) | Injected from `apps/web/.env`. |
-| `RECORD_SESSION` | Set `true` to capture the run as an MP4 (`recordings/session-<timestamp>.mp4`). Can also be enabled per-call via `request.recordSession`. Off by default. |
+| `MERCHANT_ACCOUNT_EMAIL` | Local-merchant test account used to sign in before checkout (so orders aren't guest checkouts). Read by the merchant profile (e.g. Raven Scents); injected from `apps/web/.env`. |
+| `MERCHANT_ACCOUNT_PASSWORD` | Password for the account above. |
+| `MERCHANT_ACCOUNT_NAME` | Optional full name used when the agent provisions the test account via the Supabase admin API. |
 
 ## Debug logging
 
@@ -211,10 +212,26 @@ when a new Razorpay window is not being detected.
 ## Architecture notes
 
 - Built on **Stagehand** (`@browserbasehq/stagehand`), local Chrome by default,
-  with `meta/llama-3.1-70b-instruct` via the NVIDIA OpenAI-compatible endpoint
-  (`custom-llm.ts`).
+  with `openai/gpt-oss-20b` via the NVIDIA OpenAI-compatible endpoint
+  (`custom-llm.ts`). (NVIDIA deprecated `meta/llama-3.1-70b-instruct` on
+  2026-08-25 and its free endpoint became unusably slow; `gpt-oss-20b` is fast
+  (~1-5s) on the same endpoint. It is a reasoning model, so keep `maxTokens`
+  generous — reasoning tokens count against the limit.)
 - `stagehand.act()` is frame-aware (works via CDP) — used as a fallback and for
   the one-shot mock-bank click. Deterministic UI steps use `page.locator()`
   (fast, no LLM).
 - `AgentPage` / `AgentBrowserContext` are derived from Stagehand's `Page` /
-  `BrowserContext` types (`src/shopping-agent.ts` top of file).
+  `BrowserContext` types (`src/browser-types.ts`; shared with the local-merchant
+  engine to avoid an import cycle).
+- Local/demo merchants are pluggable: the core agent is merchant-agnostic and
+  all merchant specifics (URLs, cart storage shape, shipping rule, checkout
+  form layout, credentials env-var names) live in pure-data profiles registered
+  via `registerLocalMerchant`. The generic engine is `src/local-merchant.ts`;
+  the Raven Scents sample profile is `src/merchants/raven-scents.ts`, imported
+  for side-effect registration by `src/index.ts` (and directly by the smoke-test
+  scripts). Add a new merchant by creating another profile module — no core
+  changes needed.
+- Well-known storefront search shortcuts (Nike/Amazon/… presets) likewise live
+  outside the core in `src/store-presets.ts` as pure data + a registry. They
+  are accelerators only; unknown stores/URLs use the natural-language search
+  flow or Google Shopping. Add more via `registerStorePreset()`.

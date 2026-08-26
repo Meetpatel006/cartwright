@@ -11,6 +11,7 @@
 import { z } from "zod";
 
 import { runShoppingAgent, type AgentBrowserMode, type ShoppingResult } from "../shopping-agent";
+import { isRegisteredLocalMerchant } from "../local-merchant";
 import type { CustomModelEndpoint } from "../custom-llm";
 import type { ProductCandidate } from "../commerce/types";
 import {
@@ -40,6 +41,12 @@ export interface DiscoverProductsParams {
   mode: AgentBrowserMode;
   browserbaseApiKey?: string;
   llm?: CustomModelEndpoint;
+  /** Record the browser session to packages/agent/recordings/. Defaults to true
+   *  (the agent records every run unless explicitly disabled). */
+  recordSession?: boolean;
+  /** Key (typically user id) under which live-feed frames are published for
+   *  the web UI's live view. Omit to disable live streaming. */
+  liveFeedKey?: string;
   /** AbortSignal for top-level timeout/cancellation. */
   signal?: AbortSignal;
 }
@@ -95,8 +102,20 @@ export async function discoverProducts(params: DiscoverProductsParams): Promise<
   let lastError: string | undefined;
   let sawMatches = false;
 
+  console.log("[discovery] start:", {
+    query: JSON.stringify(params.query),
+    stores,
+    budgetInMinor: params.budgetInMinor,
+    currency: params.currency,
+    mode: params.mode,
+  });
+
   for (const store of stores) {
-    const basket = store ? parseRavenBasket(params.query, store) : undefined;
+    // Multi-item baskets ("2 Gardenia and 3 Bad Boy") only make sense on
+    // registered local merchants with a deterministic catalog; external stores
+    // use the generic search flow.
+    const basket = store ? parseQueryBasket(params.query, store) : undefined;
+    console.log("[discovery] run agent:", { store, basket: basket ?? null });
     const result = await runShoppingAgent({
       query: params.query,
       store,
@@ -107,19 +126,43 @@ export async function discoverProducts(params: DiscoverProductsParams): Promise<
       llm: params.llm,
       basket,
       preserveCheckoutSession: true,
+      recordSession: params.recordSession,
+      liveFeedKey: params.liveFeedKey,
       signal: params.signal,
     });
 
     if (!firstResult) firstResult = result;
-    if (result.error) lastError ??= result.error;
+    if (result.error) {
+      console.warn(`[discovery] agent error for store "${result.store}":`, result.error);
+      lastError ??= result.error;
+    }
 
-    for (const raw of result.matches ?? []) {
+    const rawMatches = result.matches ?? [];
+    console.log(
+      `[discovery] store "${result.store}" returned ${rawMatches.length} raw match(es)`,
+      rawMatches.length > 0 ? rawMatches.map((m) => ({ name: m.name, price: m.price })) : [],
+    );
+
+    for (const raw of rawMatches) {
       sawMatches = true;
       const parsed = AgentProductSchema.safeParse(raw);
-      if (!parsed.success) continue; // skip malformed; surface below if all fail
+      if (!parsed.success) {
+        console.warn(
+          `[discovery] schema rejected product from "${result.store}":`,
+          JSON.stringify(raw),
+          JSON.stringify(parsed.error.issues),
+        );
+        continue; // skip malformed; surface below if all fail
+      }
       allCandidates.push(toCandidate(parsed.data, result.store));
     }
   }
+
+  console.log("[discovery] done:", {
+    candidates: allCandidates.length,
+    sawMatches,
+    lastError: lastError ?? null,
+  });
 
   if (allCandidates.length === 0) {
     if (sawMatches) {
@@ -138,16 +181,64 @@ export async function discoverProducts(params: DiscoverProductsParams): Promise<
   return { candidates: allCandidates, raw: firstResult! };
 }
 
-/** Mirror of the API helper: deterministic Raven basket from a query + store. */
-function parseRavenBasket(query: string, store: string | undefined) {
-  if (store?.toLowerCase() !== "raven") return undefined;
-  const gardeniaMatch = query.match(/(?:(\d+)\s+)?gardenia/i);
-  const darkOceanMatch = query.match(/(?:(\d+)\s+)?dark\s+ocean/i);
-  const badBoyMatch = query.match(/(?:(\d+)\s+)?bad\s+boy/i);
-  if (!gardeniaMatch && !darkOceanMatch && !badBoyMatch) return undefined;
-  return [
-    ...(gardeniaMatch ? [{ name: "Gardenia", quantity: Number(gardeniaMatch[1] ?? 1) }] : []),
-    ...(darkOceanMatch ? [{ name: "Dark Ocean", quantity: Number(darkOceanMatch[1] ?? 1) }] : []),
-    ...(badBoyMatch ? [{ name: "Bad Boy", quantity: Number(badBoyMatch[1] ?? 1) }] : []),
-  ];
+/**
+ * Parse a free-form shopping query into basket items — GENERICALLY, with no
+ * hard-coded product names. Splits multi-item queries ("2 Gardenia and 3 Bad
+ * Boy", "gold edition + dark ocean"), strips budget clauses ("under 5000",
+ * "below Rs. 3,000"), and reads quantities from prefixes ("2 gardenia",
+ * "2x gold") or suffixes ("gardenia x2"). Item NAMES are resolved later
+ * against the store's live catalog (fuzzy match), so any product the merchant
+ * sells works. Only applies to registered local merchants (see
+ * src/local-merchant.ts) — external stores always get the search flow.
+ */
+function parseQueryBasket(query: string, store: string | undefined) {
+  if (!isRegisteredLocalMerchant(store)) return undefined;
+
+  const NUMBER_WORDS: Record<string, number> = {
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+  };
+
+  const items: Array<{ name: string; quantity: number }> = [];
+  const parts = query
+    .split(/\s*(?:\band\b|&|,|\+)\s*/i)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  for (const part of parts) {
+    let text = part;
+    let quantity = 1;
+
+    // Strip budget clauses: "under 5000", "below Rs. 3,000", "under $100"
+    text = text.replace(
+      /\b(?:under|below|less than|max(?:imum)?|upto|up to)\s*(?:rs\.?|inr|₹|\$)?\s*[\d,]+(?:\.\d+)?/gi,
+      " ",
+    );
+
+    // Leading quantity: "2 gardenia", "2x gold edition", "two bad boy"
+    const lead = text.match(/^\s*(\d{1,2}|one|two|three|four|five|six)\s*[x*]?\s+/i);
+    if (lead) {
+      const leadToken = lead[1]!;
+      quantity = /^\d+$/.test(leadToken)
+        ? Number(leadToken)
+        : (NUMBER_WORDS[leadToken.toLowerCase()] ?? 1);
+      text = text.slice(lead[0]!.length);
+    } else {
+      // Trailing quantity marker: "gold edition x2"
+      const trail = text.match(/\s+[x*]\s*(\d{1,2})\s*$/i);
+      if (trail) {
+        quantity = Number(trail[1]);
+        text = text.slice(0, trail.index);
+      }
+    }
+
+    const name = text.replace(/\s+/g, " ").trim();
+    if (!name || !Number.isInteger(quantity) || quantity < 1) continue;
+    items.push({ name, quantity });
+  }
+  return items.length ? items : undefined;
 }
