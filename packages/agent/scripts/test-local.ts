@@ -14,7 +14,9 @@
  * command works with no external bot-walls and no cost. External stores (Google
  * Shopping, Nike, Amazon, ...) are prone to blocking automated browsers.
  *
- * Built-in stores: raven, nike, amazon, amazon-in, adidas, walmart, flipkart
+ * Built-in stores: nike, amazon, amazon-in, adidas, walmart, flipkart
+ * Plus the registered local-merchant profile "raven" (Raven Scents dev
+ * storefront) — see src/merchants/raven-scents.ts.
  * Or pass any --url and the agent will navigate there and drive the search box via LLM.
  * Any store/URL not listed falls back to a natural-language "find the search box" flow.
  *
@@ -26,6 +28,10 @@
  */
 import { approveMerchantPayment, closeMerchantPaymentSession, parseBudget, runShoppingAgent } from "../src/shopping-agent";
 import { createOrder } from "../src/razorpay";
+// Register the Raven Scents local-merchant profile (store key "raven") for
+// this smoke test — the agent core is merchant-agnostic; profiles are pluggable
+// via registerLocalMerchant (see src/local-merchant.ts / src/merchants/).
+import "../src/merchants/raven-scents";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
@@ -125,8 +131,6 @@ const result = await runShoppingAgent({
     // Bound each LLM call so a slow/stalling request fails over to the next
     // key (and retries) quickly instead of hanging for minutes and letting the
     // browser frame go stale (which surfaces as CDP "Frame not found" errors).
-    timeoutMs: 120_000,
-    maxTokens: 4096,
     debug: process.env.AGENT_DEBUG === "true" || process.env.AGENT_DEBUG === "1",
     ...(process.env.AGENT_LLM_EXTRA_BODY && {
       extraBody: JSON.parse(process.env.AGENT_LLM_EXTRA_BODY) as Record<string, unknown>,

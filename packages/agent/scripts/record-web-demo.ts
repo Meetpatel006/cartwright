@@ -11,7 +11,7 @@
  *
  * Usage:
  *   bun scripts/record-web-demo.ts
- *   RECORD_SESSION=true bun scripts/record-web-demo.ts   # (env ignored here; always records)
+ *   bun scripts/record-web-demo.ts   # always records
  *
  * Output: packages/agent/recordings/session-YYYY-MM-DD_HH-mm-ss.mp4
  */
