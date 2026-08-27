@@ -15,6 +15,7 @@ import { z } from "zod";
 import { createOpenAICompatibleLLM, type CustomModelEndpoint } from "./custom-llm";
 import { liveBrowserSessionRegistry } from "./browser-session-registry";
 import { parseCheckoutTotal } from "./checkout-total";
+import { filterProductsByQueryRelevance } from "./filtering/query-relevance";
 import { startLiveFeedPump } from "./live-feed";
 import {
   ensureLocalMerchantAccount,
@@ -33,6 +34,18 @@ import { stripBudgetClause } from "./request/budget";
 
 // Shared Stagehand browser/page aliases (also used by ./local-merchant).
 import type { AgentBrowser, AgentBrowserContext, AgentPage } from "./browser-types";
+// Shared LLM-driven add-to-cart engine (relocated here to break the
+// shopping-agent ↔ local-merchant import cycle). Provides `actWithFallback`
+// (used below) and `llmAddToCart` (the new LLM navigation for every provider).
+import { actWithFallback, llmAddToCart, type BrowserRoot } from "./add-to-cart";
+// Firecrawl web-search client + generic product-URL helpers - see ./firecrawl.
+import {
+  FirecrawlClient,
+  isSameOriginOrRelative,
+  resolveAbsoluteUrl,
+  resolveProductUrls,
+  storeDomainFromUrl,
+} from "./firecrawl";
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -159,60 +172,11 @@ export type { StorePreset } from "./store-presets";
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Tokenize a product name for fuzzy matching (collapse adjacent repeats). */
-function nameTokens(name: string): string[] {
-  const tokens = name
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-  const collapsed: string[] = [];
-  for (const token of tokens) {
-    if (collapsed[collapsed.length - 1] !== token) collapsed.push(token);
-  }
-  return collapsed;
-}
-
-/**
- * Resolve a product's real URL by fuzzy-matching its name against the text of
- * every anchor on the page. Runs over ALL links (not a brittle per-site regex)
- * so it stays general across stores. Returns undefined when nothing scores high
- * enough — callers must tolerate a missing URL.
- */
-function bestUrlFor(name: string, links: { text: string; href: string }[]): string | undefined {
-  const nameSet = new Set(nameTokens(name));
-  let best: { href: string; score: number } | undefined;
-  for (const link of links) {
-    const linkTokens = new Set(nameTokens(link.text));
-    let overlap = 0;
-    for (const token of nameSet) if (linkTokens.has(token)) overlap++;
-    const score = overlap / Math.max(1, Math.min(nameSet.size, linkTokens.size));
-    if (!best || score > best.score) best = { href: link.href, score };
-  }
-  return best && best.score >= 0.5 ? best.href : undefined;
-}
-
-/**
- * The model's extract may return a relative product path (e.g. "/product/x" or
- * "product/x"). page.goto rejects those with "Cannot navigate to invalid URL",
- * so resolve against the store origin. Absolute URLs (incl. other domains)
- * pass through unchanged.
- */
-function resolveAbsoluteUrl(url: string, base: string): string {
-  if (!url) return base;
-  const trimmed = url.trim();
-  // Only treat values that look like real URLs / path-relative refs as URLs.
-  // The model sometimes emits a placeholder (e.g. the literal "None", "null",
-  // "N/A") when it can't see a product link — passing that to `new URL` would
-  // resolve it as a path segment (localhost:5173/None). Reject such junk and
-  // fall back to `base` instead of producing a bogus URL.
-  if (!/^(https?:\/\/|\/|\.\/|\.\.\/|#|mailto:)/i.test(trimmed)) return base;
-  try {
-    const origin = new URL(base).origin;
-    return new URL(trimmed, `${origin}/`).href;
-  } catch {
-    return url;
-  }
-}
+// NOTE: product URLs are resolved authoritatively via Firecrawl
+// (`resolveProductUrls`, `storeDomainFromUrl`, etc. from ./firecrawl), and the
+// generic URL guards `resolveAbsoluteUrl` / `isSameOriginOrRelative` (also from
+// ./firecrawl) validate/fix the chosen URL before navigation. All unit-tested
+// in ./firecrawl.test.ts.
 
 // ── Budget parsing (currency-aware) ──────────────────────────────────────────
 // `ParsedBudget` and `parseBudget` now live in `request/budget.ts` so the Part B
@@ -252,6 +216,15 @@ export interface ShoppingRequest {
   basket?: Array<{ name: string; quantity: number }>;
   /** Keep a merchant checkout session alive for an explicit approval action. */
   preserveCheckoutSession?: boolean;
+  /**
+   * Discovery-only mode for the human-in-the-loop: keep the browser session
+   * alive at the search-results page WITHOUT adding anything to the cart. The
+   * actual add-to-cart is deferred to the human's explicit product selection
+   * (fulfilled via `fulfillSelection`), so only the chosen item is ever added.
+   * Used by the API `shop` → `selectProductForSession` flow. Mutually exclusive
+   * in intent with `preserveCheckoutSession` (which adds + proceeds + retains).
+   */
+  retainSession?: boolean;
   /** Record the automation to recordings/session-YYYY-MM-DD_HH-mm-ss.mp4 using
    *  Playwright's native page.screencast() (WebM), transcoded to MP4 afterward.
    *  Recording is ON by default; pass false to disable. */
@@ -350,14 +323,6 @@ function resolveStore(store?: string): StorePreset {
   }
 }
 
-/**
- * Try a primary natural-language action, falling back to an alternative phrasing
- * if the first fails. Returns true if either succeeded. This is the lightweight
- * recovery layer — for state-changing UI steps we never blindly retry, we just
- * try a different description of the same intent.
- */
-type BrowserRoot = Pick<AgentPage, "locator">;
-
 export interface MerchantPaymentSession {
   browser: AgentBrowser;
   stagehand: Stagehand;
@@ -425,42 +390,6 @@ function retainMerchantPaymentSession(
   return { sessionId, providerSessionId };
 }
 
-async function actWithFallback(
-  page: AgentPage,
-  context: AgentBrowserContext,
-  stagehand: Stagehand,
-  primary: string,
-  fallback: string,
-): Promise<boolean> {
-  const run = async (instruction: string): Promise<boolean> => {
-    // Stagehand v4 resolves AI actions against the active page. Re-select the
-    // page after navigation/SPA transitions so it does not keep an old frame
-    // snapshot and fail with Accessibility.getFullAXTree frameId errors.
-    await context.setActivePage(page);
-    await page.waitForTimeout(250).catch(() => {});
-
-    const result = await stagehand.act(instruction);
-    return result.data.success && result.data.actions.length > 0;
-  };
-
-  try {
-    if (await run(primary)) return true;
-    console.warn(`[agent] primary action returned no actionable result ("${primary}")`);
-  } catch (err) {
-    console.warn(`[agent] primary action failed ("${primary}"): ${(err as Error).message}`);
-    // A thrown CDP/navigation error means the page state is not trustworthy;
-    // do not issue a second state-changing action against the same frame.
-    return false;
-  }
-
-  try {
-    if (await run(fallback)) return true;
-    console.warn(`[agent] fallback action returned no actionable result ("${fallback}")`);
-  } catch (err) {
-    console.warn(`[agent] fallback action failed ("${fallback}"): ${(err as Error).message}`);
-  }
-  return false;
-}
 
 async function clickVisibleTextRoot(root: BrowserRoot, pattern: RegExp): Promise<boolean> {
   for (const selector of ["button", '[role="button"]', "a"]) {
@@ -1405,6 +1334,97 @@ export async function closeMerchantPaymentSession(sessionId: string): Promise<vo
   await session.browser.close().catch(() => {});
 }
 
+export interface FulfillSelectionOptions {
+  /** After adding to cart, also proceed through checkout to the payment gate. */
+  proceedToCheckout?: boolean;
+  /**
+   * Durable provider session id (Browserbase session id, or the `merchant-<uuid>`
+   * registry key for local mode). Used to reconnect a retained session that is no
+   * longer resident in THIS process. When omitted, only an in-process session is
+   * looked up.
+   */
+  providerSessionId?: string;
+  /** "local" | "browserbase". Reconnection is only attempted for "browserbase". */
+  provider?: string;
+  /** Browserbase API key, required to reconnect a Browserbase session. */
+  browserbaseApiKey?: string;
+}
+
+export interface FulfillSelectionResult {
+  /** True when the retained browser session was found and driven. */
+  driven: boolean;
+  /** Why the drive did not happen (e.g. "no live browser session"). */
+  reason?: string;
+  /** Result of the add-to-cart (and optional checkout) when driven. */
+  checkout?: CheckoutResult;
+}
+
+/**
+ * Selection-gated add-to-cart: drive a RETAINED browser session to the product
+ * the human explicitly chose and add ONLY that item to the cart.
+ *
+ * This is the selection half of the human-in-the-loop rule "only the matching
+ * items are added". Discovery (`shop`) deliberately does NOT add anything to the
+ * cart — it retains the session at the search-results page. Only here, when the
+ * human picks a product, do we navigate to that product and add it. The retained
+ * session is then left at the payment gate (when `proceedToCheckout`), ready for
+ * `approveMerchantPayment` to complete the purchase.
+ *
+ * Best-effort: if no live session exists (e.g. the session expired, or this is a
+ * test with an injected discover that never opened a browser), it returns
+ * `{ driven: false }` without throwing — the caller falls back to the
+ * provisional discovered amount.
+ */
+export async function fulfillSelection(
+  sessionId: string,
+  productUrl: string,
+  options: FulfillSelectionOptions = {},
+): Promise<FulfillSelectionResult> {
+  let session = liveBrowserSessionRegistry.get(sessionId);
+  if (
+    !session &&
+    options.provider === "browserbase" &&
+    options.providerSessionId &&
+    options.browserbaseApiKey
+  ) {
+    // Durability path: the live handle died with the creating process, but the
+    // Browserbase cloud session survives (keepAlive). Reconnect to the SAME id
+    // and re-register under it so the subsequent lookup hits the registry.
+    // Only attempted for genuine Browserbase sessions — never for local or
+    // fake/test handles, which must not trigger a real provider connect.
+    try {
+      const reconnected = await reconnectMerchantPaymentSession(options.providerSessionId, {
+        browserbaseApiKey: options.browserbaseApiKey,
+      });
+      if (reconnected) session = liveBrowserSessionRegistry.get(options.providerSessionId);
+    } catch {
+      /* ignore — degradation handled below */
+    }
+  }
+  if (!session) {
+    return { driven: false, reason: "no live browser session for selection" };
+  }
+
+  // Refresh which page is active (the retained session may have drifted) and let
+  // runCheckout do the navigation + shared LLM add-to-cart + optional proceed.
+  await session.browser.context.setActivePage(session.page).catch(() => {});
+  try {
+    const checkout = await runCheckout(
+      session.page,
+      session.browser.context,
+      session.stagehand,
+      productUrl,
+      { proceedToCheckout: options.proceedToCheckout ?? false },
+    );
+    return { driven: true, checkout };
+  } catch (error) {
+    return {
+      driven: false,
+      reason: error instanceof Error ? error.message : "fulfillSelection drive failed",
+    };
+  }
+}
+
 /**
  * Reconnect to a retained Browserbase session by its durable session id.
  *
@@ -1599,6 +1619,7 @@ async function runCheckout(
   context: AgentBrowserContext,
   stagehand: Stagehand,
   productUrl: string,
+  options: { proceedToCheckout?: boolean } = {},
 ): Promise<CheckoutResult> {
   const steps: CheckoutStep[] = [];
   const log = (action: string, status: CheckoutStep["status"], detail?: string) =>
@@ -1616,84 +1637,48 @@ async function runCheckout(
   await context.setActivePage(page).catch(() => {});
   await page.waitForTimeout(500).catch(() => {});
 
-  // Wait for the product to finish loading and render its add-to-cart control.
-  for (let i = 0; i < 30; i++) {
-    const ready = await page
-      .evaluate(
-        `Array.from(document.querySelectorAll('button')).some(el => /add to (cart|bag)/i.test((el.textContent||'').trim()))`,
-      )
-      .catch(() => false);
-    if (ready) break;
-    await new Promise((r) => setTimeout(r, 500));
-  }
-
-  // Guard: if we are NOT on a real product page (e.g. a 404 / not-found route),
-  // fail loudly. Stagehand's act() does not throw when no element matches, so
-  // without this every later step would silently no-op and produce no order.
-  const onProductPage = await page
-    .evaluate(
-      `Array.from(document.querySelectorAll('button')).some(el => /add to (cart|bag)/i.test((el.textContent||'').trim()))`,
-    )
-    .catch(() => false);
-  if (!onProductPage) {
-    return {
-      status: "failed",
-      steps,
-      error: `Landed on a non-product page (${targetUrl}) — no add-to-cart control found; cannot proceed.`,
-    };
-  }
-
-  // Dismiss common overlays deterministically. Calling Stagehand here would
-  // request another accessibility snapshot immediately after navigation, which
-  // is the window where Chrome can invalidate the old frame id.
-  await page
-    .evaluate(`(() => {
-      const labels = /^(accept|accept all|allow all|agree|close|no thanks|dismiss)$/i;
-      for (const el of Array.from(document.querySelectorAll('button, [role="button"]'))) {
-        const text = (el.textContent || '').trim();
-        if (labels.test(text)) (el as HTMLElement).click();
-      }
-    })()`)
-    .catch(() => {});
-
-  // Registered local merchants (e.g. the Raven dev storefront) have stable,
-  // bot-free controls, so drive them with CDP-backed DOM locators via their
-  // profile instead of Stagehand's accessibility snapshot, whose cached frame
-  // is invalid after this route navigation in Stagehand 4.0.2.
+  // Registered local merchants (e.g. the Raven dev storefront) share the SAME
+  // LLM add-to-cart engine as external stores — no separate hard-coded path.
+  // When a Stagehand instance is available they drive the real Add to Cart
+  // button through the model; the deterministic profile fallback only kicks in
+  // for the no-LLM basket test.
   const localProfile = findLocalMerchantForUrl(targetUrl);
   if (localProfile) {
-    return runLocalMerchantCheckout(page, localProfile);
+    return runLocalMerchantCheckout(page, localProfile, false, {
+      context,
+      stagehand,
+      proceedToCheckout: options.proceedToCheckout,
+    });
   }
 
-  const added = await actWithFallback(
-    page,
-    context,
-    stagehand,
-    "Select any required options (size, color, quantity) if prompted, then add this product to the cart or bag.",
-    "Click the add to cart or add to bag button.",
-  );
-  log("add_to_cart", added ? "done" : "failed");
-  if (!added) {
-    return { status: "failed", steps, error: "Could not add the product to the cart." };
-  }
+  // Generic store path: add to cart via the shared LLM engine. The model
+  // dismisses overlays, confirms this is a product page, clicks Add to Cart,
+  // and verifies the item landed in the cart — NO regex / hard-coded selectors.
+  const cartResult = await llmAddToCart(page, context, stagehand);
+  if (cartResult.status !== "added_to_cart") return cartResult;
 
+  // Default behavior stops here: the item is in the cart. Only continue to the
+  // checkout / payment gate when explicitly requested (e.g. --pay-now retains a
+  // session for later human approval).
+  if (!options.proceedToCheckout) return cartResult;
+
+  // ── Optional deeper checkout (shipping -> payment gate) ────────────────────
+  // Many stores split checkout into steps. We fill the shipping/address form
+  // with deterministic test data and advance to the payment step, then STOP.
+  // The agent NEVER enters card/UPI details or clicks "Pay" — completing the
+  // purchase requires human approval (see approveMerchantPayment).
   const proceeded = await actWithFallback(
     page,
     context,
     stagehand,
-    "Proceed to checkout.",
-    "Open the cart and click the checkout button.",
+    "Open the cart and proceed to checkout.",
+    "Click the cart icon, then click the checkout button.",
   );
   log("proceed_to_checkout", proceeded ? "done" : "failed", proceeded ? undefined : "checkout button not found");
   if (!proceeded) {
     return { status: "failed", steps, error: "Could not reach checkout; Stagehand returned no actionable result." };
   }
 
-  // ── Multi-step checkout (shipping → review/payment) ─────────────────────
-  // Many stores split checkout into steps. We fill the shipping/address form
-  // with deterministic test data and advance to the payment step, then STOP.
-  // The agent NEVER enters card/UPI details or clicks "Pay" — completing the
-  // purchase requires human approval (see gatePurchase in the API router).
   const filled = await actWithFallback(
     page,
     context,
@@ -1710,7 +1695,8 @@ async function runCheckout(
   await page.waitForTimeout(500).catch(() => {});
 
   // Detect the payment gate and read the order summary — but do NOT click any
-  // real "Pay" button yet.
+  // real "Pay" button yet. Gate detection is LLM-first (the model reads the
+  // rendered UI), with the DOM/regex check as a cheap safety net.
   let reachedPayment = false;
   let orderSummary: OrderSummary | undefined;
   try {
@@ -2227,23 +2213,47 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       );
 
       // ── Step 3: Resolve real URLs ───────────────────────────────────────
-      // Prefer the URL the model already returned; fall back to a fuzzy match
-      // over every anchor on the page (no brittle per-site regex).
+      // Authoritative source = Firecrawl web search, which returns canonical,
+      // already-validated product-page URLs (no 404s, no hallucinated domains).
+      // The brittle in-page anchor fuzzy-match was removed; only the model's own
+      // extracted URL is kept as a minimal same-origin fallback when Firecrawl
+      // misses a product (off-origin / placeholder URLs are dropped).
       const products = normalizeExtractedProducts(extracted.data.products);
+      const storeDomain = storeDomainFromUrl(store.baseUrl);
+      const pageUrl = await page.url();
       try {
-        const linksJson = (await page.evaluate(
-          `JSON.stringify(Array.from(document.querySelectorAll("a[href]")).map(a => ({ text: (a.textContent || "").trim(), href: a.href })).filter(l => l.text.length > 3))`,
-        )) as string;
-        const allLinks = JSON.parse(linksJson) as { text: string; href: string }[];
-        console.log(`[agent] DOM scan: ${allLinks.length} links`);
+        let firecrawlUrls: Map<string, string> | null = null;
+        try {
+          const firecrawl = new FirecrawlClient();
+          firecrawlUrls = await resolveProductUrls(products, storeDomain, firecrawl.search.bind(firecrawl), {
+            concurrency: 5,
+          });
+          console.log(`[agent] Firecrawl resolved ${firecrawlUrls.size}/${products.length} product URLs`);
+        } catch (fcError) {
+          console.warn(
+            `[agent] Firecrawl URL resolution unavailable (${
+              fcError instanceof Error ? fcError.message : String(fcError)
+            })`,
+          );
+          firecrawlUrls = null;
+        }
+
         for (const product of products) {
-          // The model may return a non-URL placeholder ("None", "null", "N/A")
-          // when it can't see a product link. Treat those as missing so the
-          // fuzzy anchor-match fallback below can resolve the real URL.
+          // 1) Prefer a Firecrawl-resolved, store-domain URL.
+          const fc = firecrawlUrls?.get(product.name);
+          if (fc) {
+            product.url = fc;
+            continue;
+          }
+          // 2) Otherwise keep the model-extracted URL only if it is a real,
+          //    same-origin link (reject placeholders and off-origin hallucinations
+          //    like "https://www.nike.in/5-3920").
           if (product.url && !/^(https?:\/\/|\/|\.\/|\.\.\/|#)/i.test(product.url.trim())) {
             product.url = undefined;
           }
-          if (!product.url) product.url = bestUrlFor(product.name, allLinks);
+          if (product.url && !isSameOriginOrRelative(product.url, pageUrl)) {
+            product.url = undefined;
+          }
         }
         const resolved = products.filter((p) => p.url).length;
         console.log(`[agent] resolved ${resolved}/${products.length} product URLs`);
@@ -2275,7 +2285,27 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
           return true;
         });
 
-      // Pick the cheapest match as the purchase candidate.
+      // ── Step 4b: Query-relevance gate (LLM) ──────────────────────────────────
+      // Keep ONLY products that actually match the shopper's query. E-commerce
+      // result pages mix in sponsored / related / upsell items; we must not
+      // surface or auto-add an off-topic product. This is the relevance half of
+      // the human-in-the-loop rule "only the matching items are added". The
+      // selection half (deferring the add-to-cart to the human's explicit
+      // choice) is handled by `fulfillSelection` + the API's selectProduct.
+      const relevance = await filterProductsByQueryRelevance(
+        request.query,
+        result.matches,
+        stagehand,
+      );
+      if (relevance.filteredOut.length > 0) {
+        console.log(
+          `[agent] query-relevance: dropped ${relevance.filteredOut.length} off-topic result(s) for "${request.query}":`,
+          relevance.filteredOut.map((f) => f.name),
+        );
+      }
+      result.matches = relevance.kept;
+
+      // Pick the cheapest RELEVANT match as the purchase candidate.
       result.picked = [...result.matches].sort((a, b) => a.priceValue - b.priceValue)[0];
 
       throwIfAborted(request.signal);
@@ -2284,7 +2314,12 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       const doCheckout = request.checkout !== false && !!result.picked?.url;
       if (doCheckout && result.picked && result.picked.url) {
         console.log(`[agent] performing on-site checkout actions for: ${result.picked.name}`);
-        result.checkout = await runCheckout(page, browser.context, stagehand, result.picked.url);
+        result.checkout = await runCheckout(page, browser.context, stagehand, result.picked.url, {
+          // Default stops after the item is in the cart. Only proceed to the
+          // payment gate (and retain a session) when the caller explicitly asks
+          // to preserve the checkout session (e.g. the --pay-now smoke test).
+          proceedToCheckout: request.preserveCheckoutSession,
+        });
         if (request.preserveCheckoutSession && result.checkout.paymentGate) {
           const retained = retainMerchantPaymentSession(
             browser,
@@ -2298,6 +2333,23 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
           result.providerSessionId = retained.providerSessionId;
           keepCheckoutSession = true;
         }
+      } else if (request.retainSession) {
+        // Discovery-only mode for the human-in-the-loop: keep the browser alive
+        // at the search-results page WITHOUT adding anything to the cart. The
+        // actual add-to-cart is deferred to the human's explicit product
+        // selection (fulfilled via `fulfillSelection`), so only the chosen item
+        // is ever added to the cart.
+        const retained = retainMerchantPaymentSession(
+          browser,
+          stagehand,
+          page,
+          recordingStarted && pwBrowser && pwPage && recordingPath
+            ? { pwBrowser, pwPage, path: recordingPath }
+            : undefined,
+        );
+        result.sessionId = retained.sessionId;
+        result.providerSessionId = retained.providerSessionId;
+        keepCheckoutSession = true;
       } else if (request.checkout !== false && result.picked && !result.picked.url) {
         result.checkout = {
           status: "skipped",

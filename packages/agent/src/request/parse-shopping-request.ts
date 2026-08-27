@@ -37,7 +37,6 @@ const MERCHANT_TOKENS = [
   "myntra",
   "nike",
   "adidas",
-  "walmart",
   "apple",
   "samsung",
   "raven",

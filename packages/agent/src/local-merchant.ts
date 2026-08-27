@@ -11,7 +11,11 @@
  * Nothing in here may reference a specific merchant — see
  * `src/merchants/raven-scents.ts` for an example profile.
  */
+import type { Stagehand } from "@browserbasehq/stagehand";
 import type { AgentBrowserContext, AgentPage } from "./browser-types";
+// Shared LLM-driven add-to-cart engine (no regex / hard-coded selectors) used by
+// EVERY provider, including local/demo merchants, so they navigate via the model.
+import { actWithFallback, llmAddToCart } from "./add-to-cart";
 // Type-only import — erased at build time, so no runtime cycle with the agent.
 import type { BasketItem, CheckoutResult, CheckoutStep, Product } from "./shopping-agent";
 
@@ -347,11 +351,107 @@ export async function runLocalMerchantCheckout(
   page: AgentPage,
   profile: LocalMerchantProfile,
   alreadyAdded = false,
+  opts?: { context?: AgentBrowserContext; stagehand?: Stagehand; proceedToCheckout?: boolean },
 ): Promise<CheckoutResult> {
   const steps: CheckoutStep[] = [];
   const log = (action: string, status: CheckoutStep["status"], detail?: string) =>
     steps.push({ action, status, detail });
 
+  // LLM-driven path: when a Stagehand instance is available we use the shared
+  // add-to-cart engine (no regex / hard-coded selectors) for EVERY provider,
+  // including local/demo merchants. This satisfies the requirement that the
+  // agent complete the cart journey via the model rather than brittle text
+  // matching that silently no-ops on unfamiliar button copy.
+  const stagehand = opts?.stagehand;
+  const context = opts?.context;
+  if (stagehand && context) {
+    if (!alreadyAdded) {
+      const cart = await llmAddToCart(page, context, stagehand);
+      if (cart.status !== "added_to_cart") return cart;
+      // Default: stop once the item is in the cart. Only continue to the
+      // payment gate when the caller explicitly asks (e.g. --pay-now).
+      if (!opts?.proceedToCheckout) return cart;
+    } else {
+      log("add_to_cart", "done", "already added");
+    }
+
+    // ── Optional deeper checkout (LLM-driven navigation) ──────────────────
+    const proceeded = await actWithFallback(
+      page,
+      context,
+      stagehand,
+      "Open the cart and proceed to checkout.",
+      "Click the cart icon, then click the checkout button.",
+    );
+    log("proceed_to_checkout", proceeded ? "done" : "failed");
+    if (!proceeded) return { status: "failed", steps, error: "Checkout button was not found." };
+    await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+
+    // Profile-described selector fields (these target the merchant's known
+    // inputs, NOT regex navigation) are still applied deterministically.
+    for (const [selector, value] of profile.checkoutForm?.fields ?? []) {
+      const input = page.locator(selector).first();
+      if ((await input.count().catch(() => 0)) > 0) await input.fill(value).catch(() => {});
+    }
+    const positionalValues = profile.checkoutForm?.positionalValues;
+    if (positionalValues?.length) {
+      const inputs = page.locator("main input");
+      const inputCount = await inputs.count().catch(() => 0);
+      for (let i = 0; i < Math.min(inputCount, positionalValues.length); i++) {
+        await inputs.nth(i).fill(positionalValues[i] ?? "").catch(() => {});
+      }
+    }
+    const requiredSelect = profile.checkoutForm?.requiredSelect;
+    if (requiredSelect) {
+      const select = requiredSelect.selector
+        ? page.locator(requiredSelect.selector).first()
+        : page.locator("select").first();
+      const hasSelect = (await select.count().catch(() => 0)) > 0;
+      if (hasSelect) await select.selectOption(requiredSelect.value).catch(() => {});
+      const selected = !hasSelect || (await page.evaluate(
+        `document.querySelector('select')?.value === ${JSON.stringify(requiredSelect.value)}`,
+      ).catch(() => false));
+      if (!selected) {
+        log("fill_shipping", "failed", `Required dropdown was not set to "${requiredSelect.value}"`);
+        return {
+          status: "failed",
+          steps,
+          error: `Could not select "${requiredSelect.value}" in the required dropdown.`,
+        };
+      }
+    }
+
+    const continued = await actWithFallback(
+      page,
+      context,
+      stagehand,
+      "Click the button to continue, review, or place the order.",
+      "Click the continue, review, or proceed button.",
+    );
+    log("fill_shipping", continued ? "done" : "skipped");
+    await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+
+    const paymentGate = await detectPaymentGate(page);
+    log("reach_payment_gate", paymentGate ? "done" : "skipped", paymentGate?.label);
+    if (!paymentGate) {
+      return {
+        status: "checkout_reached",
+        steps,
+        error: "No merchant payment control was detected. No payment was attempted.",
+      };
+    }
+    return {
+      status: "checkout_reached",
+      steps,
+      paymentGate,
+      error: "Merchant payment control detected; stopped before payment approval.",
+    };
+  }
+
+  // ── Deterministic (no-LLM) path ──────────────────────────────────────────
+  // Used by the deterministic basket test, which supplies no Stagehand
+  // instance. Preserved for backward compatibility; it still does the full
+  // add -> checkout -> payment-gate journey on the merchant's known markup.
   const added = alreadyAdded || (await clickVisibleText(page, /add to (cart|bag)/i).catch(() => false));
   log("add_to_cart", added ? "done" : "failed");
   if (!added) return { status: "failed", steps, error: "Add-to-cart button was not found." };
@@ -363,12 +463,10 @@ export async function runLocalMerchantCheckout(
   if (!proceeded) return { status: "failed", steps, error: "Checkout button was not found." };
   await page.waitForLoadState("networkidle", 15_000).catch(() => {});
 
-  // Selector-based fields first…
   for (const [selector, value] of profile.checkoutForm?.fields ?? []) {
     const input = page.locator(selector).first();
     if ((await input.count().catch(() => 0)) > 0) await input.fill(value).catch(() => {});
   }
-  // …then positional fill for visual-only forms (labels without name/for attrs).
   const positionalValues = profile.checkoutForm?.positionalValues;
   if (positionalValues?.length) {
     const inputs = page.locator("main input");
@@ -377,8 +475,6 @@ export async function runLocalMerchantCheckout(
       await inputs.nth(i).fill(positionalValues[i] ?? "").catch(() => {});
     }
   }
-
-  // Required <select> (e.g. a State dropdown the merchant validates server-side).
   const requiredSelect = profile.checkoutForm?.requiredSelect;
   if (requiredSelect) {
     const select = requiredSelect.selector

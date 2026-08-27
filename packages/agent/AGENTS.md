@@ -1,16 +1,39 @@
 # Cartwright Agent (`packages/agent`)
 
 Autonomous shopping + merchant-checkout agent. It browses a store, picks the
-cheapest in-budget product, runs the on-site checkout UI up to the payment gate,
-and (opt-in, **Test Mode only**) completes a Razorpay card payment end-to-end.
+cheapest in-budget product, adds it to the cart via an **LLM-driven** flow that
+works for *every* provider (no regex / hard-coded selectors), and (opt-in,
+**Test Mode only**) proceeds through checkout and completes a Razorpay card
+payment end-to-end.
 
 ## Capabilities
 
 1. **Product discovery & selection** — signs in, lists in-budget products, picks
    the cheapest, adds to cart.
-2. **On-site checkout** — add-to-cart → proceed-to-checkout → fill shipping →
-   reach the payment gate. Stops *before* any real charge and retains a
-   merchant payment session.
+2. **LLM-driven add-to-cart (all providers)** — `llmAddToCart`
+   (`src/add-to-cart.ts`) drives the add-to-cart journey entirely through the
+   model: dismiss overlays → confirm it's a product page → pick options + click
+   **Add to Cart** → verify the item landed in the cart. It uses **no regex text
+   matching and no per-site hardcoded navigation**, so the same code adds to cart
+   on Nike, Amazon, a raw URL, *and* local/demo merchants (Raven Scents, …).
+   The agent stops **after the item is in the cart** by default — it never gets
+   stuck and never just displays the product. A deeper checkout (proceed → fill
+   shipping → reach payment gate) is opt-in via `preserveCheckoutSession`.
+   - **Query-relevance gate** — before any pick/auto-add, `filterProductsByQueryRelevance`
+     (`src/filtering/query-relevance.ts`) asks the model to drop listings that do
+     NOT match the shopper's query (sponsored / "you-may-also-like" / upsell
+     items). Only query-matching candidates survive, so the human never sees or
+     gets charged for an off-topic product.
+   - **Selection-gated add (human-in-the-loop)** — the `shop` flow discovers
+     options and retains the browser session at the search-results page WITHOUT
+     adding anything (`runShoppingAgent` with `checkout: false, retainSession: true`).
+     The actual add-to-cart is deferred to the human's explicit product selection
+     and driven by `fulfillSelection(sessionId, productUrl, …)`, which navigates
+     the retained session to the chosen product and adds ONLY that item. This
+     guarantees "only the matching/selected items are added".
+3. **Payment-gate detection** — identifies the merchant's payment control from
+   rendered UI only (no merchant secrets). Supports Razorpay (and a generic
+   fallback for unknown providers).
 3. **Payment-gate detection** — identifies the merchant's payment control from
    rendered UI only (no merchant secrets). Supports Razorpay (and a generic
    fallback for unknown providers).
@@ -231,6 +254,12 @@ when a new Razorpay window is not being detected.
   for side-effect registration by `src/index.ts` (and directly by the smoke-test
   scripts). Add a new merchant by creating another profile module — no core
   changes needed.
+- **Add-to-cart is shared and LLM-driven** — both external storefronts and local
+  merchants go through `llmAddToCart` (`src/add-to-cart.ts`) rather than
+  per-site regex/text matching, so a new provider works without hard-coded
+  navigation. `actWithFallback` (LLM primary + LLM rephrase on failure) also
+  lives there, and `src/local-merchant.ts` imports it from that module to avoid a
+  `shopping-agent ↔ local-merchant` import cycle.
 - Well-known storefront search shortcuts (Nike/Amazon/… presets) likewise live
   outside the core in `src/store-presets.ts` as pure data + a registry. They
   are accelerators only; unknown stores/URLs use the natural-language search

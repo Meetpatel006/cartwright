@@ -75,14 +75,6 @@ const BUILT_IN_PRESETS: Record<string, StorePreset> = {
     searchMode: "url",
     searchUrlTemplate: "https://www.adidas.co.in/search?q={query}",
   },
-  walmart: {
-    name: "Walmart",
-    baseUrl: "https://www.walmart.com",
-    searchMode: "url",
-    // Verified 2026-08-25: /search?q= is canonical; sort/page/facet are
-    // optional. Bot-challenged for plain HTTP clients, fine in real Chrome.
-    searchUrlTemplate: "https://www.walmart.com/search?q={query}",
-  },
   flipkart: {
     name: "Flipkart",
     baseUrl: "https://www.flipkart.com",

@@ -125,7 +125,12 @@ export async function discoverProducts(params: DiscoverProductsParams): Promise<
       browserbaseApiKey: params.browserbaseApiKey,
       llm: params.llm,
       basket,
-      preserveCheckoutSession: true,
+      // Discovery-only for the human-in-the-loop: do NOT add anything to the cart
+      // here. Surface the matching options, retain the browser session, and let
+      // the human's explicit selection drive the add-to-cart via fulfillSelection
+      // (so only the chosen item is ever added).
+      checkout: false,
+      retainSession: true,
       recordSession: params.recordSession,
       liveFeedKey: params.liveFeedKey,
       signal: params.signal,
