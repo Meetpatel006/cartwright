@@ -12,8 +12,21 @@ what the server returns.
 1. **Shopping entrypoint** (`agentRouter.shop`) — runs the shopping agent for a
    natural-language query + store, derives the *server-authoritative* charged
    amount (real checkout total when available, else the picked product price),
-   and creates a purchase transaction via `createPurchaseTransaction`.
-2. **Transaction lifecycle** — `CREATED → POLICY_CHECKING → {POLICY_BLOCKED |
+   and creates a purchase transaction via `createPurchaseTransaction`. Discovery is
+   **add-to-cart-free**: `discoverProducts` runs the agent with
+   `checkout: false, retainSession: true`, so it only surfaces the
+   query-matching options and keeps the browser session alive. Nothing is added to
+   a cart during discovery — see the selection-gated add below.
+2. **Selection-gated add (human-in-the-loop)** — `selectProductForSession` does
+   NOT trust a pre-added cart. After the human picks a product, it drives the
+   retained browser session via the agent's `fulfillSelection` to that product's
+   URL and adds **ONLY the chosen item** to the cart (then proceeds to the payment
+   gate). The live checkout total is re-read *after* this so the charged amount
+   reflects the selected product. The outcome is recorded in the `PRODUCT_SELECTED`
+   audit event's `selectionAddToCart` metadata. This enforces the rule "only the
+   matching/selected items are added" — the agent never auto-adds the cheapest or
+   an off-topic result during discovery.
+3. **Transaction lifecycle** — `CREATED → POLICY_CHECKING → {POLICY_BLOCKED |
    AWAITING_APPROVAL | APPROVED} → PAYMENT_PROCESSING → {PAYMENT_SUCCEEDED |
    PAYMENT_FAILED}` (+ `CANCELLED`, `PRICE_CHANGED`). Every transition is
    validated by the state machine in `transactions/transaction.state.ts`;

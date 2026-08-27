@@ -25,6 +25,7 @@ import {
   type SupportedCurrency,
   discoverProducts,
   executeShoppingRequest,
+  fulfillSelection,
   getSessionCheckoutTotal,
   parseShoppingRequest,
   selectProduct,
@@ -226,6 +227,23 @@ export interface ShoppingServiceDeps {
   readLiveCheckoutTotal?: (
     providerSessionId: string,
   ) => Promise<{ amountInMinor: number; currency: string } | null>;
+  /**
+   * Injected selection-driven add-to-cart for tests; defaults to the real
+   * agent's `fulfillSelection`. Drives the retained browser session to the
+   * human-selected product and adds ONLY that item (human-in-the-loop rule:
+   * "only the chosen items are added"). Best-effort — a missing/expired session
+   * degrades to a no-op so the purchase transaction is still created.
+   */
+  fulfillSelection?: (
+    providerSessionId: string,
+    productUrl: string,
+    options: {
+      proceedToCheckout: boolean;
+      providerSessionId: string;
+      provider?: string;
+      browserbaseApiKey?: string;
+    },
+  ) => Promise<{ driven: boolean; reason?: string; checkout?: unknown }>;
 }
 
 /**
@@ -657,6 +675,51 @@ export async function selectProductForSession(
 
   const plan = selectProduct(draft, input.productId);
 
+  // ── Selection-gated add-to-cart (human-in-the-loop) ───────────────────────
+  // Discovery (`shop`) deliberately did NOT add anything to the cart — it only
+  // retained the browser session at the search-results page. Now that the human
+  // has explicitly chosen a product, drive that retained session to the selected
+  // product and add ONLY it to the cart. This enforces the rule "only the
+  // matching items are added" and ensures the live checkout-total re-read below
+  // reflects the chosen product (not a cheaper auto-pick). Best-effort: a
+  // missing/expired session is not fatal — the policy engine still gates the
+  // provisional discovered amount. The outcome is folded into the PRODUCT_SELECTED
+  // audit event below so no new audit-event type is required.
+  let selectionAddToCart: { driven: boolean; status?: string; reason?: string } | undefined;
+  if (session.checkoutSessionId && plan.productUrl) {
+    try {
+      const ownedSession = await getOwnedBrowserSession(session.checkoutSessionId, input.userId);
+      const fulfill = deps.fulfillSelection ?? fulfillSelection;
+      const r = await fulfill(ownedSession.providerSessionId, plan.productUrl, {
+        proceedToCheckout: true,
+        providerSessionId: ownedSession.providerSessionId,
+        provider: ownedSession.provider,
+        browserbaseApiKey: env.BROWSERBASE_API_KEY,
+      });
+      selectionAddToCart = {
+        driven: r.driven,
+        status: (r.checkout as { status?: string } | undefined)?.status,
+        reason: r.reason,
+      };
+      if (!r.driven) {
+        console.warn(
+          `[shopping] selection add-to-cart not driven on retained session: ${r.reason ?? "unknown"}`,
+        );
+      }
+    } catch (error) {
+      // Selection add is best-effort: never block the purchase transaction.
+      selectionAddToCart = {
+        driven: false,
+        reason: error instanceof Error ? error.message : "unknown error",
+      };
+      console.warn(
+        `[shopping] selection add-to-cart failed (falling back to provisional amount): ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      );
+    }
+  }
+
   // ── Amount authority (Task 2) ──────────────────────────────────────────────
   // `plan.expectedAmountInMinor` is PROVISIONAL (LLM/browser-extracted during
   // discovery). If the session retained a browser, independently re-read the
@@ -744,6 +807,8 @@ export async function selectProductForSession(
       transactionId: purchase.transactionId,
       chargedAmountInMinor,
       chargedCurrency,
+      // Human-in-the-loop traceability: which item actually landed in the cart.
+      selectionAddToCart: selectionAddToCart ?? null,
     },
   });
 
