@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import {
   getCandidatesForSession,
+  getRecommendationsForSession,
+  getShoppingSessionForUser,
   listSessionsForUser,
 } from "@cartwright/db/repositories/shopping.repository";
 
@@ -9,7 +11,6 @@ import { protectedProcedure, router } from "../index";
 import { generateCorrelationId } from "../audit/audit.service";
 import { getLiveFrame } from "@cartwright/agent";
 import {
-  getReachableShoppingSession,
   runShoppingSession,
   selectProductForSession,
 } from "../shopping/shopping.service";
@@ -74,14 +75,17 @@ export const shoppingRouter = router({
   get: protectedProcedure
     .input(z.object({ sessionId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
-      const session = await getReachableShoppingSession(
+      const session = await getShoppingSessionForUser(
         input.sessionId,
         ctx.session.user.id,
       );
       if (!session) {
         return null;
       }
-      const candidateRows = await getCandidatesForSession(session.id);
+      const [candidateRows, recommendationRows] = await Promise.all([
+        getCandidatesForSession(session.id),
+        getRecommendationsForSession(session.id),
+      ]);
       return {
         sessionId: session.id,
         status: session.status,
@@ -102,6 +106,14 @@ export const shoppingRouter = router({
           filteredOut: r.filteredOut,
           rejected: r.rejected,
           reason: r.reason,
+        })),
+        recommendations: recommendationRows.map((r) => ({
+          productId: r.productId,
+          rankingScore: r.rankingScore,
+          rankingFactors: r.rankingFactors,
+          explanation: r.explanation,
+          isTop: r.isTop,
+          selected: r.selected,
         })),
       };
     }),
