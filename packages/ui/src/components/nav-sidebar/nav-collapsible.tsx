@@ -1,5 +1,5 @@
 'use client';
-import { ChevronDown, MessageSquare } from 'lucide-react';
+import { ChevronDown, MessageSquare, Plus } from 'lucide-react';
 import {
   Collapsible,
   CollapsibleContent,
@@ -19,12 +19,14 @@ interface NavCollapsibleProps {
   sessions: ShoppingSession[];
   activeSessionId?: string | null;
   onSelectSession?: (sessionId: string) => void;
+  onNewSession?: () => void;
 }
 
 export function NavCollapsible({
   sessions,
   activeSessionId,
   onSelectSession,
+  onNewSession,
 }: NavCollapsibleProps) {
   if (!sessions || sessions.length === 0) {
     return null;
@@ -46,13 +48,24 @@ export function NavCollapsible({
     <div className="space-y-0">
       <Collapsible className="group/collapsible" defaultOpen>
         <SidebarGroup>
-          <SidebarGroupLabel
-            className="text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-            render={<CollapsibleTrigger />}
-          >
-            Chat / Sessions
-            <ChevronDown className="ml-auto transition-transform group-data-open/collapsible:rotate-180" />
-          </SidebarGroupLabel>
+          <div className="flex items-center">
+            <SidebarGroupLabel
+              className="flex-1 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              render={<CollapsibleTrigger />}
+            >
+              Chat / Sessions
+              <ChevronDown className="ml-auto transition-transform group-data-open/collapsible:rotate-180" />
+            </SidebarGroupLabel>
+            <button
+              type="button"
+              aria-label="New session"
+              title="New session"
+              onClick={() => onNewSession?.()}
+              className="mr-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
           <CollapsibleContent>
             <SidebarGroupContent>
               <SidebarMenu>

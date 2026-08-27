@@ -20,6 +20,7 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   shoppingSessions?: ShoppingSession[];
   activeSessionId?: string | null;
   onSelectSession?: (sessionId: string) => void;
+  onNewSession?: () => void;
 }
 
 export function AppSidebar({
@@ -27,6 +28,7 @@ export function AppSidebar({
   shoppingSessions = [],
   activeSessionId,
   onSelectSession,
+  onNewSession,
   ...props
 }: AppSidebarProps) {
   const pathname = usePathname();
@@ -82,6 +84,7 @@ export function AppSidebar({
           sessions={shoppingSessions}
           activeSessionId={activeSessionId}
           onSelectSession={onSelectSession}
+          onNewSession={onNewSession}
         />
       </SidebarContent>
       <NavFooter user={data.user} />

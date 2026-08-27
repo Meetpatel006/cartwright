@@ -12,6 +12,7 @@ interface NavSidebarProps {
   shoppingSessions?: ShoppingSession[];
   activeSessionId?: string | null;
   onSelectSession?: (sessionId: string) => void;
+  onNewSession?: () => void;
 }
 
 export default function NavSidebar({
@@ -20,6 +21,7 @@ export default function NavSidebar({
   shoppingSessions = [],
   activeSessionId,
   onSelectSession,
+  onNewSession,
 }: NavSidebarProps) {
   return (
     <SidebarProvider>
@@ -28,6 +30,7 @@ export default function NavSidebar({
         shoppingSessions={shoppingSessions}
         activeSessionId={activeSessionId}
         onSelectSession={onSelectSession}
+        onNewSession={onNewSession}
       />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">

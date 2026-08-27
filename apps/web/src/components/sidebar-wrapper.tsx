@@ -51,6 +51,7 @@ export default function SidebarWrapper({
       shoppingSessions={sessions}
       activeSessionId={activeSessionId}
       onSelectSession={handleSelectSession}
+      onNewSession={() => router.push('/shopper')}
     >
       {children}
     </NavSidebar>
