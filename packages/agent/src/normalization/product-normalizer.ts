@@ -38,10 +38,46 @@ function isSupported(currency: string): currency is SupportedCurrency {
 
 /** Detect an ISO currency from a raw price string's symbols/letters. */
 export function detectCurrencyFromText(text: string): string | null {
+  if (!text) return null;
   const lower = text.toLowerCase();
   for (const [symbol, code] of Object.entries(SYMBOL_TO_CURRENCY)) {
     if (lower.includes(symbol.toLowerCase())) return code;
   }
+  return null;
+}
+
+/**
+ * Normalize a free-text currency reported by the discovery layer into a clean
+ * token (trimmed + lowercased), or `null` when missing/empty. The discovery LLM
+ * is unreliable here — it may return `"INR"`, `"inr"`, `"Rupees"`, `"₹"`,
+ * `"INR "` (trailing space), or nothing at all.
+ */
+function normalizeCurrencyToken(input: string | null | undefined): string | null {
+  if (input == null) return null;
+  const t = String(input).trim().toLowerCase();
+  return t.length > 0 ? t : null;
+}
+
+/**
+ * Resolve a *supported* ISO-4217 currency from the messy data the discovery
+ * layer produces. Falls back through several strategies before giving up:
+ *   1. the reported currency, if it is already a supported code (e.g. "INR");
+ *   2. a synonym/symbol map (e.g. "inr", "rs", "₹", "rupees" -> INR);
+ *   3. detection from the displayed price string (e.g. "₹ 8,495" -> INR);
+ *   4. the intent's default currency, if it is supported.
+ * Returns `null` only when nothing yields a supported currency.
+ */
+function resolveCurrency(candidate: ProductCandidate, defaultCurrency: string): string | null {
+  const token = normalizeCurrencyToken(candidate.currency);
+  if (token) {
+    if (isSupported(token)) return token.toUpperCase();
+    // SYMBOL_TO_CURRENCY doubles as a synonym map ("inr", "rs", "₹", "usd", …).
+    const synonym = SYMBOL_TO_CURRENCY[token];
+    if (synonym && isSupported(synonym)) return synonym;
+  }
+  const fromText = detectCurrencyFromText(candidate.rawPrice ?? "");
+  if (fromText) return fromText;
+  if (isSupported(defaultCurrency)) return defaultCurrency;
   return null;
 }
 
@@ -109,8 +145,8 @@ export function normalizeProduct(
   candidate: ProductCandidate,
   options: NormalizeOptions,
 ): NormalizedProduct {
-  const resolvedCurrency = candidate.currency ?? detectCurrencyFromText(candidate.rawPrice) ?? options.defaultCurrency;
-  if (!isSupported(resolvedCurrency)) {
+  const resolvedCurrency = resolveCurrency(candidate, options.defaultCurrency);
+  if (!resolvedCurrency || !isSupported(resolvedCurrency)) {
     throw new ProductNormalizationError(
       `Unsupported or unresolved currency for "${candidate.title}".`,
       { candidate: { title: candidate.title, currency: candidate.currency, rawPrice: candidate.rawPrice } },
@@ -146,7 +182,8 @@ export function normalizeProduct(
   // Confidence: start trustworthy, subtract for missing/derived signals.
   let confidence = 1;
   const reasons: string[] = [];
-  const sourceCurrency = candidate.currency ?? detectCurrencyFromText(candidate.rawPrice);
+  const sourceCurrency =
+    candidate.currency != null ? normalizeCurrencyToken(candidate.currency) : detectCurrencyFromText(candidate.rawPrice);
   if (!sourceCurrency) {
     confidence -= 0.15;
     reasons.push("currency was not reported by the source; defaulted by intent");

@@ -15,7 +15,7 @@ export interface ParsedBudget {
 // NOTE: word hints use \b boundaries so substrings can't false-positive
 // ("dollars" contains "rs"; "headphones" contains "one" etc.).
 export const CURRENCY_HINTS: Array<{ re: RegExp; code: string }> = [
-  { re: /(?:₹|\brs\.|\b(?:inr|rupees?|paise)\b)/i, code: "INR" },
+  { re: /(?:₹|\brs\.?|\b(?:inr|rupees?|paise)\b)/i, code: "INR" },
   { re: /(?:\$|\b(?:usd|dollars?|bucks)\b)/i, code: "USD" },
   { re: /(?:€|\b(?:eur|euros?)\b)/i, code: "EUR" },
   { re: /(?:£|\b(?:gbp|pounds?|quid)\b)/i, code: "GBP" },

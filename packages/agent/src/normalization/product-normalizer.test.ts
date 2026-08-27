@@ -75,6 +75,36 @@ describe("normalizeProduct", () => {
     expect(p.currency).toBe("INR");
   });
 
+  test("recovers a supported currency from a non-ISO discovery string", () => {
+    // LLMs commonly emit free-text currencies ("Rupees", "₹", "INR " with
+    // stray whitespace). These must NOT be rejected — we recover from the price
+    // string's symbol or the default currency instead of throwing.
+    const cases: Array<{ currency: string | null; expected: string }> = [
+      { currency: "Rupees", expected: "INR" },
+      { currency: "₹", expected: "INR" },
+      { currency: "INR ", expected: "INR" },
+      { currency: "inr", expected: "INR" },
+      { currency: "rs", expected: "INR" },
+    ];
+    for (const c of cases) {
+      const p = normalizeProduct(
+        candidate({ title: "Nike Run", rawPrice: "₹ 8,495", currency: c.currency, evidence: { priceValue: 8495 } }),
+        { defaultCurrency: "INR" },
+      );
+      expect(p.currency).toBe(c.expected);
+      expect(p.amountInMinor).toBe(849_500);
+    }
+  });
+
+  test("still rejects when currency is unresolvable from any source", () => {
+    expect(() =>
+      normalizeProduct(
+        candidate({ title: "Mystery", rawPrice: "10 XXC", currency: "Bogocoin", evidence: { priceValue: 10 } }),
+        { defaultCurrency: "ZZZ" },
+      ),
+    ).toThrow(ProductNormalizationError);
+  });
+
   test("rejects a missing/invalid amount", () => {
     expect(() =>
       normalizeProduct(

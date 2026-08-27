@@ -21,6 +21,17 @@ describe("parseCheckoutTotal (currency-aware)", () => {
     });
   });
 
+  test("maps 'Rs' (no trailing dot) to INR, never a bogus 'RS' code", () => {
+    expect(parseCheckoutTotal("Rs 8,495")).toEqual({
+      amountInMinor: 849_500,
+      currency: "INR",
+    });
+    expect(parseCheckoutTotal("RS 6,495")).toEqual({
+      amountInMinor: 649_500,
+      currency: "INR",
+    });
+  });
+
   test("reads a USD total in cents", () => {
     expect(parseCheckoutTotal("Total $49.99")).toEqual({
       amountInMinor: 4_999,

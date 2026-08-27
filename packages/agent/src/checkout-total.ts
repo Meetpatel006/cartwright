@@ -16,8 +16,9 @@ const CHECKOUT_CURRENCY_TOKEN = /(₹|rs\.?|inr|\$|usd|eur|€|gbp|£|¥|jpy|chf
 
 /** Map a currency token/symbol to an ISO 4217 code via the agent's hint list. */
 export function normalizeCheckoutCurrency(token: string): string {
+  const t = token.trim().toLowerCase();
   for (const { re, code } of CURRENCY_HINTS) {
-    if (re.test(token)) return code;
+    if (re.test(t)) return code;
   }
   return token.toUpperCase();
 }
