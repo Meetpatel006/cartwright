@@ -150,7 +150,6 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   const [query, setQuery] = useState("wireless headphones under 5000");
   const [store, setStore] = useState("raven");
   const [browserMode, setBrowserMode] = useState<"local" | "browserbase">("local");
-  const [activeTab, setActiveTab] = useState<"differentiation" | "standard">("differentiation");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialSessionId ?? null);
 
@@ -215,12 +214,47 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
     : undefined;
 
   const runResult = selectedSessionId ? historicalResult : (rawRunResult ?? historicalResult);
-  const selectData = select.data as SelectResult | undefined;
+
+  const loadedPurchase = useQuery(
+    trpc.transactions.get.queryOptions(
+      { transactionId: loadedSession.data?.transactionId ?? "" },
+      { enabled: Boolean(loadedSession.data?.transactionId) }
+    )
+  );
+
+  const selectData: SelectResult | undefined =
+    (select.data as SelectResult | undefined) ??
+    (loadedSession.data?.selectedPlan
+      ? {
+          plan: loadedSession.data.selectedPlan as unknown as PurchasePlan,
+          purchase: (loadedPurchase.data as unknown as TransactionView) ?? {
+            transactionId: loadedSession.data.transactionId ?? "",
+            status: (loadedSession.data.status === "converted"
+              ? "PAYMENT_SUCCEEDED"
+              : loadedSession.data.status === "expired"
+              ? "PRICE_CHANGED"
+              : "APPROVED") as TransactionStatus,
+            amountInMinor: (loadedSession.data.selectedPlan as any).expectedAmountInMinor ?? 0,
+            currency: (loadedSession.data.selectedPlan as any).currency ?? "INR",
+            approvedAmountInMinor: (loadedSession.data.selectedPlan as any).expectedAmountInMinor ?? null,
+            policyDecision: "auto_approve",
+            policyReason: "Session completed",
+            autoApprovalLimitInMinor: 0,
+            maxTotalSpending: 0,
+            paymentSource: "merchant_ui",
+          },
+        }
+      : undefined);
+
   // Once a selection has been converted into a purchase, the session is
   // terminal — re-selecting would 409. Lock the recommendation buttons.
-  const selectionLocked = Boolean(selectData);
+  const selectionLocked = Boolean(
+    selectData ||
+    loadedSession.data?.status === "expired" ||
+    loadedSession.data?.status === "converted"
+  );
 
-  const baseView = approve.data?.result ?? selectData?.purchase ?? null;
+  const baseView = approve.data?.result ?? selectData?.purchase ?? (loadedPurchase.data as unknown as TransactionView) ?? null;
   const effectivePurchase: TransactionView | null =
     verifyPayment.data ??
     (initiatePayment.data && baseView
@@ -282,6 +316,30 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
 
   const intent = runResult?.intent;
 
+  useEffect(() => {
+    setSelectedSessionId(initialSessionId ?? null);
+    if (!initialSessionId) {
+      run.reset();
+      select.reset();
+      approve.reset();
+      initiatePayment.reset();
+      verifyPayment.reset();
+    }
+  }, [initialSessionId]);
+
+  useEffect(() => {
+    if (loadedSession.data) {
+      if (loadedSession.data.rawQuery) {
+        setQuery(loadedSession.data.rawQuery);
+      }
+      if (loadedSession.data.intent && typeof loadedSession.data.intent === "object" && "store" in loadedSession.data.intent) {
+        setStore((loadedSession.data.intent as any).store ?? "");
+      }
+    }
+  }, [loadedSession.data]);
+
+  const hasSessionData = Boolean(runResult || run.isPending || selectData || selectedSessionId);
+
   return (
     <div className="container mx-auto max-w-4xl px-4 py-10">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -293,38 +351,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
             Describe what you want and your budget. Discover products, track live agent state, view session recordings, and manage purchase gates.
           </p>
         </div>
-        <div className="flex gap-2 rounded-lg border bg-muted/30 p-1" role="tablist" aria-label="Shopper Feature Views">
-          <Button
-            type="button"
-            variant={activeTab === "differentiation" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setActiveTab("differentiation")}
-          >
-            Differentiation (State & Video)
-          </Button>
-          <Button
-            type="button"
-            variant={activeTab === "standard" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setActiveTab("standard")}
-          >
-            Standard View
-          </Button>
-        </div>
       </header>
-
-      {activeTab === "differentiation" && (
-        <DifferentiationStatePanel
-          runResult={runResult}
-          selectData={selectData}
-          effectivePurchase={effectivePurchase}
-          status={status}
-          paymentSource={paymentSource}
-          browserMode={browserMode}
-          store={store}
-          query={query}
-        />
-      )}
 
       <form className="mb-8 grid gap-2" onSubmit={onSubmit}>
         <div className="flex gap-2">
@@ -358,6 +385,19 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
           ))}
         </div>
       </form>
+
+      {hasSessionData && (
+        <DifferentiationStatePanel
+          runResult={runResult}
+          selectData={selectData}
+          effectivePurchase={effectivePurchase}
+          status={status}
+          paymentSource={paymentSource}
+          browserMode={browserMode}
+          store={store}
+          query={query}
+        />
+      )}
 
       {run.isPending && (
         <>
@@ -910,9 +950,16 @@ function DifferentiationStatePanel({
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
             {sessionSteps.map((step, idx) => {
-              const activeIndex = sessionSteps.findIndex((s) => s.key === sessionState);
+              const activeIndex =
+                sessionState === "expired"
+                  ? selectData
+                    ? 2
+                    : runResult?.recommendations?.length
+                    ? 1
+                    : 0
+                  : sessionSteps.findIndex((s) => s.key === sessionState);
               const isPastOrCurrent = idx <= activeIndex;
-              const isCurrent = step.key === sessionState;
+              const isCurrent = step.key === sessionState || (sessionState === "expired" && idx === activeIndex);
               return (
                 <div
                   key={step.key}
