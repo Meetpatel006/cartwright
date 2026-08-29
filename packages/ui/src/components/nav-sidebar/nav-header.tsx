@@ -1,5 +1,4 @@
-'use client';
-
+import { useRouter } from 'next/navigation';
 import { Search } from 'lucide-react';
 import * as React from 'react';
 import { useEffect } from 'react';
@@ -21,6 +20,7 @@ interface NavHeaderProps {
 }
 
 export function NavHeader({ data }: NavHeaderProps) {
+  const router = useRouter();
   const [open, setOpen] = React.useState(false);
 
   useEffect(() => {
@@ -67,6 +67,7 @@ export function NavHeader({ data }: NavHeaderProps) {
                   key={item.id}
                   onSelect={() => {
                     setOpen(false);
+                    router.push(item.url as any);
                   }}
                 >
                   <item.icon className="mr-2 h-4 w-4" />
@@ -83,6 +84,7 @@ export function NavHeader({ data }: NavHeaderProps) {
                     key={session.sessionId}
                     onSelect={() => {
                       setOpen(false);
+                      router.push(`/shopper/${session.sessionId}` as any);
                     }}
                   >
                     <span className="mr-2 font-mono text-xs text-muted-foreground">

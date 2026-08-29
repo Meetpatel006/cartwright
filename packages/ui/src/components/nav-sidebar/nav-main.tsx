@@ -1,5 +1,4 @@
-'use client';
-
+import Link from 'next/link';
 import {
   SidebarGroup,
   SidebarMenu,
@@ -21,8 +20,8 @@ export function NavMain({ items }: { items: NavItem[] }) {
                 tooltip={item.title}
                 isActive={item.isActive}
                 render={
-                  <a
-                    href={item.url}
+                  <Link
+                    href={item.url as any}
                     className="flex items-center gap-2"
                   />
                 }

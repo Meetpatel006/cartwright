@@ -64,9 +64,10 @@ const FUNNEL_STAGES: Array<{ key: FunnelCountKey; label: string }> = [
 export default function MerchantDashboard() {
   const [preset, setPreset] = useState<Preset>("7d");
 
-  const overview = useQuery(
-    trpc.merchantIntelligence.overview.queryOptions({ window: { preset } }),
-  );
+  const overview = useQuery({
+    ...trpc.merchantIntelligence.overview.queryOptions({ window: { preset } }),
+    placeholderData: (previousData) => previousData,
+  });
 
   return (
     <div className="container mx-auto max-w-4xl px-4 py-8">
