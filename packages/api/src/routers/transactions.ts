@@ -3,6 +3,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../index";
 import { approveTransaction } from "../payments/payment-approval.service";
 import { listAuditEvents } from "@cartwright/db/repositories/audit.repository";
+import { listSessionsForUser } from "@cartwright/db/repositories/shopping.repository";
 import { toAuditEventView } from "../audit/audit.service";
 import {
   cancelTransaction,
@@ -91,7 +92,36 @@ export const transactionsRouter = router({
   /** List the authenticated user's transactions, most recent first. */
   list: protectedProcedure.query(async ({ ctx }) => {
     const rows = await listTransactionsForUser(ctx.session.user.id);
-    return rows.map(toTransactionListView);
+    const sessions = await listSessionsForUser(ctx.session.user.id);
+
+    const sessionByTxId = new Map<string, { rawQuery: string; productName?: string }>();
+    for (const s of sessions) {
+      if (s.transactionId) {
+        const plan = s.selectedPlan as Record<string, unknown> | undefined;
+        const evidence = plan?.evidence as Record<string, unknown> | undefined;
+        const productName = (
+          (evidence?.canonicalTitle as string | undefined) ??
+          (plan?.canonicalTitle as string | undefined) ??
+          (plan?.productName as string | undefined) ??
+          (plan?.title as string | undefined) ??
+          s.rawQuery
+        );
+        sessionByTxId.set(s.transactionId, {
+          rawQuery: s.rawQuery,
+          productName,
+        });
+      }
+    }
+
+    return rows.map((row) => {
+      const view = toTransactionListView(row);
+      const session = sessionByTxId.get(row.id);
+      return {
+        ...view,
+        items: session?.productName ?? session?.rawQuery ?? (row.merchantName ? `${row.merchantName} Purchase` : null),
+        rawQuery: session?.rawQuery ?? null,
+      };
+    });
   }),
 
   /** List audit events for a transaction the user owns. */
