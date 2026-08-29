@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, Newsreader } from "next/font/google";
 
 import "../index.css";
 import Providers from "@/components/providers";
@@ -16,9 +16,15 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
 });
 
+const newsreader = Newsreader({
+  variable: "--font-serif",
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+});
+
 export const metadata: Metadata = {
-  title: "cartwright",
-  description: "cartwright",
+  title: "Cartwright | AI Autonomous Shopping Agent",
+  description: "Autonomous AI shopping agent that finds verified deals and automates checkout.",
 };
 
 export default function RootLayout({
@@ -37,7 +43,9 @@ export default function RootLayout({
           />
         )}
       </head>
-      <body className={`${inter.variable} ${jetbrainsMono.variable} antialiased font-sans`}>
+      <body
+        className={`${inter.variable} ${jetbrainsMono.variable} ${newsreader.variable} antialiased font-sans`}
+      >
         <Providers>
           <SidebarWrapper>{children}</SidebarWrapper>
         </Providers>

@@ -9,6 +9,9 @@ import type { ShoppingSession } from "@cartwright/ui/components/nav-sidebar/type
 import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/utils/trpc";
 
+/** Routes that should render without the sidebar shell. */
+const SIDEBAR_FREE_ROUTES = ["/", "/login", "/signin", "/signup"];
+
 export default function SidebarWrapper({
   children,
 }: {
@@ -17,6 +20,8 @@ export default function SidebarWrapper({
   const router = useRouter();
   const pathname = usePathname();
   const { data: session } = authClient.useSession();
+
+  const showSidebar = !SIDEBAR_FREE_ROUTES.includes(pathname);
 
   // Extract sessionId from URL like /shopper/abc-123
   const activeSessionId = useMemo(() => {
@@ -44,6 +49,10 @@ export default function SidebarWrapper({
   const handleSelectSession = (sessionId: string) => {
     router.push(`/shopper/${sessionId}`);
   };
+
+  if (!showSidebar) {
+    return <>{children}</>;
+  }
 
   return (
     <NavSidebar

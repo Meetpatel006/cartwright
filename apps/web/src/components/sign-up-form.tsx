@@ -1,3 +1,5 @@
+"use client";
+
 import { Button } from "@cartwright/ui/components/button";
 import { Input } from "@cartwright/ui/components/input";
 import { Label } from "@cartwright/ui/components/label";
@@ -15,7 +17,7 @@ export default function SignUpForm({
   onSwitchToSignIn,
   redirectTo = "/dashboard",
 }: {
-  onSwitchToSignIn: () => void;
+  onSwitchToSignIn?: () => void;
   redirectTo?: string;
 }) {
   const router = useRouter();
@@ -152,7 +154,7 @@ export default function SignUpForm({
       <div className="mt-4 text-center">
         <Button
           variant="link"
-          onClick={onSwitchToSignIn}
+          onClick={() => (onSwitchToSignIn ? onSwitchToSignIn() : router.push("/signin"))}
           className="text-indigo-600 hover:text-indigo-800"
         >
           Already have an account? Sign In

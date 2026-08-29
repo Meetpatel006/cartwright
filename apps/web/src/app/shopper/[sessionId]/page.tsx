@@ -14,7 +14,7 @@ export default async function ShopperSessionPage({
   });
 
   if (!session?.user) {
-    redirect("/login");
+    redirect("/signin");
   }
 
   const { sessionId } = await params;

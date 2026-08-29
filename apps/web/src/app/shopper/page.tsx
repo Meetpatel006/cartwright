@@ -10,7 +10,7 @@ export default async function ShopperPage() {
   });
 
   if (!session?.user) {
-    redirect("/login");
+    redirect("/signin");
   }
 
   return <ShopperClient />;
