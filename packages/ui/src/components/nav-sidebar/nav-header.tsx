@@ -36,23 +36,21 @@ export function NavHeader({ data }: NavHeaderProps) {
 
   return (
     <>
-      <SidebarHeader>
-        <div
-          className="flex cursor-pointer items-center justify-between px-2 pt-3 pb-0"
+      <SidebarHeader className="p-2">
+        <button
+          type="button"
+          className="flex w-full cursor-pointer items-center justify-between rounded-lg border border-sidebar-border bg-sidebar-accent/30 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           onClick={() => setOpen(true)}
         >
-          <div className="flex flex-1 items-center gap-3">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <span className="font-normal text-muted-foreground text-sm">
-              Search
-            </span>
+          <div className="flex items-center gap-2">
+            <Search className="h-3.5 w-3.5 shrink-0" />
+            <span className="font-normal">Search...</span>
           </div>
-          <div className="flex items-center justify-center rounded-md border border-border px-2 py-1">
-            <kbd className="inline-flex font-[inherit] font-medium text-muted-foreground text-xs">
-              <span className="opacity-70">⌘K</span>
-            </kbd>
-          </div>
-        </div>
+          <kbd className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground/70">
+            <span className="text-sm leading-none">⌘</span>
+            <span className="leading-none">K</span>
+          </kbd>
+        </button>
       </SidebarHeader>
 
       <CommandDialog onOpenChange={setOpen} open={open}>
@@ -75,22 +73,23 @@ export function NavHeader({ data }: NavHeaderProps) {
                 </CommandItem>
               ))}
             </CommandGroup>
-            <CommandSeparator className="my-2" />
+            <CommandSeparator />
             {data.shoppingSessions && data.shoppingSessions.length > 0 && (
-              <CommandGroup heading="Chat / Sessions">
+              <CommandGroup heading="Sessions">
                 {data.shoppingSessions.map((session) => (
                   <CommandItem
-                    className="py-2!"
                     key={session.sessionId}
                     onSelect={() => {
                       setOpen(false);
                       router.push(`/shopper/${session.sessionId}` as any);
                     }}
                   >
-                    <span className="mr-2 font-mono text-xs text-muted-foreground">
+                    <span className="flex-1 truncate font-medium text-zinc-200 group-data-selected/command-item:text-white">
+                      {session.rawQuery || "Untitled session"}
+                    </span>
+                    <span className="font-mono text-[10px] text-zinc-500 shrink-0">
                       {session.sessionId.slice(0, 8)}…
                     </span>
-                    <span>{session.rawQuery}</span>
                   </CommandItem>
                 ))}
               </CommandGroup>
