@@ -36,6 +36,7 @@ export default function SidebarWrapper({
     rawQuery: s.rawQuery,
     status: s.status,
     createdAt: s.createdAt,
+    store: s.store,
   }));
 
   const user = session?.user

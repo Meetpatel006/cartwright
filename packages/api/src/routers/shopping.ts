@@ -63,13 +63,22 @@ export const shoppingRouter = router({
    */
   list: protectedProcedure.query(async ({ ctx }) => {
     const rows = await listSessionsForUser(ctx.session.user.id);
-    return rows.map((s) => ({
-      sessionId: s.id,
-      rawQuery: s.rawQuery,
-      status: s.status,
-      createdAt: s.createdAt.toISOString(),
-      transactionId: s.transactionId,
-    }));
+    return rows.map((s) => {
+      const intent = s.intent as Record<string, unknown> | undefined;
+      const selectedPlan = s.selectedPlan as Record<string, unknown> | undefined;
+      const store =
+        (typeof intent?.store === "string" && intent.store ? intent.store : undefined) ??
+        (typeof selectedPlan?.merchant === "string" && selectedPlan.merchant ? selectedPlan.merchant : undefined) ??
+        (Array.isArray(intent?.preferredMerchants) && typeof intent.preferredMerchants[0] === "string" ? intent.preferredMerchants[0] : undefined);
+      return {
+        sessionId: s.id,
+        rawQuery: s.rawQuery,
+        status: s.status,
+        createdAt: s.createdAt.toISOString(),
+        transactionId: s.transactionId,
+        store,
+      };
+    });
   }),
 
   get: protectedProcedure

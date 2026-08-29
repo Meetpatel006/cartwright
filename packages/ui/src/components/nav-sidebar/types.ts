@@ -4,7 +4,7 @@ export interface NavItem {
   id: string;
   title: string;
   icon: ElementType;
-  url?: string;
+  url: string;
   isActive?: boolean;
 }
 
@@ -19,6 +19,7 @@ export interface ShoppingSession {
   rawQuery: string;
   status: string;
   createdAt: string;
+  store?: string;
 }
 
 export interface SidebarData {
