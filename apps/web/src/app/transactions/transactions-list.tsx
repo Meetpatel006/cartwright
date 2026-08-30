@@ -744,29 +744,27 @@ export default function TransactionsList() {
                               </Tooltip>
                             </td>
 
-                            {/* Status (e.g. • Paid / • Pending / • Failed) */}
+                            {/* Status (e.g. Paid / Pending / Failed) */}
                             <td className="px-4 py-4 whitespace-nowrap">
                               <span
                                 className={cn(
-                                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                                  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
                                   details.statusTone
                                 )}
                               >
-                                <span className={cn("h-1.5 w-1.5 rounded-full", details.dotColor)} />
-                                <span>{details.statusLabel}</span>
+                                {details.statusLabel}
                               </span>
                             </td>
 
-                            {/* Fulfillment (e.g. • Delivered / • In Transit / • Processing / • Cancelled) */}
+                            {/* Fulfillment (e.g. Delivered / In Transit / Processing / Cancelled) */}
                             <td className="px-4 py-4 whitespace-nowrap">
                               <span
                                 className={cn(
-                                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                                  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
                                   details.fulfillmentTone
                                 )}
                               >
-                                <span className="h-1.5 w-1.5 rounded-full bg-zinc-200" />
-                                <span>{details.fulfillmentLabel}</span>
+                                {details.fulfillmentLabel}
                               </span>
                             </td>
 
@@ -869,12 +867,11 @@ export default function TransactionsList() {
                         </span>
                         <span
                           className={cn(
-                            "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold",
+                            "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold",
                             details.statusTone
                           )}
                         >
-                          <span className={cn("h-1.5 w-1.5 rounded-full", details.dotColor)} />
-                          <span>{details.statusLabel}</span>
+                          {details.statusLabel}
                         </span>
                       </div>
 
@@ -937,12 +934,11 @@ export default function TransactionsList() {
                       <span className="text-zinc-500">Fulfillment</span>
                       <span
                         className={cn(
-                          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                          "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
                           details.fulfillmentTone
                         )}
                       >
-                        <span className="h-1.5 w-1.5 rounded-full bg-zinc-200" />
-                        <span>{details.fulfillmentLabel}</span>
+                        {details.fulfillmentLabel}
                       </span>
                     </div>
 
