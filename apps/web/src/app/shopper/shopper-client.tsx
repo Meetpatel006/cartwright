@@ -114,14 +114,17 @@ declare global {
 /*  Helpers                                                                   */
 /* -------------------------------------------------------------------------- */
 
-function formatCurrency(minor: number, currency: string): string {
+function formatCurrency(minor: number, currency = "INR"): string {
   try {
-    return new Intl.NumberFormat(undefined, {
+    const activeCurrency = currency || "INR";
+    return new Intl.NumberFormat("en-IN", {
       style: "currency",
-      currency,
+      currency: activeCurrency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(minor / 100);
   } catch {
-    return `${currency} ${(minor / 100).toLocaleString()}`;
+    return `₹${(minor / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 }
 

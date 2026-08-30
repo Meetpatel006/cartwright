@@ -46,16 +46,17 @@ function FormattedAmount({
 }) {
   const parts = useMemo(() => {
     try {
-      const formatter = new Intl.NumberFormat(undefined, {
+      const activeCurrency = currency || "INR";
+      const formatter = new Intl.NumberFormat("en-IN", {
         style: "currency",
-        currency: currency || "USD",
+        currency: activeCurrency,
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
       const formattedParts = formatter.formatToParts(minor / 100);
       const currencySymbol =
         formattedParts.find((p) => p.type === "currency")?.value ||
-        (currency === "INR" ? "₹" : "$");
+        (activeCurrency === "INR" ? "₹" : "$");
       const numberValue = formattedParts
         .filter((p) => p.type !== "currency")
         .map((p) => p.value)
@@ -64,7 +65,7 @@ function FormattedAmount({
       return { symbol: currencySymbol, number: numberValue };
     } catch {
       return {
-        symbol: currency === "INR" ? "₹" : currency,
+        symbol: currency === "USD" ? "$" : "₹",
         number: (minor / 100).toFixed(2),
       };
     }

@@ -18,6 +18,7 @@ export interface EffectivePolicy {
   allowedMerchants: string[];
   blockedMerchants: string[];
   frequencyLimit: number | null;
+  consumedInMinor: number;
 }
 
 /** Global defaults used when a user has no explicit policy row yet. */
@@ -77,6 +78,7 @@ export async function getEffectivePolicy(
     allowedMerchants: row.allowedMerchants ?? [],
     blockedMerchants: row.blockedMerchants ?? [],
     frequencyLimit: row.frequencyLimit,
+    consumedInMinor: row.consumedInMinor ?? 0,
   };
 }
 

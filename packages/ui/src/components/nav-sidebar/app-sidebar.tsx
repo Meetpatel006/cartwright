@@ -52,7 +52,7 @@ export function AppSidebar({
       },
       {
         id: 'policy',
-        title: 'Policy',
+        title: 'Spending Policy & Guardrails',
         url: '/policy',
         icon: Shield,
         isActive: pathname.startsWith('/policy'),
