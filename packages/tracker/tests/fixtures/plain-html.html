@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Plain HTML Boutique</title>
+</head>
+<body>
+  <div class="cart-box">
+    <span>Cart: 0 items</span>
+  </div>
+  <div class="product-card" itemscope itemtype="http://schema.org/Product">
+    <h1 itemprop="name">Artisan Lavender Candle</h1>
+    <div itemprop="offers" itemscope itemtype="http://schema.org/Offer">
+      <span itemprop="price">18.50</span>
+      <span itemprop="priceCurrency">USD</span>
+    </div>
+    <span itemprop="sku">CANDLE-LAV-01</span>
+    <form action="/buy" method="POST">
+      <input type="submit" value="Add to Cart">
+    </form>
+  </div>
+</body>
+</html>

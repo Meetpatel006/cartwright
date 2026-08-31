@@ -38,7 +38,14 @@
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f"
+    "docker:logs": "docker compose logs -f",
+    "seed:posthog": "bun run scripts/seed-posthog.ts",
+    "clear:posthog": "bun run scripts/clear-posthog.ts",
+    "inspect:posthog": "bun run scripts/inspect-posthog.ts",
+    "create:dashboard": "bun run scripts/create-posthog-dashboard.ts",
+    "seed:15days": "bun run scripts/seed-15days-simulation.ts",
+    "preview:15days": "bun run scripts/preview-15days-data.ts",
+    "create:15days-dashboard": "bun run scripts/create-15days-dashboard.ts"
   },
   "dependencies": {
     "@cartwright/env": "workspace:*",

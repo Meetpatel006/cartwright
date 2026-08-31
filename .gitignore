@@ -59,3 +59,6 @@ temp
 packages/agent/recordings/
 packages/db/src/migrations/
 todo/
+scripts/
+data/
+.agents/

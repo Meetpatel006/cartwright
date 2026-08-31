@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Shopify Storefront Sample</title>
+  <meta id="shopify-digital-wallet" name="shopify-digital-wallet" content="/12345/digital_wallets/dialog">
+  <link rel="dns-prefetch" href="//cdn.shopify.com">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org/",
+    "@type": "Product",
+    "name": "Classic Leather Shoes",
+    "image": "https://cdn.shopify.com/shoes.jpg",
+    "sku": "SHOE-123",
+    "brand": {
+      "@type": "Brand",
+      "name": "Heritage"
+    },
+    "offers": {
+      "@type": "Offer",
+      "priceCurrency": "USD",
+      "price": 149.99,
+      "availability": "https://schema.org/InStock"
+    }
+  }
+  </script>
+</head>
+<body class="template-product">
+  <div class="cart-count">2</div>
+  <h1>Classic Leather Shoes</h1>
+  <form action="/cart/add" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="id" value="456789">
+    <input type="hidden" name="quantity" value="1">
+    <button type="submit" name="add" class="btn product-form__cart-submit">
+      <span>Add to cart</span>
+    </button>
+  </form>
+</body>
+</html>
