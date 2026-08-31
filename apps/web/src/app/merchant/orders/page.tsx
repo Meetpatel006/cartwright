@@ -15,6 +15,10 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  IndianRupee,
+  TrendingUp,
+  Truck,
+  Package,
 } from "lucide-react";
 import { cn } from "@cartwright/ui/lib/utils";
 import { trpc } from "@/utils/trpc";
@@ -614,60 +618,82 @@ export default function MerchantOrdersPage() {
         </div>
       </div>
 
-      {/* KPI Stats Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between">
-          <div className="text-xs text-muted-foreground font-medium">Total Orders</div>
-          <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
-            {stats.totalOrders.toLocaleString()}
+      {/* KPI Stats in Clean Interior-Border Grid */}
+      <div className="w-full">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+          {/* 1. Total Orders */}
+          <div className="p-4 sm:p-5 flex flex-col justify-between border-b sm:border-b-0 sm:border-r border-border/60">
+            <div className="text-xs text-muted-foreground font-medium flex items-center justify-between">
+              <span>Total Orders</span>
+              <Package className="h-3.5 w-3.5 text-muted-foreground" />
+            </div>
+            <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
+              {stats.totalOrders.toLocaleString()}
+            </div>
+            <div className="text-[11px] flex items-center gap-1.5 mt-1">
+              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +14.8%</span>
+              <span className="text-muted-foreground truncate">{stats.agentOrders} Agent · {stats.humanOrders} Human</span>
+            </div>
           </div>
-          <div className="text-[11px] flex items-center gap-1.5 mt-1">
-            <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +14.8%</span>
-            <span className="text-muted-foreground truncate">{stats.agentOrders} Agent · {stats.humanOrders} Human</span>
-          </div>
-        </div>
 
-        <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between">
-          <div className="text-xs text-muted-foreground font-medium">Gross Revenue</div>
-          <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
-            <FormattedAmount amount={stats.grossRevenue} />
+          {/* 2. Gross Revenue */}
+          <div className="p-4 sm:p-5 flex flex-col justify-between border-b sm:border-b-0 sm:border-r border-border/60">
+            <div className="text-xs text-muted-foreground font-medium flex items-center justify-between">
+              <span>Gross Revenue</span>
+              <IndianRupee className="h-3.5 w-3.5 text-muted-foreground" />
+            </div>
+            <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
+              <FormattedAmount amount={stats.grossRevenue} />
+            </div>
+            <div className="text-[11px] flex items-center gap-1.5 mt-1">
+              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +18.4%</span>
+              <span className="text-muted-foreground truncate">₹{Math.round(stats.agentOrders * (stats.avgOrderValue || 1500)).toLocaleString("en-IN")} via AI</span>
+            </div>
           </div>
-          <div className="text-[11px] flex items-center gap-1.5 mt-1">
-            <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +18.4%</span>
-            <span className="text-muted-foreground truncate">₹{Math.round(stats.agentOrders * (stats.avgOrderValue || 1500)).toLocaleString("en-IN")} via AI agents</span>
-          </div>
-        </div>
 
-        <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between">
-          <div className="text-xs text-muted-foreground font-medium">Average Order Value</div>
-          <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
-            <FormattedAmount amount={stats.avgOrderValue} />
+          {/* 3. Average Order Value */}
+          <div className="p-4 sm:p-5 flex flex-col justify-between border-b sm:border-b-0 sm:border-r-0 lg:border-r border-border/60">
+            <div className="text-xs text-muted-foreground font-medium flex items-center justify-between">
+              <span>Avg Order Value</span>
+              <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+            </div>
+            <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
+              <FormattedAmount amount={stats.avgOrderValue} />
+            </div>
+            <div className="text-[11px] flex items-center gap-1.5 mt-1">
+              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +5.2%</span>
+              <span className="text-muted-foreground truncate">vs ₹{Math.round((stats.avgOrderValue || 1500) * 0.94).toLocaleString("en-IN")} prior</span>
+            </div>
           </div>
-          <div className="text-[11px] flex items-center gap-1.5 mt-1">
-            <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +5.2%</span>
-            <span className="text-muted-foreground truncate">vs ₹{Math.round((stats.avgOrderValue || 1500) * 0.94).toLocaleString("en-IN")} prior</span>
-          </div>
-        </div>
 
-        <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between">
-          <div className="text-xs text-muted-foreground font-medium">AI Agent Volume</div>
-          <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight text-purple-400">
-            {stats.agentOrders.toLocaleString()} <span className="text-xs font-normal text-muted-foreground font-sans">orders</span>
+          {/* 4. AI Agent Volume */}
+          <div className="p-4 sm:p-5 flex flex-col justify-between border-b sm:border-b-0 sm:border-r border-border/60">
+            <div className="text-xs text-muted-foreground font-medium flex items-center justify-between">
+              <span>AI Agent Volume</span>
+              <Bot className="h-3.5 w-3.5 text-muted-foreground" />
+            </div>
+            <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
+              {stats.agentOrders.toLocaleString()} <span className="text-xs font-normal text-muted-foreground font-sans">orders</span>
+            </div>
+            <div className="text-[11px] flex items-center gap-1.5 mt-1">
+              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +22.5%</span>
+              <span className="text-muted-foreground truncate">{stats.agentSharePct}% of volume</span>
+            </div>
           </div>
-          <div className="text-[11px] flex items-center gap-1.5 mt-1">
-            <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +22.5%</span>
-            <span className="text-muted-foreground truncate">{stats.agentSharePct}% of total volume</span>
-          </div>
-        </div>
 
-        <div className="rounded-xl border border-border bg-card p-4 flex flex-col justify-between">
-          <div className="text-xs text-muted-foreground font-medium">Fulfillment Rate</div>
-          <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight text-emerald-500">
-            {stats.fulfillmentRate}%
-          </div>
-          <div className="text-[11px] flex items-center gap-1.5 mt-1">
-            <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +1.2%</span>
-            <span className="text-muted-foreground truncate">{Math.round(stats.totalOrders * (stats.fulfillmentRate / 100))} delivered · {Math.max(0, stats.totalOrders - Math.round(stats.totalOrders * (stats.fulfillmentRate / 100)))} in-transit</span>
+          {/* 5. Fulfillment Rate */}
+          <div className="p-4 sm:p-5 flex flex-col justify-between">
+            <div className="text-xs text-muted-foreground font-medium flex items-center justify-between">
+              <span>Fulfillment Rate</span>
+              <Truck className="h-3.5 w-3.5 text-muted-foreground" />
+            </div>
+            <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
+              {stats.fulfillmentRate}%
+            </div>
+            <div className="text-[11px] flex items-center gap-1.5 mt-1">
+              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +1.2%</span>
+              <span className="text-muted-foreground truncate">{Math.round(stats.totalOrders * (stats.fulfillmentRate / 100))} delivered</span>
+            </div>
           </div>
         </div>
       </div>
