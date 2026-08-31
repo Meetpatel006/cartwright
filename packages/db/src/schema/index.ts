@@ -5,3 +5,4 @@ export * from "./spending-reservations";
 export * from "./audit-events";
 export * from "./shopping";
 export * from "./browser-sessions";
+export * from "./merchant-accounts";
