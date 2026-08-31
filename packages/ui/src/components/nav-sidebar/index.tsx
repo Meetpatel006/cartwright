@@ -32,13 +32,13 @@ export default function NavSidebar({
         onSelectSession={onSelectSession}
         onNewSession={onNewSession}
       />
-      <SidebarInset className="overflow-x-hidden">
+      <SidebarInset className="overflow-hidden h-screen max-h-screen flex flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 sm:hidden">
           <div className="flex items-center gap-2 px-4">
             <SidebarTrigger />
           </div>
         </header>
-        <main className="flex-1 min-w-0">{children}</main>
+        <div className="flex-1 min-w-0 h-full overflow-y-auto flex flex-col">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );
