@@ -7,6 +7,9 @@ import {
   CreditCard,
   Store,
   BarChart3,
+  ShoppingBag,
+  TrendingUp,
+  Users,
 } from 'lucide-react';
 import { Sidebar, SidebarContent } from '@cartwright/ui/components/sidebar';
 import { NavCollapsible } from '@cartwright/ui/components/nav-sidebar/nav-collapsible';
@@ -70,6 +73,35 @@ export function AppSidebar({
         url: '/merchant',
         icon: Store,
         isActive: pathname.startsWith('/merchant'),
+        items: [
+          {
+            id: 'merchant-overview',
+            title: 'Overview & Funnel',
+            url: '/merchant',
+            isActive: pathname === '/merchant',
+          },
+          {
+            id: 'merchant-orders',
+            title: 'Orders',
+            url: '/merchant/orders',
+            icon: ShoppingBag,
+            isActive: pathname.startsWith('/merchant/orders'),
+          },
+          {
+            id: 'merchant-sales',
+            title: 'Sales & Revenue',
+            url: '/merchant/sales',
+            icon: TrendingUp,
+            isActive: pathname.startsWith('/merchant/sales'),
+          },
+          {
+            id: 'merchant-customers',
+            title: 'Customers',
+            url: '/merchant/customers',
+            icon: Users,
+            isActive: pathname.startsWith('/merchant/customers'),
+          },
+        ],
       },
     ],
     shoppingSessions,

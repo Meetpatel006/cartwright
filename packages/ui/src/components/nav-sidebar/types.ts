@@ -1,4 +1,12 @@
 import type { ElementType } from 'react';
+ 
+export interface NavSubItem {
+  id: string;
+  title: string;
+  url: string;
+  icon?: ElementType;
+  isActive?: boolean;
+}
 
 export interface NavItem {
   id: string;
@@ -6,6 +14,7 @@ export interface NavItem {
   icon: ElementType;
   url: string;
   isActive?: boolean;
+  items?: NavSubItem[];
 }
 
 export interface User {
