@@ -70,22 +70,16 @@ export function AppSidebar({
       {
         id: 'merchant',
         title: 'Merchant Intelligence',
-        url: '/merchant',
+        url: '/merchant/orders',
         icon: Store,
         isActive: pathname.startsWith('/merchant'),
         items: [
-          {
-            id: 'merchant-overview',
-            title: 'Overview & Funnel',
-            url: '/merchant',
-            isActive: pathname === '/merchant',
-          },
           {
             id: 'merchant-orders',
             title: 'Orders',
             url: '/merchant/orders',
             icon: ShoppingBag,
-            isActive: pathname.startsWith('/merchant/orders'),
+            isActive: pathname === '/merchant' || pathname.startsWith('/merchant/orders'),
           },
           {
             id: 'merchant-sales',

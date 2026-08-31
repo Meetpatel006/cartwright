@@ -38,7 +38,7 @@ function NavMainCollapsibleItem({ item }: { item: NavItem }) {
       <SidebarMenuItem>
         <SidebarMenuButton
           tooltip={item.title}
-          isActive={item.isActive}
+          isActive={false}
           render={<CollapsibleTrigger className="flex w-full items-center justify-between" />}
         >
           <div className="flex items-center gap-2">
