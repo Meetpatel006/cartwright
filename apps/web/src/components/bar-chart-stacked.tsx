@@ -11,25 +11,26 @@ export type OrderSeriesDatum = {
   day: string;
   series: "Human" | "AI Agent";
   orders: number;
+  revenue?: number;
 };
 
 const DEFAULT_SERIES_DATA: OrderSeriesDatum[] = [
-  { day: "Aug 16", series: "Human", orders: 0 },
-  { day: "Aug 16", series: "AI Agent", orders: 0 },
-  { day: "Aug 18", series: "Human", orders: 0 },
-  { day: "Aug 18", series: "AI Agent", orders: 0 },
-  { day: "Aug 20", series: "Human", orders: 0 },
-  { day: "Aug 20", series: "AI Agent", orders: 0 },
-  { day: "Aug 22", series: "Human", orders: 0 },
-  { day: "Aug 22", series: "AI Agent", orders: 0 },
-  { day: "Aug 24", series: "Human", orders: 0 },
-  { day: "Aug 24", series: "AI Agent", orders: 0 },
-  { day: "Aug 26", series: "Human", orders: 0 },
-  { day: "Aug 26", series: "AI Agent", orders: 0 },
-  { day: "Aug 28", series: "Human", orders: 0 },
-  { day: "Aug 28", series: "AI Agent", orders: 0 },
-  { day: "Aug 31", series: "Human", orders: 0 },
-  { day: "Aug 31", series: "AI Agent", orders: 0 },
+  { day: "Aug 16", series: "Human", orders: 0, revenue: 0 },
+  { day: "Aug 16", series: "AI Agent", orders: 0, revenue: 0 },
+  { day: "Aug 18", series: "Human", orders: 0, revenue: 0 },
+  { day: "Aug 18", series: "AI Agent", orders: 0, revenue: 0 },
+  { day: "Aug 20", series: "Human", orders: 0, revenue: 0 },
+  { day: "Aug 20", series: "AI Agent", orders: 0, revenue: 0 },
+  { day: "Aug 22", series: "Human", orders: 0, revenue: 0 },
+  { day: "Aug 22", series: "AI Agent", orders: 0, revenue: 0 },
+  { day: "Aug 24", series: "Human", orders: 0, revenue: 0 },
+  { day: "Aug 24", series: "AI Agent", orders: 0, revenue: 0 },
+  { day: "Aug 26", series: "Human", orders: 0, revenue: 0 },
+  { day: "Aug 26", series: "AI Agent", orders: 0, revenue: 0 },
+  { day: "Aug 28", series: "Human", orders: 0, revenue: 0 },
+  { day: "Aug 28", series: "AI Agent", orders: 0, revenue: 0 },
+  { day: "Aug 31", series: "Human", orders: 0, revenue: 0 },
+  { day: "Aug 31", series: "AI Agent", orders: 0, revenue: 0 },
 ];
 
 const chartRenderer = motion();
@@ -39,22 +40,45 @@ export function BarChartStacked({
   totalOrders = 0,
   agentOrders = 0,
   humanOrders = 0,
+  grossRevenue = 0,
+  avgOrderValue = 1500,
+  valueType = "orders",
   title = "Channel Distribution",
-  description = "15-day volume comparison between human shoppers and AI agents",
 }: {
   data?: OrderSeriesDatum[];
   totalOrders?: number;
   agentOrders?: number;
   humanOrders?: number;
+  grossRevenue?: number;
+  avgOrderValue?: number;
+  valueType?: "orders" | "revenue";
   title?: string;
-  description?: string;
 }) {
-  const chartData = data && data.length > 0 ? data : DEFAULT_SERIES_DATA;
+  const isRevenue = valueType === "revenue";
+  const chartData = useMemo(() => {
+    const raw = data && data.length > 0 ? data : DEFAULT_SERIES_DATA;
+    if (!isRevenue) return raw;
+    return raw.map((d) => ({
+      ...d,
+      value: d.revenue ?? Math.round(d.orders * (avgOrderValue || 1500)),
+    }));
+  }, [data, isRevenue, avgOrderValue]);
+
   const daysList = Array.from(new Set(chartData.map((d) => d.day)));
 
-  const computedTotal = totalOrders > 0 ? totalOrders : chartData.reduce((acc, d) => acc + d.orders, 0);
-  const computedAgent = agentOrders > 0 ? agentOrders : chartData.filter((d) => d.series === "AI Agent").reduce((acc, d) => acc + d.orders, 0);
-  const computedHuman = humanOrders > 0 ? humanOrders : Math.max(0, computedTotal - computedAgent);
+  const computedTotal = isRevenue && grossRevenue > 0
+    ? grossRevenue
+    : totalOrders > 0
+    ? totalOrders
+    : chartData.reduce((acc, d) => acc + (isRevenue ? (d as any).value : d.orders), 0);
+
+  const computedAgent = isRevenue
+    ? Math.round(agentOrders * (avgOrderValue || 1500))
+    : agentOrders > 0
+    ? agentOrders
+    : chartData.filter((d) => d.series === "AI Agent").reduce((acc, d) => acc + (isRevenue ? (d as any).value : d.orders), 0);
+
+  const computedHuman = Math.max(0, computedTotal - computedAgent);
 
   const humanPct = computedTotal > 0 ? ((computedHuman / computedTotal) * 100).toFixed(1) : "0";
   const agentPct = computedTotal > 0 ? ((computedAgent / computedTotal) * 100).toFixed(1) : "0";
@@ -63,11 +87,12 @@ export function BarChartStacked({
   const maxDaySum = useMemo(() => {
     const dayTotals: Record<string, number> = {};
     chartData.forEach((d) => {
-      dayTotals[d.day] = (dayTotals[d.day] || 0) + d.orders;
+      const val = isRevenue ? ((d as any).value || 0) : d.orders;
+      dayTotals[d.day] = (dayTotals[d.day] || 0) + val;
     });
-    const maxVal = Math.max(...Object.values(dayTotals), 5);
-    return Math.ceil(maxVal * 1.25);
-  }, [chartData]);
+    const maxVal = Math.max(...Object.values(dayTotals), isRevenue ? 5000 : 5);
+    return Math.ceil(maxVal * 1.2);
+  }, [chartData, isRevenue]);
 
   const definition = useMemo(() => {
     return defineChart({
@@ -75,7 +100,7 @@ export function BarChartStacked({
         barY(chartData, {
           key: (d: any) => `${d.day}:${d.series}`,
           x: (d: any) => d.day,
-          y: (d: any) => d.orders,
+          y: (d: any) => (isRevenue ? d.value : d.orders),
           z: (d: any) => d.series,
           color: (d: any) => (d.series === "Human" ? "#3b82f6" : "#a855f7"),
           fill: (d: any) => (d.series === "Human" ? "#3b82f6" : "#a855f7"),
@@ -105,6 +130,11 @@ export function BarChartStacked({
             ticks: {
               size: 0,
               padding: 8,
+              format: (val: number) => {
+                if (!isRevenue) return String(val);
+                if (val >= 1000) return `₹${Math.round(val / 1000)}k`;
+                return `₹${val}`;
+              },
             },
           },
         },
@@ -128,9 +158,12 @@ export function BarChartStacked({
               const datum = p.datum as OrderSeriesDatum | undefined;
               const seriesName = datum?.series;
               const isHuman = seriesName === "Human";
+              const formattedVal = isRevenue
+                ? `₹${Number(p.yValue || 0).toLocaleString("en-IN")}`
+                : `${p.yValue} orders`;
               return {
                 label: isHuman ? "Human Shoppers" : "AI Autonomous Agents",
-                value: `${p.yValue} orders`,
+                value: formattedVal,
                 color: isHuman ? "#3b82f6" : "#a855f7",
               };
             }),
@@ -141,7 +174,7 @@ export function BarChartStacked({
         transition: { type: "spring", stiffness: 150, damping: 20 },
       },
     } as any);
-  }, [chartData, daysList, maxDaySum]);
+  }, [chartData, daysList, maxDaySum, isRevenue]);
 
   return (
     <div className="rounded-xl border border-border bg-card text-card-foreground p-5 flex flex-col justify-between">
@@ -170,7 +203,7 @@ export function BarChartStacked({
             renderer={chartRenderer}
             definition={definition as any}
             height={230}
-            ariaLabel="15-Day Stacked Orders Chart"
+            ariaLabel={isRevenue ? "15-Day Revenue Breakdown Chart" : "15-Day Stacked Orders Chart"}
           />
         </div>
       </div>
