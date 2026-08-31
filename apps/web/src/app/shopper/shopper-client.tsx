@@ -3,9 +3,30 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@cartwright/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@cartwright/ui/components/card";
-import { Input } from "@cartwright/ui/components/input";
 import { trpc } from "@/utils/trpc";
+import { cn } from "@cartwright/ui/lib/utils";
+import {
+  Store,
+  ShoppingBag,
+  ArrowUp,
+  Headphones,
+  Coffee,
+  Footprints,
+  Globe,
+  PanelRight,
+  X,
+  Play,
+  Pause,
+  RotateCcw,
+  Volume2,
+  VolumeX,
+  Maximize2,
+  Video,
+  Plus,
+  CheckCircle2,
+  XCircle,
+  ChevronRight,
+} from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
 /*  Local shapes (mirror the API + agent outputs)                             */
@@ -142,6 +163,7 @@ function availabilityTone(availability: NormalizedProduct["availability"]): stri
 }
 
 /* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
 /*  Page                                                                      */
 /* -------------------------------------------------------------------------- */
 
@@ -267,6 +289,86 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   const paymentSource = effectivePurchase?.paymentSource;
   const merchantResult = approve.data?.merchantResult;
   const [payMethod, setPayMethod] = useState<"card" | "wallet">("card");
+  const [isBrowserSidebarOpen, setIsBrowserSidebarOpen] = useState(true);
+
+  // Video session recordings query & playback state
+  const recordingsQuery = useQuery({
+    queryKey: ["recordings"],
+    queryFn: async () => {
+      try {
+        const res = await fetch("/api/recordings");
+        if (!res.ok) return { recordings: [] as string[] };
+        return (await res.json()) as { recordings: string[] };
+      } catch {
+        return { recordings: [] as string[] };
+      }
+    },
+    refetchInterval: run.isPending ? 3000 : 15000,
+  });
+
+  const availableRecordings = recordingsQuery.data?.recordings ?? [];
+  const [selectedRecording, setSelectedRecording] = useState<string | null>(null);
+  const [sidebarViewMode, setSidebarViewMode] = useState<"auto" | "live" | "video">("auto");
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const [videoCurrentTime, setVideoCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [isVideoMuted, setIsVideoMuted] = useState(false);
+
+  const activeRecordingFile = selectedRecording ?? availableRecordings[0] ?? null;
+  const videoUrl = activeRecordingFile ? `/api/recordings/${encodeURIComponent(activeRecordingFile)}` : null;
+
+  const hasLiveFeed = run.isPending || !!liveFeed.data?.frame;
+  const hasVideo = !!videoUrl;
+
+  const currentView =
+    sidebarViewMode === "live"
+      ? "live"
+      : sidebarViewMode === "video"
+      ? "video"
+      : hasLiveFeed
+      ? "live"
+      : hasVideo
+      ? "video"
+      : "standby";
+
+  const togglePlay = () => {
+    if (!videoRef.current) return;
+    if (videoRef.current.paused) {
+      videoRef.current.play().catch(() => {});
+    } else {
+      videoRef.current.pause();
+    }
+  };
+
+  const toggleMute = () => {
+    if (!videoRef.current) return;
+    videoRef.current.muted = !videoRef.current.muted;
+    setIsVideoMuted(videoRef.current.muted);
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+      setVideoCurrentTime(time);
+    }
+  };
+
+  const handleRestart = () => {
+    if (!videoRef.current) return;
+    videoRef.current.currentTime = 0;
+    videoRef.current.play().catch(() => {});
+  };
+
+  const handleFullscreen = () => {
+    if (!videoRef.current) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      videoRef.current.requestFullscreen().catch(() => {});
+    }
+  };
 
   useEffectLoadRazorpay(setRazorpayReady);
 
@@ -319,6 +421,34 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
 
   const intent = runResult?.intent;
 
+  const sessionState =
+    loadedSession.data?.status ??
+    (status === "PAYMENT_SUCCEEDED"
+      ? "converted"
+      : selectData
+      ? "selected"
+      : runResult && runResult.recommendations.length > 0
+      ? "recommended"
+      : run.isPending
+      ? "created"
+      : "created");
+
+  const sessionStepKeys = ["created", "recommended", "selected", "converted"];
+  const activeSessionStepIndex = sessionStepKeys.indexOf(sessionState);
+
+  const paymentSteps: TransactionStatus[] = [
+    "CREATED",
+    "POLICY_CHECKING",
+    "AWAITING_APPROVAL",
+    "APPROVED",
+    "PAYMENT_PROCESSING",
+    "PAYMENT_SUCCEEDED",
+  ];
+
+  const currentSessionId = selectedSessionId ?? runResult?.sessionId ?? loadedSession.data?.sessionId ?? "Pending";
+  const targetStoreDisplay = runResult?.intent?.store || store || (loadedSession.data?.intent as any)?.store || "All Stores";
+  const discoveredCandidatesCount = loadedSession.data?.candidates?.length ?? runResult?.recommendations?.length ?? 0;
+
   useEffect(() => {
     setSelectedSessionId(initialSessionId ?? null);
     if (!initialSessionId) {
@@ -341,354 +471,709 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
     }
   }, [loadedSession.data]);
 
-  const hasSessionData = Boolean(runResult || run.isPending || selectData || selectedSessionId);
-
   return (
-    <div className="container mx-auto max-w-4xl px-4 py-10">
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="bg-gradient-to-r from-zinc-900 to-zinc-500 bg-clip-text text-3xl font-bold text-transparent dark:from-white dark:to-zinc-400">
-            Agentic Shopping
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Describe what you want and your budget. Discover products, track live agent state, view session recordings, and manage purchase gates.
-          </p>
-        </div>
-      </header>
+    <div className="relative flex flex-1 h-full w-full overflow-hidden text-foreground">
+      {/* Left/Center Main Workspace Area */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden p-6 sm:p-8">
+        {!runResult && !run.isPending ? (
+          /* Empty / Welcome State: Centered Interface matching max-w-4xl */
+          <div className="flex flex-col items-center justify-center flex-1 w-full max-w-4xl mx-auto my-auto space-y-6 overflow-y-auto">
+            <div className="text-center space-y-2">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-300 shadow-xl mx-auto mb-3">
+                <ShoppingBag className="h-6 w-6" />
+              </div>
+              <h2 className="text-2xl font-bold text-white tracking-tight">
+                What can Cartwright Agent find for you?
+              </h2>
+              <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
+                Describe the item and budget below. The agent will autonomously browse stores, compare prices, and prepare a gated checkout.
+              </p>
+            </div>
 
-      <form className="mb-8 grid gap-2" onSubmit={onSubmit}>
-        <div className="flex gap-2">
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder='e.g. "wireless headphones under 5000 from sony" (budgets are in ₹)'
-          />
-          <Button type="submit" disabled={run.isPending}>
-            {run.isPending ? "Searching…" : "Search"}
-          </Button>
-        </div>
-        <Input
-          value={store}
-          onChange={(event) => setStore(event.target.value)}
-          placeholder='Store preset or URL, e.g. "raven"'
-          aria-label="Store preset or URL"
-        />
-        <div className="flex items-center gap-2" role="group" aria-label="Browser backend">
-          <span className="text-xs text-muted-foreground">Browser:</span>
-          {(["local", "browserbase"] as const).map((mode) => (
-            <Button
-              key={mode}
-              type="button"
-              variant={browserMode === mode ? "default" : "outline"}
-              size="sm"
-              onClick={() => setBrowserMode(mode)}
-            >
-              {mode === "local" ? "Local Chrome" : "Browserbase (cloud)"}
-            </Button>
-          ))}
-        </div>
-      </form>
+            {/* Centered AI Prompt Input Container */}
+            <div className="w-full space-y-3">
+              <div className="relative rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-4 shadow-2xl transition-all focus-within:border-zinc-700/80 focus-within:ring-1 focus-within:ring-zinc-700/50 space-y-2.5">
+                <form onSubmit={onSubmit} className="space-y-2.5">
+                  <textarea
+                    rows={2}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        onSubmit(e);
+                      }
+                    }}
+                    placeholder="Ask Cartwright AI to find, evaluate and purchase anything... (e.g. wireless headphones under 5000 from sony)"
+                    className="w-full resize-none border-none bg-transparent p-0 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-0 leading-relaxed font-normal"
+                  />
 
-      {hasSessionData && (
-        <DifferentiationStatePanel
-          runResult={runResult}
-          selectData={selectData}
-          effectivePurchase={effectivePurchase}
-          status={status}
-          paymentSource={paymentSource}
-          browserMode={browserMode}
-          store={store}
-          query={query}
-        />
-      )}
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-300">
+                        <Store className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+                        <span className="text-zinc-500">Store:</span>
+                        <input
+                          type="text"
+                          value={store}
+                          onChange={(e) => setStore(e.target.value)}
+                          placeholder="raven"
+                          className="bg-transparent border-none p-0 w-20 text-xs font-mono text-zinc-200 focus:outline-none placeholder:text-zinc-600"
+                        />
+                      </div>
 
-      {run.isPending && (
-        <>
-          <p className="mb-4 text-sm text-muted-foreground">
-            {browserMode === "browserbase"
-              ? "Running the agent on a Browserbase cloud session… watch it live at browserbase.com/sessions."
-              : "Running the agent on local Chrome… the session is recorded to packages/agent/recordings/."}
-          </p>
-          <Card className="mb-6 overflow-hidden">
-            <CardHeader className="py-3">
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <span
-                  className="inline-block h-2 w-2 animate-pulse rounded-full bg-red-500"
-                  aria-hidden
-                />
-                Live agent view
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {liveFeed.data?.frame ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={liveFeed.data.frame}
-                  alt="Live view of the agent's browser"
-                  className="block w-full bg-black"
-                />
-              ) : (
-                <div className="flex h-56 items-center justify-center bg-zinc-950 text-sm text-zinc-400">
-                  Waiting for the agent's first frame…
+                      <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900/90 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setBrowserMode("local")}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
+                            browserMode === "local"
+                              ? "bg-zinc-800 text-white shadow-xs"
+                              : "text-zinc-400 hover:text-zinc-200"
+                          )}
+                        >
+                          Local Chrome
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBrowserMode("browserbase")}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
+                            browserMode === "browserbase"
+                              ? "bg-zinc-800 text-white shadow-xs"
+                              : "text-zinc-400 hover:text-zinc-200"
+                          )}
+                        >
+                          Cloud
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={run.isPending || !query.trim()}
+                      className="h-9 px-4 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                      <span>{run.isPending ? "Searching…" : "Run Agent"}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Quick Prompt Suggestion Pills with SVG Icons */}
+              <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+                <span className="text-zinc-500 font-medium">Try:</span>
+                {[
+                  { label: "Wireless Headphones under ₹5k", icon: Headphones, q: "wireless headphones under 5000", s: "raven" },
+                  { label: "Espresso Coffee Machine", icon: Coffee, q: "espresso coffee maker under 15000", s: "raven" },
+                  { label: "Running Shoes under ₹6k", icon: Footprints, q: "running shoes under 6000", s: "raven" },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => {
+                        setQuery(item.q);
+                        setStore(item.s);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800/80 bg-zinc-900/60 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800 transition-colors cursor-pointer shadow-xs"
+                    >
+                      <Icon className="h-3.5 w-3.5 text-zinc-400" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Active Search / Results View with Docked Bottom Input matching max-w-7xl */
+          <div className="w-full max-w-7xl mx-auto flex flex-col flex-1 h-full min-h-0 justify-between">
+            {/* Scrollable Results & Policy Gate */}
+            <div className="flex-1 overflow-y-auto space-y-6 pr-1 pb-4">
+              {/* Top Header Bar matching Policy & Transactions */}
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-zinc-800/60">
+                {/* Left: Icon Box + Title */}
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/80 text-zinc-300 shadow-xs shrink-0">
+                    <ShoppingBag className="h-4 w-4" />
+                  </div>
+                  <h1 className="text-xl font-bold tracking-tight text-white capitalize truncate max-w-lg">
+                    {loadedSession.data?.rawQuery || query || "Shopping Session"}
+                  </h1>
+                </div>
+
+                {/* Right: Actions */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedSessionId(null);
+                      run.reset();
+                      select.reset();
+                      approve.reset();
+                    }}
+                    className="h-9 rounded-lg border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>New Search</span>
+                  </button>
+
+                  {!isBrowserSidebarOpen && (
+                    <button
+                      type="button"
+                      onClick={() => setIsBrowserSidebarOpen(true)}
+                      className="h-9 rounded-lg border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+                    >
+                      <PanelRight className="h-3.5 w-3.5" />
+                      <span>Browser Session</span>
+                      {run.isPending && <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Error message */}
+              {run.isError && (
+                <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-4 text-xs text-rose-300">
+                  <span className="font-bold">Search Error: </span>
+                  {run.error instanceof Error ? run.error.message : String(run.error)}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </>
-      )}
 
-      {run.isError && (
-        <Card className="mb-4 border-red-500/50">
-          <CardHeader>
-            <CardTitle className="text-red-500">Agent error</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm">
-            {run.error instanceof Error ? run.error.message : String(run.error)}
-          </CardContent>
-        </Card>
-      )}
+              {/* Discovered Product Recommendations */}
+              {runResult && runResult.recommendations.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-bold text-white tracking-tight">
+                      Discovered Products ({runResult.recommendations.length})
+                    </h2>
+                    <span className="text-xs text-zinc-400">
+                      Ranked by price match & merchant policy
+                    </span>
+                  </div>
 
-      {intent && (
-        <section className="mb-6 rounded-lg border p-4">
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            Parsed request
-          </h2>
-          <div className="flex flex-wrap gap-2 text-xs">
-            <Chip label="Query" value={intent.rawQuery} />
-            <Chip
-              label="Budget"
-              value={intent.budgetInMinor != null ? formatCurrency(intent.budgetInMinor, intent.currency) : "No limit"}
-            />
-            <Chip label="Currency" value={intent.currency} />
-            {intent.category && <Chip label="Category" value={intent.category} />}
-            <Chip label="Quantity" value={String(intent.requestedQuantity)} />
-            {intent.preferredMerchants.map((m) => (
-              <Chip key={`pref-${m}`} label="Prefers" value={m} tone="green" />
-            ))}
-            {intent.excludedMerchants.map((m) => (
-              <Chip key={`exc-${m}`} label="Excludes" value={m} tone="red" />
-            ))}
-            {intent.constraints.map((c) => (
-              <Chip key={`con-${c}`} label="Constraint" value={c} tone="blue" />
-            ))}
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {runResult.recommendations.map((rec, index) => {
+                      const isSelected = selectData?.plan.productId === rec.product.id;
+                      const isSelectingThis = select.isPending && select.variables?.productId === rec.product.id;
+                      return (
+                        <RecommendationCard
+                          key={rec.product.id}
+                          rank={index + 1}
+                          rec={rec}
+                          isSelectingThis={isSelectingThis}
+                          isLocked={selectionLocked}
+                          isSelected={isSelected}
+                          onSelect={() => onSelect(rec.product.id)}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Bottom Section: Unified Purchase & Policy Verification Gate */}
+              {selectData && (
+                <div className="space-y-4">
+                  <h2 className="text-base font-bold text-white tracking-tight">
+                    Purchase Authorization & Policy Gate
+                  </h2>
+
+                  <TransactionPanel
+                    purchase={effectivePurchase}
+                    currency={selectData.purchase.currency}
+                    status={status}
+                    paymentSource={paymentSource}
+                    merchantResult={merchantResult}
+                    payMethod={payMethod}
+                    setPayMethod={setPayMethod}
+                    approveBusy={approve.isPending}
+                    initiateBusy={initiatePayment.isPending}
+                    verifyBusy={verifyPayment.isPending}
+                    razorpayReady={razorpayReady}
+                    paymentSteps={paymentSteps}
+                    onApprove={() =>
+                      approve.mutate({ transactionId: selectData.purchase.transactionId, method: payMethod })
+                    }
+                    onStartPayment={startPayment}
+                    onOpenCheckout={openAgentRazorpayCheckout}
+                    approveMessage={approve.data?.merchantResult?.message}
+                    verifyMessage={
+                      verifyPayment.data
+                        ? "Payment verified successfully."
+                        : verifyPayment.error
+                        ? String(verifyPayment.error)
+                        : undefined
+                    }
+                  />
+                </div>
+              )}
+
+              {/* Live Navigation Feedback when waiting for recommendations */}
+              {run.isPending && (!runResult || runResult.recommendations.length === 0) && (
+                <div className="rounded-2xl border border-zinc-800/80 bg-[#141414] p-8 text-center space-y-3">
+                  <div className="h-6 w-6 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin mx-auto" />
+                  <p className="text-sm font-semibold text-zinc-200">Agent Navigating Stores</p>
+                  <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+                    Searching product catalogs, extracting specs, and applying policy rules. Follow the live session in the right sidebar.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Docked Prompt Input Bar at Bottom */}
+            <div className="w-full space-y-2 pt-3 shrink-0">
+              <div className="relative rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-4 shadow-2xl transition-all focus-within:border-zinc-700/80 focus-within:ring-1 focus-within:ring-zinc-700/50 space-y-2.5">
+                <form onSubmit={onSubmit} className="space-y-2.5">
+                  <textarea
+                    rows={2}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        onSubmit(e);
+                      }
+                    }}
+                    placeholder="Refine search or ask Cartwright AI to find something else..."
+                    className="w-full resize-none border-none bg-transparent p-0 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-0 leading-relaxed font-normal"
+                  />
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-300">
+                        <Store className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
+                        <span className="text-zinc-500">Store:</span>
+                        <input
+                          type="text"
+                          value={store}
+                          onChange={(e) => setStore(e.target.value)}
+                          placeholder="raven"
+                          className="bg-transparent border-none p-0 w-20 text-xs font-mono text-zinc-200 focus:outline-none placeholder:text-zinc-600"
+                        />
+                      </div>
+
+                      <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900/90 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setBrowserMode("local")}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
+                            browserMode === "local"
+                              ? "bg-zinc-800 text-white shadow-xs"
+                              : "text-zinc-400 hover:text-zinc-200"
+                          )}
+                        >
+                          Local Chrome
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBrowserMode("browserbase")}
+                          className={cn(
+                            "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
+                            browserMode === "browserbase"
+                              ? "bg-zinc-800 text-white shadow-xs"
+                              : "text-zinc-400 hover:text-zinc-200"
+                          )}
+                        >
+                          Cloud
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={run.isPending || !query.trim()}
+                      className="h-9 px-4 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                      <span>{run.isPending ? "Searching…" : "Run Agent"}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Parsed Intent breakdown if active */}
+              {intent && (
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-zinc-500 font-medium">Parsed Constraints:</span>
+                  <span className="inline-flex items-center rounded-full border border-zinc-700 bg-zinc-800/80 px-2.5 py-0.5 font-mono text-[11px] text-zinc-300">
+                    Budget: {intent.budgetInMinor ? formatCurrency(intent.budgetInMinor, intent.currency) : "No limit"}
+                  </span>
+                  {intent.category && (
+                    <span className="inline-flex items-center rounded-full border border-zinc-700 bg-zinc-800/80 px-2.5 py-0.5 text-[11px] text-zinc-300">
+                      {intent.category}
+                    </span>
+                  )}
+                  {intent.preferredMerchants.map((m) => (
+                    <span key={m} className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-950/60 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-400">
+                      Store: {m}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </section>
-      )}
+        )}
+      </div>
 
-      {runResult && runResult.recommendations.length > 0 && (
-        <section className="grid gap-3">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            Ranked recommendations ({runResult.recommendations.length})
-          </h2>
-          {runResult.recommendations.map((rec, index) => (
-            <RecommendationCard
-              key={rec.product.id}
-              rank={index + 1}
-              rec={rec}
-              busy={select.isPending || selectionLocked}
-              onSelect={() => onSelect(rec.product.id)}
+      {/* Right Sidebar: Dedicated Live Agent Browser Session / Video Recording Player */}
+      <div
+        className={cn(
+          "h-full border-l border-zinc-800/80 bg-[#111111] flex flex-col shrink-0 transition-all duration-300 z-10",
+          isBrowserSidebarOpen
+            ? "w-80 md:w-96 lg:w-[420px] xl:w-[480px]"
+            : "w-0 opacity-0 overflow-hidden border-l-0"
+        )}
+      >
+        {/* Sidebar Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/80 bg-zinc-900/60 shrink-0">
+          <div className="flex items-center gap-2">
+            {currentView === "video" ? (
+              <Video className="h-4 w-4 text-purple-400" />
+            ) : (
+              <Globe className="h-4 w-4 text-zinc-400" />
+            )}
+            <span className="text-xs font-semibold text-zinc-200">
+              {currentView === "video" ? "Session Recording" : "Agent Browser"}
+            </span>
+
+            {/* Mode Switcher pill if both live & video exist */}
+            {hasLiveFeed && hasVideo ? (
+              <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900/90 p-0.5 ml-1">
+                <button
+                  type="button"
+                  onClick={() => setSidebarViewMode("live")}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer",
+                    currentView === "live" ? "bg-zinc-800 text-emerald-400 shadow-xs" : "text-zinc-400 hover:text-zinc-200"
+                  )}
+                >
+                  Live
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSidebarViewMode("video")}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer",
+                    currentView === "video" ? "bg-zinc-800 text-purple-400 shadow-xs" : "text-zinc-400 hover:text-zinc-200"
+                  )}
+                >
+                  Video
+                </button>
+              </div>
+            ) : currentView === "live" && run.isPending ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Live
+              </span>
+            ) : currentView === "video" ? (
+              <span className="inline-flex items-center rounded-full bg-purple-950/80 border border-purple-500/40 px-2 py-0.5 text-[10px] font-semibold text-purple-300">
+                Video Replay
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-zinc-800/80 border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400">
+                Standby
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {availableRecordings.length > 1 && currentView === "video" && (
+              <select
+                value={activeRecordingFile ?? ""}
+                onChange={(e) => setSelectedRecording(e.target.value)}
+                className="bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-[10px] font-mono text-zinc-300 focus:outline-none max-w-[120px] truncate"
+              >
+                {availableRecordings.map((rec) => (
+                  <option key={rec} value={rec}>
+                    {rec}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setIsBrowserSidebarOpen(false)}
+              className="p-1 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80 cursor-pointer"
+              title="Close sidebar"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Viewport Frame */}
+        <div className="flex-1 bg-black overflow-hidden flex flex-col justify-center relative min-h-0">
+          {currentView === "video" && videoUrl ? (
+            <div className="group/video relative w-full h-full flex flex-col items-center justify-center bg-black overflow-hidden select-none">
+              {/* Video Element */}
+              <video
+                ref={videoRef}
+                src={videoUrl}
+                playsInline
+                className="w-full h-full object-contain cursor-pointer"
+                onClick={togglePlay}
+                onPlay={() => setIsVideoPlaying(true)}
+                onPause={() => setIsVideoPlaying(false)}
+                onTimeUpdate={() => {
+                  if (videoRef.current) {
+                    setVideoCurrentTime(videoRef.current.currentTime);
+                    setVideoDuration(videoRef.current.duration || 0);
+                  }
+                }}
+                onLoadedMetadata={() => {
+                  if (videoRef.current) {
+                    setVideoDuration(videoRef.current.duration || 0);
+                  }
+                }}
+                onEnded={() => setIsVideoPlaying(false)}
+              />
+
+              {/* Big Center Play/Pause Overlay Button */}
+              {!isVideoPlaying && (
+                <button
+                  type="button"
+                  onClick={togglePlay}
+                  className="absolute inset-0 m-auto h-14 w-14 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center backdrop-blur-xs hover:scale-110 hover:bg-black/80 transition-all cursor-pointer shadow-2xl z-10"
+                  title="Play video"
+                >
+                  <Play className="h-6 w-6 fill-white translate-x-0.5" />
+                </button>
+              )}
+
+              {/* Bottom Custom Video Control Bar */}
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent p-3 space-y-2 opacity-95 transition-opacity z-10">
+                {/* Timeline Scrubber */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={0}
+                    max={videoDuration || 100}
+                    step={0.1}
+                    value={videoCurrentTime}
+                    onChange={handleSeek}
+                    className="w-full h-1.5 bg-zinc-700/80 rounded-lg appearance-none cursor-pointer accent-white hover:accent-purple-400 transition-all"
+                  />
+                </div>
+
+                {/* Control Actions & Time Display */}
+                <div className="flex items-center justify-between text-xs text-zinc-300">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={togglePlay}
+                      className="p-1 rounded hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                      title={isVideoPlaying ? "Pause (Space)" : "Play (Space)"}
+                    >
+                      {isVideoPlaying ? (
+                        <Pause className="h-4 w-4 fill-current" />
+                      ) : (
+                        <Play className="h-4 w-4 fill-current" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleRestart}
+                      className="p-1 rounded hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                      title="Restart video"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={toggleMute}
+                      className="p-1 rounded hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                      title={isVideoMuted ? "Unmute" : "Mute"}
+                    >
+                      {isVideoMuted ? (
+                        <VolumeX className="h-4 w-4 text-zinc-400" />
+                      ) : (
+                        <Volume2 className="h-4 w-4" />
+                      )}
+                    </button>
+
+                    <span className="font-mono text-[11px] text-zinc-400 pl-1">
+                      {formatVideoTime(videoCurrentTime)} / {formatVideoTime(videoDuration)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleFullscreen}
+                      className="p-1 rounded hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                      title="Fullscreen"
+                    >
+                      <Maximize2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : currentView === "live" && liveFeed.data?.frame ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={liveFeed.data.frame}
+              alt="Live view of the agent's browser"
+              className="w-full h-full object-contain"
             />
-          ))}
-        </section>
-      )}
-
-      {runResult && runResult.recommendations.length === 0 && !run.isPending && (
-        <p className="text-sm text-muted-foreground">No products matched your request.</p>
-      )}
-
-      {selectData && (
-        <section className="mt-8 grid gap-4">
-          <PurchasePlanCard plan={selectData.plan} currency={selectData.purchase.currency} />
-          <TransactionPanel
-            purchase={effectivePurchase}
-            currency={selectData.purchase.currency}
-            status={status}
-            paymentSource={paymentSource}
-            merchantResult={merchantResult}
-            payMethod={payMethod}
-            setPayMethod={setPayMethod}
-            approveBusy={approve.isPending}
-            initiateBusy={initiatePayment.isPending}
-            verifyBusy={verifyPayment.isPending}
-            razorpayReady={razorpayReady}
-            onApprove={() =>
-              approve.mutate({ transactionId: selectData.purchase.transactionId, method: payMethod })
-            }
-            onStartPayment={startPayment}
-            onOpenCheckout={openAgentRazorpayCheckout}
-            approveMessage={approve.data?.merchantResult?.message}
-            verifyMessage={
-              verifyPayment.data
-                ? "Payment verified."
-                : verifyPayment.error
-                  ? String(verifyPayment.error)
-                  : undefined
-            }
-          />
-        </section>
-      )}
+          ) : run.isPending ? (
+            <div className="flex flex-col items-center justify-center p-6 text-center space-y-2">
+              <div className="h-6 w-6 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
+              <span className="text-xs text-zinc-400">Streaming live browser feed…</span>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center p-8 text-center space-y-2.5 text-zinc-500">
+              <Globe className="h-8 w-8 text-zinc-700 stroke-[1.5]" />
+              <p className="text-xs font-medium text-zinc-400">Viewport Standby</p>
+              <p className="text-[11px] text-zinc-600 max-w-[220px]">
+                Live browser stream or session recording will appear here when available.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
+}
+
+function formatVideoTime(seconds: number) {
+  if (isNaN(seconds) || !isFinite(seconds)) return "0:00";
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 /* -------------------------------------------------------------------------- */
 /*  Sub-components                                                            */
 /* -------------------------------------------------------------------------- */
 
-function Chip({
-  label,
-  value,
-  tone = "neutral",
-}: {
-  label: string;
-  value: string;
-  tone?: "neutral" | "green" | "red" | "blue";
-}) {
-  const tones = {
-    neutral: "border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-    green: "border-green-400/50 bg-green-500/10 text-green-700 dark:text-green-300",
-    red: "border-red-400/50 bg-red-500/10 text-red-700 dark:text-red-300",
-    blue: "border-blue-400/50 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-  };
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${tones[tone]}`}>
-      <span className="opacity-60">{label}:</span>
-      <span className="capitalize">{value}</span>
-    </span>
-  );
-}
-
 function RecommendationCard({
   rank,
   rec,
-  busy,
+  isSelectingThis,
+  isLocked,
+  isSelected,
   onSelect,
 }: {
   rank: number;
   rec: Recommendation;
-  busy: boolean;
+  isSelectingThis?: boolean;
+  isLocked?: boolean;
+  isSelected?: boolean;
   onSelect: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const { product } = rec;
-  const top = rec.isTopRecommendation;
+  const isTop = rec.isTopRecommendation;
 
   return (
-    <Card className={top ? "border-green-500/50 ring-1 ring-green-500/20" : ""}>
-      <CardContent className="grid gap-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-                top ? "bg-green-500 text-white" : "bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-200"
-              }`}
-            >
-              {rank}
-            </div>
-            <div>
-              <p className="font-medium leading-tight">{product.canonicalTitle}</p>
-              <p className="text-xs text-muted-foreground">{product.merchant}</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="font-semibold">{formatCurrency(product.amountInMinor, product.currency)}</p>
-            <span
-              className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${availabilityTone(product.availability)}`}
-            >
-              {product.availability.replace(/_/g, " ")}
-            </span>
-          </div>
-        </div>
+    <div
+      className={cn(
+        "group relative flex flex-col justify-between rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-5 shadow-2xl transition-all hover:border-zinc-700/80 space-y-4",
+        isSelected ? "border-emerald-500/80 ring-1 ring-emerald-500/30" : ""
+      )}
+    >
+      {/* Top row: Store Name + Rank Badge */}
+      <div className="flex items-center justify-between">
+        <span className="font-mono text-xs font-semibold text-zinc-400 capitalize">
+          {product.merchant}
+        </span>
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold",
+            isTop
+              ? "border-emerald-500/40 bg-emerald-950/60 text-emerald-400"
+              : "border-zinc-700 bg-zinc-800/80 text-zinc-300"
+          )}
+        >
+          {isTop ? "Top Choice" : `#${rank} Match`}
+        </span>
+      </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="rounded-md bg-zinc-100 px-2 py-0.5 dark:bg-zinc-800">
-            score {rec.rankingScore}
+      {/* Product Title & Price */}
+      <div className="space-y-1.5">
+        <h3 className="text-sm font-bold text-white tracking-tight leading-snug line-clamp-2">
+          {product.canonicalTitle}
+        </h3>
+        <div className="text-xl font-bold font-mono tracking-tight text-white pt-1">
+          {formatCurrency(product.amountInMinor, product.currency)}
+        </div>
+      </div>
+
+      {/* Availability & Confidence */}
+      <div className="space-y-2 pt-3 border-t border-zinc-800/60 text-xs">
+        <div className="flex items-center justify-between text-zinc-400">
+          <span>Stock</span>
+          <span className="font-medium text-zinc-200 capitalize">
+            {product.availability.replace(/_/g, " ")}
           </span>
-          <ConfidenceBar confidence={product.confidence} />
-          {product.productUrl && (
-            <a className="underline" href={product.productUrl} target="_blank" rel="noreferrer">
-              view product
-            </a>
-          )}
         </div>
 
-        <div>
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
-          >
-            {open ? "Hide reasoning" : "Why this rank?"}
-          </button>
-          {open && (
-            <ul className="mt-2 grid gap-1 text-xs text-muted-foreground">
-              {rec.explanation.map((line, i) => (
-                <li key={i} className="flex gap-1.5">
-                  <span className="select-none opacity-50">•</span>
-                  <span>{line}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+        <div className="flex items-center justify-between text-zinc-400">
+          <span>Confidence</span>
+          <span className="font-mono text-zinc-300">
+            {Math.round(product.confidence * 100)}%
+          </span>
         </div>
 
-        <div className="flex justify-end">
-          <Button size="sm" variant={top ? "default" : "outline"} disabled={busy} onClick={onSelect}>
-            {busy ? "Requesting…" : "Select & request purchase"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ConfidenceBar({ confidence }: { confidence: number }) {
-  const pct = Math.round(confidence * 100);
-  const tone = pct >= 80 ? "bg-green-500" : pct >= 50 ? "bg-amber-500" : "bg-red-500";
-  return (
-    <span className="inline-flex items-center gap-1.5" title={`Data confidence: ${pct}%`}>
-      <span className="h-1.5 w-16 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
-        <span className={`block h-full ${tone}`} style={{ width: `${pct}%` }} />
-      </span>
-      <span className="text-[10px] uppercase tracking-wide">conf {pct}%</span>
-    </span>
-  );
-}
-
-function PurchasePlanCard({ plan, currency }: { plan: PurchasePlan; currency: string }) {
-  return (
-    <Card className="border-blue-500/40">
-      <CardHeader>
-        <CardTitle className="text-base">Selection → purchase plan</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3 text-sm">
-        <p>
-          <span className="font-medium">{plan.merchant}</span> ·{" "}
-          {formatCurrency(plan.expectedAmountInMinor, currency)}
-          <span className="ml-2 text-xs text-muted-foreground">rank score {plan.rankingScore}</span>
-        </p>
-        {plan.recommendationReasons.length > 0 && (
-          <ul className="grid gap-1 text-xs text-muted-foreground">
-            {plan.recommendationReasons.map((r, i) => (
-              <li key={i}>• {r}</li>
-            ))}
-          </ul>
-        )}
-        {plan.constraintsApplied.length > 0 && (
-          <div className="text-xs">
-            <p className="mb-1 font-medium text-muted-foreground">Constraints applied</p>
-            <ul className="grid gap-0.5">
-              {plan.constraintsApplied.map((c, i) => (
-                <li key={i}>• {c}</li>
-              ))}
-            </ul>
+        {rec.explanation.length > 0 && (
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => setOpen(!open)}
+              className="text-[11px] text-zinc-400 hover:text-zinc-200 underline cursor-pointer"
+            >
+              {open ? "Hide details" : "Why this match?"}
+            </button>
+            {open && (
+              <ul className="mt-1.5 space-y-1 text-[11px] text-zinc-400 bg-zinc-950/60 p-2 rounded-lg border border-zinc-800/60">
+                {rec.explanation.map((line, i) => (
+                  <li key={i} className="leading-relaxed">
+                    • {line}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
-        <p className="text-[11px] text-muted-foreground">
-          This plan is a structured selection only — the backend purchase gate is the source of truth.
-        </p>
-      </CardContent>
-    </Card>
+      </div>
+
+      {/* Select button */}
+      <div className="pt-1">
+        <button
+          type="button"
+          onClick={onSelect}
+          disabled={isLocked || isSelectingThis}
+          className={cn(
+            "w-full h-9 text-xs font-semibold rounded-lg shadow-xs transition-colors",
+            isSelected
+              ? "bg-emerald-950/80 text-emerald-300 border border-emerald-500/50 cursor-default"
+              : isLocked
+              ? "border border-zinc-800/60 bg-zinc-900/40 text-zinc-500 cursor-not-allowed"
+              : isTop
+              ? "bg-white hover:bg-zinc-200 text-zinc-950 font-bold cursor-pointer"
+              : "border border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 hover:border-zinc-700 text-zinc-200 cursor-pointer"
+          )}
+        >
+          {isSelected
+            ? "Selected"
+            : isSelectingThis
+            ? "Requesting…"
+            : isLocked
+            ? "Select Product"
+            : "Select & Request Purchase"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -704,90 +1189,251 @@ function TransactionPanel(props: {
   initiateBusy: boolean;
   verifyBusy: boolean;
   razorpayReady: boolean;
+  paymentSteps?: TransactionStatus[];
   onApprove: () => void;
   onStartPayment: () => void;
   onOpenCheckout: () => void;
   approveMessage?: string;
   verifyMessage?: string;
 }) {
-  const { purchase, currency, status, paymentSource } = props;
+  const { purchase, currency, status, paymentSource, paymentSteps } = props;
   if (!purchase) return null;
 
-  const blocked =
+  const isApproved = status === "APPROVED" || status === "PAYMENT_SUCCEEDED";
+  const isPendingApproval = status === "AWAITING_APPROVAL";
+  const isBlocked =
     status === "POLICY_BLOCKED" ||
     status === "PRICE_CHANGED" ||
     status === "CANCELLED" ||
     status === "PAYMENT_FAILED";
-  const tone = blocked
-    ? "border-red-500/50 bg-red-500/5 text-red-600 dark:text-red-400"
-    : "border-green-500/50 bg-green-500/5";
 
   return (
-    <div className={`rounded-md border p-4 ${tone}`}>
-      <p className="font-medium uppercase tracking-wide">{status?.replace(/_/g, " ")}</p>
-      <p className="text-xs text-muted-foreground">Transaction: {purchase.transactionId}</p>
+    <div className="rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-5 shadow-2xl space-y-4">
+      {/* Header with status badge */}
+      <div className="flex items-center justify-between">
+        <div className="space-y-0.5">
+          <span className="text-xs font-semibold text-zinc-400">Order Verification</span>
+          <p className="font-mono text-xs text-zinc-500">ID: {purchase.transactionId}</p>
+        </div>
 
-      <dl className="mt-2 grid grid-cols-2 gap-1 text-xs">
-        <dt className="text-muted-foreground">Proposed amount</dt>
-        <dd>{formatCurrency(purchase.amountInMinor, currency)}</dd>
-        <dt className="text-muted-foreground">Approved amount</dt>
-        <dd>{purchase.approvedAmountInMinor != null ? formatCurrency(purchase.approvedAmountInMinor, currency) : "—"}</dd>
-        <dt className="text-muted-foreground">Spending limit</dt>
-        <dd>{formatCurrency(purchase.maxTotalSpending, currency)}</dd>
-        <dt className="text-muted-foreground">Auto-approve limit</dt>
-        <dd>{formatCurrency(purchase.autoApprovalLimitInMinor, currency)}</dd>
-        <dt className="text-muted-foreground">Policy</dt>
-        <dd>{purchase.policyDecision.replace(/_/g, " ")}</dd>
-      </dl>
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+            isApproved
+              ? "border-emerald-500/40 bg-emerald-950/60 text-emerald-400"
+              : isPendingApproval
+              ? "border-amber-500/40 bg-amber-950/60 text-amber-400"
+              : isBlocked
+              ? "border-rose-500/40 bg-rose-950/60 text-rose-400"
+              : "border-zinc-700 bg-zinc-800 text-zinc-300"
+          )}
+        >
+          {status?.replace(/_/g, " ")}
+        </span>
+      </div>
 
-      {purchase.policyReason && <p className="mt-2 text-xs text-muted-foreground">{purchase.policyReason}</p>}
-      {purchase.failureReason && <p className="mt-1 text-xs text-red-500">{purchase.failureReason}</p>}
+      {/* Flat Clean Metrics Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 py-3 border-y border-zinc-800/60">
+        <div className="space-y-1">
+          <span className="text-xs text-zinc-400">Order Amount</span>
+          <p className="font-mono font-bold text-base text-white">
+            {formatCurrency(purchase.amountInMinor, currency)}
+          </p>
+        </div>
 
-      {(status === "AWAITING_APPROVAL" || (status === "APPROVED" && paymentSource === "merchant_ui")) &&
-        paymentSource === "merchant_ui" && (
-          <div className="mt-3 flex gap-2" role="group" aria-label="Payment method">
-            <Button variant={props.payMethod === "card" ? "default" : "outline"} onClick={() => props.setPayMethod("card")}>
-              Card
-            </Button>
-            <Button variant={props.payMethod === "wallet" ? "default" : "outline"} onClick={() => props.setPayMethod("wallet")}>
-              Wallet
-            </Button>
-          </div>
-        )}
+        <div className="space-y-1">
+          <span className="text-xs text-zinc-400">Policy Gate</span>
+          <p className="font-semibold text-sm text-zinc-200 capitalize">
+            {purchase.policyDecision.replace(/_/g, " ")}
+          </p>
+        </div>
 
-      {status === "AWAITING_APPROVAL" && (
-        <Button className="mt-3" onClick={props.onApprove} disabled={props.approveBusy}>
-          {props.approveBusy ? "Approving…" : "Approve transaction"}
-        </Button>
-      )}
+        <div className="space-y-1">
+          <span className="text-xs text-zinc-400">Spending Cap</span>
+          <p className="font-mono text-sm text-zinc-300">
+            {formatCurrency(purchase.maxTotalSpending, currency)}
+          </p>
+        </div>
 
-      {status === "APPROVED" && paymentSource === "merchant_ui" && (
-        <Button className="mt-3" onClick={props.onApprove} disabled={props.approveBusy}>
-          {props.approveBusy ? "Paying at merchant…" : "Approve & pay at merchant"}
-        </Button>
-      )}
+        <div className="space-y-1">
+          <span className="text-xs text-zinc-400">Auto Limit</span>
+          <p className="font-mono text-sm text-zinc-300">
+            {formatCurrency(purchase.autoApprovalLimitInMinor, currency)}
+          </p>
+        </div>
+      </div>
 
-      {status === "APPROVED" && paymentSource === "agent_razorpay" && !props.merchantResult && (
-        <Button className="mt-3" onClick={props.onStartPayment} disabled={props.initiateBusy}>
-          {props.initiateBusy ? "Creating Razorpay order…" : "Continue to Razorpay TEST checkout"}
-        </Button>
-      )}
-
-      {status === "PAYMENT_PROCESSING" && props.razorpayReady && (
-        <Button className="mt-3" onClick={props.onOpenCheckout} disabled={props.verifyBusy}>
-          {props.verifyBusy ? "Verifying payment…" : "Open Razorpay TEST checkout"}
-        </Button>
-      )}
-
-      {props.merchantResult && (
-        <p className={`mt-2 ${props.merchantResult.status === "opened" || props.merchantResult.status === "submitted" ? "text-green-600" : "text-red-500"}`}>
-          {props.merchantResult.message}
+      {purchase.policyReason && (
+        <p className="text-sm sm:text-base font-medium text-zinc-200 leading-relaxed pt-1">
+          {purchase.policyReason}
         </p>
       )}
 
-      {props.verifyMessage && (
-        <p className={`mt-2 ${status === "PAYMENT_SUCCEEDED" ? "text-green-600" : "text-red-500"}`}>{props.verifyMessage}</p>
+      {/* Action buttons (only rendered when active) */}
+      {Boolean(
+        status === "AWAITING_APPROVAL" ||
+          (status === "APPROVED" && paymentSource === "merchant_ui") ||
+          (status === "APPROVED" && paymentSource === "agent_razorpay" && !props.merchantResult) ||
+          (status === "PAYMENT_PROCESSING" && props.razorpayReady) ||
+          props.merchantResult ||
+          props.verifyMessage
+      ) && (
+        <div className="pt-2 flex items-center gap-3">
+          {status === "AWAITING_APPROVAL" && (
+            <button
+              type="button"
+              onClick={props.onApprove}
+              disabled={props.approveBusy}
+              className="h-9 px-4 text-xs font-bold rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 shadow-xs cursor-pointer transition-colors"
+            >
+              {props.approveBusy ? "Approving…" : "Approve & Permit Purchase"}
+            </button>
+          )}
+
+          {status === "APPROVED" && paymentSource === "merchant_ui" && (
+            <button
+              type="button"
+              onClick={props.onApprove}
+              disabled={props.approveBusy}
+              className="h-9 px-4 text-xs font-bold rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 shadow-xs cursor-pointer transition-colors"
+            >
+              {props.approveBusy ? "Executing on Merchant…" : "Execute Checkout on Merchant"}
+            </button>
+          )}
+
+          {status === "APPROVED" && paymentSource === "agent_razorpay" && !props.merchantResult && (
+            <button
+              type="button"
+              onClick={props.onStartPayment}
+              disabled={props.initiateBusy}
+              className="h-9 px-4 text-xs font-bold rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 shadow-xs cursor-pointer transition-colors"
+            >
+              {props.initiateBusy ? "Creating order…" : "Continue to Razorpay Checkout"}
+            </button>
+          )}
+
+          {status === "PAYMENT_PROCESSING" && props.razorpayReady && (
+            <button
+              type="button"
+              onClick={props.onOpenCheckout}
+              disabled={props.verifyBusy}
+              className="h-9 px-4 text-xs font-bold rounded-lg bg-emerald-400 hover:bg-emerald-300 text-zinc-950 shadow-xs cursor-pointer transition-colors"
+            >
+              {props.verifyBusy ? "Verifying payment…" : "Open Razorpay Test Checkout"}
+            </button>
+          )}
+
+          {props.merchantResult && (
+            <p className="text-xs font-medium text-emerald-400">
+              {props.merchantResult.message}
+            </p>
+          )}
+
+          {props.verifyMessage && (
+            <p className="text-xs font-medium text-emerald-400">
+              {props.verifyMessage}
+            </p>
+          )}
+        </div>
       )}
+
+      {/* Financial Execution Pipeline */}
+      {(() => {
+        const standardSteps = [
+          { key: "CREATED", label: "Created" },
+          { key: "POLICY_CHECKING", label: "Policy Check" },
+          { key: "AWAITING_APPROVAL", label: "Approval" },
+          { key: "APPROVED", label: "Approved" },
+          { key: "PAYMENT_PROCESSING", label: "Payment" },
+          { key: "PAYMENT_SUCCEEDED", label: "Settled" },
+        ];
+
+        let pipelineSteps: { key: string; label: string; state: "completed" | "current" | "blocked" | "pending" }[];
+
+        if (!status) {
+          pipelineSteps = standardSteps.map((s) => ({ ...s, state: "pending" }));
+        } else if (status === "POLICY_BLOCKED") {
+          pipelineSteps = standardSteps.map((s) => {
+            if (s.key === "CREATED") return { ...s, state: "completed" };
+            if (s.key === "POLICY_CHECKING") return { ...s, label: "Policy Blocked", state: "blocked" };
+            return { ...s, state: "pending" };
+          });
+        } else if (status === "PRICE_CHANGED" || status === "CANCELLED") {
+          pipelineSteps = standardSteps.map((s) => {
+            if (s.key === "CREATED" || s.key === "POLICY_CHECKING") return { ...s, state: "completed" };
+            if (s.key === "AWAITING_APPROVAL")
+              return { ...s, label: status === "PRICE_CHANGED" ? "Price Changed" : "Cancelled", state: "blocked" };
+            return { ...s, state: "pending" };
+          });
+        } else if (status === "PAYMENT_FAILED") {
+          pipelineSteps = standardSteps.map((s) => {
+            if (s.key === "PAYMENT_PROCESSING") return { ...s, label: "Payment Failed", state: "blocked" };
+            if (s.key === "PAYMENT_SUCCEEDED") return { ...s, state: "pending" };
+            return { ...s, state: "completed" };
+          });
+        } else if (status === "PAYMENT_SUCCEEDED") {
+          pipelineSteps = standardSteps.map((s) => ({ ...s, state: "completed" }));
+        } else {
+          const order = [
+            "CREATED",
+            "POLICY_CHECKING",
+            "AWAITING_APPROVAL",
+            "APPROVED",
+            "PAYMENT_PROCESSING",
+            "PAYMENT_SUCCEEDED",
+          ];
+          const currentIdx = order.indexOf(status);
+          pipelineSteps = standardSteps.map((s, idx) => {
+            if (idx < currentIdx) return { ...s, state: "completed" };
+            if (idx === currentIdx) return { ...s, state: "current" };
+            return { ...s, state: "pending" };
+          });
+        }
+
+        return (
+          <div className="space-y-2 border-t border-zinc-800/60 pt-3">
+            <span className="text-[11px] font-semibold text-zinc-400 block">Execution Pipeline</span>
+
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              {pipelineSteps.map((step, i) => (
+                <div key={step.key} className="flex items-center gap-1.5">
+                  <div
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-mono transition-all",
+                      step.state === "completed"
+                        ? "border border-emerald-500/30 bg-emerald-950/30 text-emerald-400 font-medium"
+                        : step.state === "current"
+                        ? "border border-purple-500/50 bg-purple-600 text-white font-bold shadow-xs ring-1 ring-purple-400/40"
+                        : step.state === "blocked"
+                        ? "border border-rose-500/60 bg-rose-950/60 text-rose-300 font-bold shadow-xs"
+                        : "border border-zinc-800/80 bg-zinc-900/40 text-zinc-600 font-normal"
+                    )}
+                  >
+                    {step.state === "completed" && <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />}
+                    {step.state === "blocked" && <XCircle className="h-3 w-3 text-rose-400 shrink-0" />}
+                    {step.state === "current" && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping shrink-0" />
+                    )}
+                    <span>{step.label}</span>
+                  </div>
+                  {i < pipelineSteps.length - 1 && (
+                    <ChevronRight
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0 mx-0.5",
+                        step.state === "completed"
+                          ? "text-emerald-400/70"
+                          : step.state === "blocked"
+                          ? "text-rose-400/70"
+                          : "text-zinc-500"
+                      )}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -813,308 +1459,3 @@ function useEffectLoadRazorpay(setReady: (ready: boolean) => void) {
   }, [setReady]);
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Differentiation State Management & Video Panel                            */
-/* -------------------------------------------------------------------------- */
-
-interface DifferentiationStatePanelProps {
-  runResult?: ShoppingRunResult;
-  selectData?: SelectResult;
-  effectivePurchase: TransactionView | null;
-  status: TransactionStatus | undefined;
-  paymentSource: TransactionView["paymentSource"] | undefined;
-  browserMode: "local" | "browserbase";
-  store: string;
-  query: string;
-}
-
-function DifferentiationStatePanel({
-  runResult,
-  selectData,
-  effectivePurchase,
-  status,
-  paymentSource,
-  browserMode,
-  store,
-}: DifferentiationStatePanelProps) {
-  const [recordings, setRecordings] = useState<string[]>([]);
-  const [selectedRecording, setSelectedRecording] = useState<string>("");
-  const [loadingVideos, setLoadingVideos] = useState(false);
-
-  useEffect(() => {
-    setLoadingVideos(true);
-    fetch("/api/recordings")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && Array.isArray(data.recordings)) {
-          setRecordings(data.recordings);
-          if (data.recordings.length > 0) {
-            setSelectedRecording(data.recordings[0]);
-          }
-        }
-      })
-      .catch((err) => console.error("Failed to load recordings", err))
-      .finally(() => setLoadingVideos(false));
-  }, [runResult?.sessionId]);
-
-  const sessionState = selectData
-    ? "converted"
-    : runResult
-    ? (runResult.status || "recommended")
-    : "created";
-
-  const sessionSteps = [
-    { key: "created", label: "Session Created" },
-    { key: "recommended", label: "Products Recommended" },
-    { key: "selected", label: "Product Selected" },
-    { key: "converted", label: "Converted to Purchase" },
-  ];
-
-  const paymentSteps: TransactionStatus[] = [
-    "CREATED",
-    "POLICY_CHECKING",
-    "AWAITING_APPROVAL",
-    "APPROVED",
-    "PAYMENT_PROCESSING",
-    "PAYMENT_SUCCEEDED",
-  ];
-
-  return (
-    <Card className="mb-8 border-purple-500/30 bg-gradient-to-br from-purple-950/10 via-background to-blue-950/10 shadow-md">
-      <CardHeader className="pb-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-lg font-semibold text-purple-700 dark:text-purple-300">
-              <span className="flex h-2.5 w-2.5 rounded-full bg-purple-500 animate-pulse" />
-              Differentiation: State Management & Session Video
-            </CardTitle>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Session state tracking, product state, payment process state, and video recording of what the agent should do.
-            </p>
-          </div>
-          <span className="rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1 text-xs font-medium text-purple-600 dark:text-purple-300">
-            State System Active
-          </span>
-        </div>
-      </CardHeader>
-
-      <CardContent className="grid gap-6 text-sm">
-        {/* 1. Recorded Video Section */}
-        <div className="rounded-lg border p-4 bg-card/60">
-          <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <span className="inline-block h-2 w-2 rounded-full bg-blue-500" />
-              Agent Action Video Recording
-            </h3>
-            {recordings.length > 1 && (
-              <select
-                value={selectedRecording}
-                onChange={(e) => setSelectedRecording(e.target.value)}
-                className="rounded border border-input bg-background px-2 py-1 text-xs"
-              >
-                {recordings.map((rec) => (
-                  <option key={rec} value={rec}>
-                    {rec}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          {selectedRecording ? (
-            <div className="space-y-2">
-              <div className="overflow-hidden rounded-md border bg-black shadow-inner">
-                <video
-                  key={selectedRecording}
-                  src={`/api/recordings/${encodeURIComponent(selectedRecording)}`}
-                  controls
-                  className="w-full max-h-96 object-contain"
-                />
-              </div>
-              <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                <span>📹 Recorded video of agent session:</span>
-                <code className="font-mono">{selectedRecording}</code>
-              </p>
-            </div>
-          ) : (
-            <div className="flex h-36 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
-              {loadingVideos
-                ? "Loading session videos..."
-                : "No recorded video files found. Run a local agent session to record video."}
-            </div>
-          )}
-        </div>
-
-        {/* 2. Session State Management */}
-        <div className="rounded-lg border p-4 bg-card/60">
-          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-            Session State Management
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-            {sessionSteps.map((step, idx) => {
-              const activeIndex =
-                sessionState === "expired"
-                  ? selectData
-                    ? 2
-                    : runResult?.recommendations?.length
-                    ? 1
-                    : 0
-                  : sessionSteps.findIndex((s) => s.key === sessionState);
-              const isPastOrCurrent = idx <= activeIndex;
-              const isCurrent = step.key === sessionState || (sessionState === "expired" && idx === activeIndex);
-              return (
-                <div
-                  key={step.key}
-                  className={`rounded-md border p-2 text-center text-xs transition-colors ${
-                    isCurrent
-                      ? "border-emerald-500 bg-emerald-500/10 font-bold text-emerald-600 dark:text-emerald-400"
-                      : isPastOrCurrent
-                      ? "border-emerald-500/30 bg-emerald-500/5 text-muted-foreground"
-                      : "border-zinc-300 dark:border-zinc-800 opacity-50"
-                  }`}
-                >
-                  <div className="text-[10px] opacity-70">Step {idx + 1}</div>
-                  <div>{step.label}</div>
-                </div>
-              );
-            })}
-          </div>
-          <dl className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs border-t pt-2">
-            <div>
-              <dt className="text-muted-foreground">Active Session State</dt>
-              <dd className="font-semibold capitalize text-emerald-600 dark:text-emerald-400">{sessionState}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Session ID</dt>
-              <dd className="font-mono truncate">{runResult?.sessionId ?? "Pending"}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Browser Backend</dt>
-              <dd className="capitalize">{browserMode}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Target Store</dt>
-              <dd className="capitalize">{runResult?.intent?.store || store || "Default"}</dd>
-            </div>
-          </dl>
-        </div>
-
-        {/* 3. Product State Management */}
-        <div className="rounded-lg border p-4 bg-card/60">
-          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
-            Product State Management
-          </h3>
-          {runResult ? (
-            <div className="space-y-3 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
-                <div>
-                  <span className="text-muted-foreground">Discovered Candidates: </span>
-                  <span className="font-semibold">{runResult.recommendations.length} items</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Selection State: </span>
-                  <span className={`font-semibold ${selectData ? "text-green-600" : "text-amber-600"}`}>
-                    {selectData ? `Selected (${selectData.plan.merchant})` : "Awaiting User Selection"}
-                  </span>
-                </div>
-              </div>
-              {selectData ? (
-                <div className="rounded border bg-background/50 p-2">
-                  <p className="font-medium text-foreground">Selected Plan State:</p>
-                  <p className="text-muted-foreground">{selectData.plan.productId} @ {selectData.plan.merchant}</p>
-                  <p className="mt-1 font-semibold text-emerald-600 dark:text-emerald-400">
-                    {formatCurrency(selectData.plan.expectedAmountInMinor, selectData.plan.currency)}
-                  </p>
-                </div>
-              ) : (
-                <div className="grid gap-2">
-                  {runResult.recommendations.slice(0, 3).map((rec, i) => (
-                    <div key={rec.product.id} className="flex items-center justify-between rounded border p-2">
-                      <div>
-                        <p className="font-medium truncate max-w-xs">{rec.product.canonicalTitle}</p>
-                        <p className="text-[10px] text-muted-foreground">
-                          State: Ranked #{i + 1} | Stock: {rec.product.availability}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold">{formatCurrency(rec.product.amountInMinor, rec.product.currency)}</p>
-                        <p className="text-[10px] text-muted-foreground">Conf: {Math.round(rec.product.confidence * 100)}%</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">No active product state available. Search to populate product states.</p>
-          )}
-        </div>
-
-        {/* 4. Payment Process State Management */}
-        <div className="rounded-lg border p-4 bg-card/60">
-          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            <span className="inline-block h-2 w-2 rounded-full bg-purple-500" />
-            Payment Process & Gate State
-          </h3>
-          {effectivePurchase ? (
-            <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <div className="rounded border p-2">
-                  <dt className="text-muted-foreground">Transaction State</dt>
-                  <dd className="font-bold text-purple-600 dark:text-purple-400">{status}</dd>
-                </div>
-                <div className="rounded border p-2">
-                  <dt className="text-muted-foreground">Payment Source</dt>
-                  <dd className="font-medium capitalize">{paymentSource}</dd>
-                </div>
-                <div className="rounded border p-2">
-                  <dt className="text-muted-foreground">Proposed / Approved</dt>
-                  <dd className="font-medium">
-                    {formatCurrency(effectivePurchase.amountInMinor, effectivePurchase.currency)} /{" "}
-                    {effectivePurchase.approvedAmountInMinor != null
-                      ? formatCurrency(effectivePurchase.approvedAmountInMinor, effectivePurchase.currency)
-                      : "—"}
-                  </dd>
-                </div>
-                <div className="rounded border p-2">
-                  <dt className="text-muted-foreground">Policy Decision</dt>
-                  <dd className="font-medium capitalize">{effectivePurchase.policyDecision.replace(/_/g, " ")}</dd>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1 border-t pt-2">
-                {paymentSteps.map((pStep, i) => {
-                  const currentIdx = status ? paymentSteps.indexOf(status) : -1;
-                  const isCurrent = status === pStep;
-                  const isDone = currentIdx >= i;
-                  return (
-                    <div key={pStep} className="flex items-center gap-1">
-                      <span
-                        className={`rounded px-2 py-0.5 text-[10px] font-mono ${
-                          isCurrent
-                            ? "bg-purple-600 text-white font-bold"
-                            : isDone
-                            ? "bg-purple-500/20 text-purple-700 dark:text-purple-300"
-                            : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
-                        }`}
-                      >
-                        {pStep.replace(/_/g, " ")}
-                      </span>
-                      {i < paymentSteps.length - 1 && <span className="text-zinc-400 text-[10px]">→</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Payment gate is idle. Select a product recommendation to initialize transaction state.
-            </p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
