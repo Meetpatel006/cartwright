@@ -27,10 +27,10 @@ import {
   executeShoppingRequest,
   fulfillSelection,
   getSessionCheckoutTotal,
-  parseShoppingRequest,
   parseShoppingRequestWithLLM,
   selectProduct,
   splitStoreInput,
+  findStorePreset,
   type ShoppingOrchestratorDeps,
 } from "@cartwright/agent";
 
@@ -129,6 +129,41 @@ export async function parseShoppingIntent(input: {
   return { intent };
 }
 
+/** Create the durable session shell before any LLM or browser work starts. */
+export async function createShoppingSession(input: {
+  userId: string;
+  query: string;
+  idempotencyKey?: string;
+}): Promise<{ sessionId: string }> {
+  if (input.idempotencyKey) {
+    const existing = await findSessionByIdempotency(input.userId, input.idempotencyKey);
+    if (existing) return { sessionId: existing.id };
+  }
+
+  const sessionIntent = {
+    rawQuery: input.query,
+    category: null,
+    budgetInMinor: null,
+    currency: "INR",
+    requestedQuantity: 1,
+    preferredMerchants: [],
+    excludedMerchants: [],
+    constraints: [],
+  };
+
+  const row = input.idempotencyKey
+    ? await insertShoppingSessionIdempotent({
+        userId: input.userId,
+        rawQuery: input.query,
+        intent: sessionIntent,
+        idempotencyKey: input.idempotencyKey,
+        status: "created",
+      })
+    : { session: await insertShoppingSession({ userId: input.userId, rawQuery: input.query, intent: sessionIntent, status: "created" }), created: true };
+
+  return { sessionId: row.session.id };
+}
+
 function candidateRowFromProduct(
   product: NormalizedProduct,
   sessionId: string,
@@ -143,6 +178,8 @@ function candidateRowFromProduct(
     amountInMinor: product.amountInMinor,
     currency: product.currency,
     productUrl: product.productUrl,
+    rating: product.rating,
+    reviewCount: product.reviewCount,
     availability: product.availability,
     confidence: product.confidence,
     source: product.merchant,
@@ -161,6 +198,8 @@ function rowToNormalizedProduct(row: {
   amountInMinor: number;
   currency: string;
   productUrl: string | null;
+  rating?: number | null;
+  reviewCount?: number | null;
   availability: string | null;
   confidence: number | null;
 }): NormalizedProduct {
@@ -171,6 +210,8 @@ function rowToNormalizedProduct(row: {
     amountInMinor: row.amountInMinor,
     currency: row.currency as SupportedCurrency,
     productUrl: row.productUrl,
+    rating: row.rating ?? null,
+    reviewCount: row.reviewCount ?? null,
     availability: (row.availability as Availability) ?? "unknown",
     confidence: row.confidence ?? 1,
     attributes: {},
@@ -209,6 +250,8 @@ function buildRecommendationsFromDb(
         amountInMinor: 0,
         currency: "USD",
         productUrl: null,
+        rating: null,
+        reviewCount: null,
         availability: "unknown",
         confidence: 1,
         attributes: {},
@@ -308,6 +351,16 @@ export async function runShoppingSession(
   // an India-geo session) display rupee prices, so budgets must parse as INR.
   const defaultCurrency = "INR";
   const mode = input.browserMode ?? resolveAgentBrowserMode();
+  let existingSession = input.sessionId
+    ? await getShoppingSessionForUser(input.sessionId, input.userId)
+    : undefined;
+
+  if (existingSession?.status === "created") {
+    assertShoppingSessionTransition(existingSession.status, "processing");
+    existingSession =
+      (await updateShoppingSession(existingSession.id, { status: "processing" })) ?? existingSession;
+  }
+
   const intent = await parseShoppingRequestWithLLM(
     {
       query: input.query,
@@ -320,7 +373,20 @@ export async function runShoppingSession(
     },
   );
 
-  const effectiveStore = input.store || intent.store;
+  // If the shopper names a known merchant in the query, prefer that merchant
+  // over the parser's generic "Google Shopping India" fallback. Explicit API
+  // input still wins, while unknown merchants continue through Google Shopping.
+  const preferredPreset = intent.preferredMerchants
+    .map((merchant) => ({ merchant, preset: findStorePreset(merchant) }))
+    .find((entry) => entry.preset)?.merchant;
+  const parserChoseGenericStore = !intent.store || /google shopping/i.test(intent.store);
+  const effectiveStore =
+    input.store?.trim() ||
+    (parserChoseGenericStore ? preferredPreset ?? intent.store : intent.store);
+  const effectiveIntent =
+    effectiveStore && effectiveStore !== intent.store
+      ? { ...intent, store: effectiveStore }
+      : intent;
   const stores = splitStoreInput(effectiveStore);
   const discoveryState: { sessionId?: string; providerSessionId?: string } = {};
 
@@ -349,7 +415,7 @@ export async function runShoppingSession(
 
   let draft: ShoppingSessionDraft;
   try {
-    draft = await executeShoppingRequest(intent, orchestratorDeps);
+    draft = await executeShoppingRequest(effectiveIntent, orchestratorDeps);
   } catch (error) {
     await recordAuditEvent({
       eventType: "DISCOVERY_FAILED",
@@ -397,15 +463,10 @@ export async function runShoppingSession(
     Date.now() + env.SHOPPING_SESSION_TTL_MINUTES * 60_000,
   );
 
-  let existingSession: ShoppingSessionRow | undefined;
-  if (input.sessionId) {
-    existingSession = await getShoppingSessionForUser(input.sessionId, input.userId);
-  }
-
   if (existingSession) {
     const updated = await updateShoppingSession(existingSession.id, {
-      rawQuery: intent.rawQuery,
-      intent: intent as unknown as Record<string, unknown>,
+      rawQuery: effectiveIntent.rawQuery,
+      intent: effectiveIntent as unknown as Record<string, unknown>,
       checkoutSessionId: discoveryState.sessionId,
       expiresAt: sessionExpiry,
     });
@@ -417,8 +478,8 @@ export async function runShoppingSession(
     // session is created and the rest resolve to the canonical row.
     const result = await insertShoppingSessionIdempotent({
       userId: input.userId,
-      rawQuery: intent.rawQuery,
-      intent: intent as unknown as Record<string, unknown>,
+      rawQuery: effectiveIntent.rawQuery,
+      intent: effectiveIntent as unknown as Record<string, unknown>,
       idempotencyKey,
       checkoutSessionId: discoveryState.sessionId,
       expiresAt: sessionExpiry,
@@ -428,8 +489,8 @@ export async function runShoppingSession(
   } else {
     session = await insertShoppingSession({
       userId: input.userId,
-      rawQuery: intent.rawQuery,
-      intent: intent as unknown as Record<string, unknown>,
+      rawQuery: effectiveIntent.rawQuery,
+      intent: effectiveIntent as unknown as Record<string, unknown>,
       status: "created",
       checkoutSessionId: discoveryState.sessionId,
       expiresAt: sessionExpiry,
@@ -439,7 +500,10 @@ export async function runShoppingSession(
   // Concurrent race: another request with the same key already owns this
   // session id. Do not re-persist candidates/recommendations against the
   // shared id; return the canonical existing session instead.
-  if (idempotencyKey && !isNewSession) {
+  // A caller that already owns a session id is intentionally running work for
+  // that session. Only short-circuit a request when the session was resolved
+  // solely by the idempotency key (the no-session concurrent race).
+  if (idempotencyKey && !isNewSession && !input.sessionId) {
     const recommendationRows = await getRecommendationsForSession(session.id);
     const candidateRows = await getCandidatesForSession(session.id);
     const recommendations = buildRecommendationsFromDb(
@@ -726,11 +790,12 @@ export async function selectProductForSession(
   // has explicitly chosen a product, drive that retained session to the selected
   // product and add ONLY it to the cart. This enforces the rule "only the
   // matching items are added" and ensures the live checkout-total re-read below
-  // reflects the chosen product (not a cheaper auto-pick). Best-effort: a
-  // missing/expired session is not fatal — the policy engine still gates the
-  // provisional discovered amount. The outcome is folded into the PRODUCT_SELECTED
-  // audit event below so no new audit-event type is required.
+  // reflects the chosen product (not a cheaper auto-pick). A missing/expired
+  // session is best-effort. In Razorpay Test Mode, a merchant login gate stops
+  // browser checkout but still allows the policy-gated test transaction to be
+  // created; live mode remains a hard stop.
   let selectionAddToCart: { driven: boolean; status?: string; reason?: string } | undefined;
+  let selectionCheckoutBlocked = false;
   if (session.checkoutSessionId && plan.productUrl) {
     try {
       const ownedSession = await getOwnedBrowserSession(session.checkoutSessionId, input.userId);
@@ -751,7 +816,33 @@ export async function selectProductForSession(
           `[shopping] selection add-to-cart not driven on retained session: ${r.reason ?? "unknown"}`,
         );
       }
+      const checkout = r.checkout as { status?: string; error?: string } | undefined;
+      if (checkout?.status === "failed") {
+        const reason = checkout.error ?? "Merchant checkout could not continue.";
+        await recordAuditEvent({
+          eventType: "PRODUCT_SELECTED",
+          userId: input.userId,
+          correlationId: input.correlationId,
+          shoppingSessionId: session.id,
+          previousState: session.status,
+          outcome: "FAILURE",
+          failureClassification: "MERCHANT_CHECKOUT_BLOCKED",
+          reason,
+          metadata: { productId: input.productId, selectionAddToCart },
+        });
+        if (env.RAZORPAY_MODE !== "test") {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `Could not prepare the selected product: ${reason}`,
+          });
+        }
+        selectionCheckoutBlocked = true;
+        console.warn(
+          `[shopping] test mode: merchant checkout stopped, continuing with policy-gated test transaction: ${reason}`,
+        );
+      }
     } catch (error) {
+      if (error instanceof TRPCError) throw error;
       // Selection add is best-effort: never block the purchase transaction.
       selectionAddToCart = {
         driven: false,
@@ -773,7 +864,7 @@ export async function selectProductForSession(
   // a hard block — amounts are never compared across currencies.
   let chargedAmountInMinor = plan.expectedAmountInMinor;
   let chargedCurrency = plan.currency;
-  if (session.checkoutSessionId) {
+  if (session.checkoutSessionId && !selectionCheckoutBlocked) {
     try {
       const browserSession = await getOwnedBrowserSession(
         session.checkoutSessionId,
@@ -802,7 +893,7 @@ export async function selectProductForSession(
   }
 
   // Record the authoritative amount resolution for the audit trail.
-  if (session.checkoutSessionId) {
+  if (session.checkoutSessionId && !selectionCheckoutBlocked) {
     await recordAuditEvent({
       eventType: "AUTHORITATIVE_AMOUNT_RESOLVED",
       userId: input.userId,
@@ -828,7 +919,11 @@ export async function selectProductForSession(
     merchantName: plan.merchant,
     amountInMinor: chargedAmountInMinor,
     currency: chargedCurrency,
-    browserSessionId: session.checkoutSessionId ?? undefined,
+    // A login-blocked merchant session must never be handed to the merchant
+    // UI executor. In Test Mode this deliberately falls back to the server-side
+    // Razorpay test path, while createPurchaseTransaction still applies every
+    // policy and spending safeguard.
+    browserSessionId: selectionCheckoutBlocked ? undefined : session.checkoutSessionId ?? undefined,
     correlationId: input.correlationId,
   });
 

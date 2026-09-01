@@ -1,5 +1,6 @@
 "use client";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@cartwright/ui/components/button";
@@ -74,6 +75,8 @@ interface NormalizedProduct {
   currency: string;
   productUrl: string | null;
   availability: "in_stock" | "limited" | "out_of_stock" | "unknown";
+  rating: number | null;
+  reviewCount: number | null;
   confidence: number;
   attributes: Record<string, string>;
   confidenceReasons: string[];
@@ -174,6 +177,9 @@ interface ShopperPageProps {
 }
 
 export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+
   const [query, setQuery] = useState("wireless headphones under 5000");
   const [browserMode, setBrowserMode] = useState<"local" | "browserbase">("local");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
@@ -182,7 +188,11 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   const loadedSession = useQuery(
     trpc.shopping.get.queryOptions(
       { sessionId: selectedSessionId ?? "" },
-      { enabled: Boolean(selectedSessionId) }
+      {
+        enabled: Boolean(selectedSessionId),
+        refetchInterval: (query) =>
+          query.state.data?.status === "processing" ? 1500 : false,
+      }
     )
   );
 
@@ -190,6 +200,10 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
     ...trpc.shopping.run.mutationOptions(),
     onSuccess: (data) => {
       setSelectedSessionId(data.sessionId);
+      const target = `/shopper/${data.sessionId}`;
+      if (pathname !== target) {
+        router.push(target as any, { scroll: false });
+      }
     },
   });
 
@@ -225,12 +239,14 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
             amountInMinor: c.amountInMinor,
             currency: c.currency as any,
             productUrl: c.productUrl,
+            rating: c.rating ?? null,
+            reviewCount: c.reviewCount ?? null,
             availability: (c.availability as any) ?? "unknown",
             confidence: c.confidence ?? 1,
             attributes: {},
             confidenceReasons: [],
           },
-          rankingScore: 100 - i,
+          rankingScore: c.rankingScore ?? 0,
           rankingFactors: [],
           explanation: [c.reason || "Loaded from saved database session"],
           isTopRecommendation: i === 0,
@@ -239,7 +255,14 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
       }
     : undefined;
 
-  const runResult = selectedSessionId ? historicalResult : (rawRunResult ?? historicalResult);
+  // A route session has a cached DB snapshot, but the current run response is
+  // newer and contains the recommendations that were just discovered. Only
+  // use that response when it belongs to the active session; otherwise keep
+  // showing the selected historical session.
+  const runResult =
+    rawRunResult && (!selectedSessionId || rawRunResult.sessionId === selectedSessionId)
+      ? rawRunResult
+      : historicalResult;
 
   const loadedPurchase = useQuery(
     trpc.transactions.get.queryOptions(
@@ -294,12 +317,26 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   const [isBrowserSidebarOpen, setIsBrowserSidebarOpen] = useState(true);
   const [dismissedClarifications, setDismissedClarifications] = useState<Record<string, boolean>>({});
 
-  const parseIntent = useMutation(trpc.shopping.parseIntent.mutationOptions());
+  const createSession = useMutation(trpc.shopping.create.mutationOptions());
   const [pendingClarification, setPendingClarification] = useState<{
     query: string;
     questions: ApprovalQuestion[];
     parsedIntent?: ShoppingIntent;
   } | null>(null);
+
+  const startedSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const session = loadedSession.data;
+    if (!initialSessionId || !session || session.status !== "created" || run.isPending) return;
+    if (startedSessionRef.current === initialSessionId) return;
+    startedSessionRef.current = initialSessionId;
+    run.mutate({
+      sessionId: initialSessionId,
+      query: session.rawQuery,
+      browserMode,
+      idempotencyKey,
+    });
+  }, [initialSessionId, loadedSession.data, run.isPending, browserMode, idempotencyKey]);
 
   const activeSessionKey = runResult?.sessionId || "initial";
   const clarifyingQuestions: ApprovalQuestion[] = useMemo(() => {
@@ -517,31 +554,20 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     const cleanQ = query.trim();
-    if (!cleanQ || run.isPending || parseIntent.isPending) return;
+    if (!cleanQ || run.isPending || createSession.isPending) return;
 
     select.reset();
     setSelectedSessionId(null);
     setPendingClarification(null);
 
-    try {
-      const res = await parseIntent.mutateAsync({ query: cleanQ, browserMode });
-      const clarifyingQuestions = (res.intent as ShoppingIntent)?.clarifyingQuestions ?? [];
-
-      if (clarifyingQuestions.length > 0) {
-        setPendingClarification({
-          query: cleanQ,
-          questions: clarifyingQuestions,
-          parsedIntent: res.intent as ShoppingIntent,
-        });
-        return;
-      }
-    } catch (err) {
-      console.warn("Fast intent parse fallback to direct run:", err);
-    }
-
     const key = crypto.randomUUID();
     setIdempotencyKey(key);
-    run.mutate({ query: cleanQ, browserMode, idempotencyKey: key });
+    createSession.mutate({ query: cleanQ, idempotencyKey: key }, {
+      onSuccess: ({ sessionId }) => {
+        setSelectedSessionId(sessionId);
+        router.push(`/shopper/${sessionId}`, { scroll: false });
+      },
+    });
   };
 
   const onSelect = (productId: string) => {
@@ -554,7 +580,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   };
 
   const sessionState =
-    loadedSession.data?.status ??
+    (loadedSession.data?.status === "processing" ? "created" : loadedSession.data?.status) ??
     (status === "PAYMENT_SUCCEEDED"
       ? "converted"
       : selectData
@@ -683,11 +709,11 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
 
                       <button
                         type="submit"
-                        disabled={run.isPending || parseIntent.isPending || !query.trim()}
+                        disabled={run.isPending || createSession.isPending || !query.trim()}
                         className="h-8 w-8 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 flex items-center justify-center shadow-xs transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-                        title={parseIntent.isPending ? "Analyzing…" : run.isPending ? "Searching…" : "Run Agent"}
+                        title={createSession.isPending ? "Creating session…" : run.isPending ? "Searching…" : "Run Agent"}
                       >
-                        {parseIntent.isPending ? (
+                        {createSession.isPending ? (
                           <span className="h-3.5 w-3.5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
                         ) : (
                           <ArrowUp className="h-4 w-4 stroke-[2.5]" />
@@ -748,6 +774,9 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                       run.reset();
                       select.reset();
                       approve.reset();
+                      if (pathname !== "/shopper") {
+                        router.push("/shopper", { scroll: false });
+                      }
                     }}
                     className="h-9 rounded-lg border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
                   >
@@ -1030,6 +1059,7 @@ function RecommendationCard({
   const [open, setOpen] = useState(false);
   const { product } = rec;
   const isTop = rec.isTopRecommendation;
+  const ratingScore = product.rating == null ? null : Math.round((product.rating / 5) * 100);
 
   return (
     <div
@@ -1080,6 +1110,18 @@ function RecommendationCard({
             {Math.round(product.confidence * 100)}%
           </span>
         </div>
+
+        <div className="flex items-center justify-between text-zinc-400">
+          <span>Verified listing rating</span>
+          <span className="font-mono text-zinc-300">
+            {ratingScore == null ? "Not available" : `${ratingScore}/100`}
+          </span>
+        </div>
+        {product.rating != null && (
+          <div className="text-[11px] text-zinc-500">
+            {product.rating.toFixed(1)}/5 from {product.reviewCount == null ? "an unknown number of" : product.reviewCount.toLocaleString("en-IN")} observed reviews
+          </div>
+        )}
 
         {rec.explanation.length > 0 && (
           <div className="pt-1">
@@ -1309,11 +1351,13 @@ function TransactionPanel(props: {
         if (!status) {
           pipelineSteps = standardSteps.map((s) => ({ ...s, state: "pending" }));
         } else if (status === "POLICY_BLOCKED") {
-          pipelineSteps = standardSteps.map((s) => {
-            if (s.key === "CREATED") return { ...s, state: "completed" };
-            if (s.key === "POLICY_CHECKING") return { ...s, label: "Policy Blocked", state: "blocked" };
-            return { ...s, state: "pending" };
-          });
+          pipelineSteps = standardSteps
+            .filter((s) => s.key === "CREATED" || s.key === "POLICY_CHECKING")
+            .map((s) =>
+              s.key === "CREATED"
+                ? { ...s, state: "completed" as const }
+                : { ...s, label: "Policy Blocked", state: "blocked" as const },
+            );
         } else if (status === "PRICE_CHANGED" || status === "CANCELLED") {
           pipelineSteps = standardSteps.map((s) => {
             if (s.key === "CREATED" || s.key === "POLICY_CHECKING") return { ...s, state: "completed" };

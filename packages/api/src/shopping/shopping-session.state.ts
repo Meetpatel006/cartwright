@@ -8,7 +8,8 @@
  * single source of truth for *which* transitions are legal.
  *
  * Lifecycle (forward):
- *   created      → intent parsed, discovery/ranking not yet persisted
+ *   created      → session shell created, work not started
+ *   processing   → LLM/browser discovery is running
  *   recommended  → candidates ranked + recommendations persisted
  *   selected     → user explicitly chose a product (PurchasePlan stored)
  *   converted    → the selected plan was handed to Part A's transaction gate
@@ -27,7 +28,10 @@ export const SHOPPING_SESSION_TRANSITIONS: Record<
   ShoppingSessionStatus,
   ShoppingSessionStatus[]
 > = {
-  created: ["recommended", "expired"],
+  // Keep the direct transition for callers that run without a pre-created
+  // shell; the normal UI path uses created -> processing first.
+  created: ["processing", "recommended", "expired"],
+  processing: ["recommended", "expired"],
   recommended: ["selected", "expired"],
   selected: ["converted", "expired"],
   converted: ["expired"],

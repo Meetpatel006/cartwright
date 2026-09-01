@@ -12,6 +12,7 @@ import { generateCorrelationId } from "../audit/audit.service";
 import { getLiveFrame } from "@cartwright/agent";
 import {
   parseShoppingIntent,
+  createShoppingSession,
   runShoppingSession,
   selectProductForSession,
 } from "../shopping/shopping.service";
@@ -25,6 +26,16 @@ import {
  * financial gate). No router procedure here ever authorizes a payment directly.
  */
 export const shoppingRouter = router({
+  create: protectedProcedure
+    .input(z.object({ query: z.string().min(3), idempotencyKey: z.string().min(1).optional() }))
+    .mutation(({ ctx, input }) =>
+      createShoppingSession({
+        userId: ctx.session.user.id,
+        query: input.query,
+        idempotencyKey: input.idempotencyKey,
+      }),
+    ),
+
   parseIntent: protectedProcedure
     .input(
       z.object({
@@ -129,8 +140,11 @@ export const shoppingRouter = router({
           amountInMinor: r.amountInMinor,
           currency: r.currency,
           productUrl: r.productUrl,
+          rating: r.rating,
+          reviewCount: r.reviewCount,
           availability: r.availability,
           confidence: r.confidence,
+          rankingScore: r.rankingScore,
           filteredOut: r.filteredOut,
           rejected: r.rejected,
           reason: r.reason,

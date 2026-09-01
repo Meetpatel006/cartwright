@@ -160,6 +160,7 @@ export async function listExpiredActiveShoppingSessions(
       and(
         inArray(shoppingSessions.status, [
           "created",
+          "processing",
           "recommended",
           "selected",
         ]),

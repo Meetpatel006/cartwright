@@ -25,6 +25,7 @@ import { user } from "./auth";
  */
 export const shoppingSessionStatus = pgEnum("shopping_session_status", [
   "created",
+  "processing",
   "recommended",
   "selected",
   "converted",
@@ -84,6 +85,8 @@ export const productCandidates = pgTable(
     amountInMinor: integer("amount_in_minor").notNull(),
     currency: text("currency").notNull(),
     productUrl: text("product_url"),
+    rating: real("rating"),
+    reviewCount: integer("review_count"),
     availability: text("availability"),
     /** 0..1 data-confidence assigned during normalization. */
     confidence: real("confidence").notNull().default(1),

@@ -105,6 +105,10 @@ export interface NormalizedProduct {
   amountInMinor: number;
   currency: SupportedCurrency;
   productUrl: string | null;
+  /** Average rating observed on the source page, on a 0..5 scale. */
+  rating?: number | null;
+  /** Number of reviews observed on the source page, when available. */
+  reviewCount?: number | null;
   availability: Availability;
   /** 0..1 — how complete/trustworthy the source data was. */
   confidence: number;
