@@ -30,6 +30,9 @@ async function cleanupAllTestData(): Promise<void> {
 
 async function cleanupUser(userId: string): Promise<void> {
   await db.execute(sql`DELETE FROM audit_events WHERE user_id = ${userId}`);
+  await db.execute(sql`DELETE FROM shopping_sessions WHERE user_id = ${userId}`);
+  await db.execute(sql`DELETE FROM browser_sessions WHERE owner_user_id = ${userId}`);
+  await db.execute(sql`DELETE FROM transactions WHERE user_id = ${userId}`);
   await db
     .delete(userTable)
     .where(eq(userTable.id, userId));

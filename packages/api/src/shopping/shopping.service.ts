@@ -28,6 +28,7 @@ import {
   fulfillSelection,
   getSessionCheckoutTotal,
   parseShoppingRequest,
+  parseShoppingRequestWithLLM,
   selectProduct,
   splitStoreInput,
   type ShoppingOrchestratorDeps,
@@ -79,6 +80,9 @@ function resolveAgentBrowserMode(): "local" | "browserbase" {
 }
 
 function buildLlm(mode: "local" | "browserbase") {
+  if (env.NODE_ENV === "test" || process.env.NODE_ENV === "test") {
+    return undefined;
+  }
   if (
     mode === "local" &&
     env.AGENT_LLM_BASE_URL &&
@@ -103,6 +107,26 @@ function buildLlm(mode: "local" | "browserbase") {
     };
   }
   return undefined;
+}
+
+export async function parseShoppingIntent(input: {
+  query: string;
+  store?: string;
+  browserMode?: "local" | "browserbase";
+}) {
+  const mode = input.browserMode ?? resolveAgentBrowserMode();
+  const intent = await parseShoppingRequestWithLLM(
+    {
+      query: input.query,
+      store: input.store,
+      defaultCurrency: "INR",
+      fallbackBudgetInMinor: null,
+    },
+    {
+      llm: buildLlm(mode),
+    },
+  );
+  return { intent };
 }
 
 function candidateRowFromProduct(
@@ -253,6 +277,7 @@ export interface ShoppingServiceDeps {
 export async function runShoppingSession(
   input: {
     userId: string;
+    sessionId?: string;
     query: string;
     store?: string;
     /** Browser backend for this run. When omitted, falls back to
@@ -263,7 +288,7 @@ export async function runShoppingSession(
   },
   deps: ShoppingServiceDeps = {},
 ): Promise<ShoppingSessionView> {
-  if (input.idempotencyKey) {
+  if (input.idempotencyKey && !input.sessionId) {
     const existing = await findSessionByIdempotency(
       input.userId,
       input.idempotencyKey,
@@ -282,15 +307,21 @@ export async function runShoppingSession(
   // Hardcoded INR: the product is India-only and stores (incl. amazon.com from
   // an India-geo session) display rupee prices, so budgets must parse as INR.
   const defaultCurrency = "INR";
-  const intent = parseShoppingRequest({
-    query: input.query,
-    store: input.store,
-    defaultCurrency,
-    fallbackBudgetInMinor: null,
-  });
-
   const mode = input.browserMode ?? resolveAgentBrowserMode();
-  const stores = splitStoreInput(input.store);
+  const intent = await parseShoppingRequestWithLLM(
+    {
+      query: input.query,
+      store: input.store,
+      defaultCurrency,
+      fallbackBudgetInMinor: null,
+    },
+    {
+      llm: buildLlm(mode),
+    },
+  );
+
+  const effectiveStore = input.store || intent.store;
+  const stores = splitStoreInput(effectiveStore);
   const discoveryState: { sessionId?: string; providerSessionId?: string } = {};
 
   const orchestratorDeps: ShoppingOrchestratorDeps = {
@@ -298,8 +329,8 @@ export async function runShoppingSession(
       deps.discover ??
       (async (it) => {
         const { candidates, raw } = await discoverProducts({
-          query: it.rawQuery,
-          store: input.store,
+          query: it.cleanSearchQuery || it.rawQuery,
+          store: effectiveStore,
           stores,
           budgetInMinor: it.budgetInMinor,
           currency: it.currency,
@@ -316,7 +347,7 @@ export async function runShoppingSession(
       }),
   };
 
-  let draft;
+  let draft: ShoppingSessionDraft;
   try {
     draft = await executeShoppingRequest(intent, orchestratorDeps);
   } catch (error) {
@@ -366,7 +397,21 @@ export async function runShoppingSession(
     Date.now() + env.SHOPPING_SESSION_TTL_MINUTES * 60_000,
   );
 
-  if (idempotencyKey) {
+  let existingSession: ShoppingSessionRow | undefined;
+  if (input.sessionId) {
+    existingSession = await getShoppingSessionForUser(input.sessionId, input.userId);
+  }
+
+  if (existingSession) {
+    const updated = await updateShoppingSession(existingSession.id, {
+      rawQuery: intent.rawQuery,
+      intent: intent as unknown as Record<string, unknown>,
+      checkoutSessionId: discoveryState.sessionId,
+      expiresAt: sessionExpiry,
+    });
+    session = updated ?? existingSession;
+    isNewSession = false;
+  } else if (idempotencyKey) {
     // DB-level idempotency: the unique index on (user_id, idempotency_key)
     // makes concurrent inserts of the same key deterministic — exactly one
     // session is created and the rest resolve to the canonical row.

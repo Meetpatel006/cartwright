@@ -11,6 +11,7 @@ import { protectedProcedure, router } from "../index";
 import { generateCorrelationId } from "../audit/audit.service";
 import { getLiveFrame } from "@cartwright/agent";
 import {
+  parseShoppingIntent,
   runShoppingSession,
   selectProductForSession,
 } from "../shopping/shopping.service";
@@ -24,9 +25,26 @@ import {
  * financial gate). No router procedure here ever authorizes a payment directly.
  */
 export const shoppingRouter = router({
+  parseIntent: protectedProcedure
+    .input(
+      z.object({
+        query: z.string().min(1),
+        store: z.string().min(1).optional(),
+        browserMode: z.enum(["local", "browserbase"]).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      return parseShoppingIntent({
+        query: input.query,
+        store: input.store,
+        browserMode: input.browserMode,
+      });
+    }),
+
   run: protectedProcedure
     .input(
       z.object({
+        sessionId: z.string().min(1).optional().describe("Existing session ID to update in-place"),
         query: z.string().min(3).describe('e.g. "wireless headphones under $100"'),
         store: z.string().min(1).optional().describe('store preset or URL, e.g. "raven"'),
         /** Browser backend for the agent run: local Chrome (free) or Browserbase cloud. */
@@ -39,6 +57,7 @@ export const shoppingRouter = router({
       const correlationId = generateCorrelationId();
       return runShoppingSession({
         userId: ctx.session.user.id,
+        sessionId: input.sessionId,
         query: input.query,
         store: input.store,
         browserMode: input.browserMode,
