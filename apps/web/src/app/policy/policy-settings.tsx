@@ -7,7 +7,6 @@ import {
   Store,
   Save,
   Plus,
-  CheckCircle2,
   Ban,
   SlidersHorizontal,
   Pencil,
@@ -170,16 +169,14 @@ export default function PolicySettings() {
   const [maxTotalRupees, setMaxTotalRupees] = useState<string>("");
   const [currency, setCurrency] = useState("INR");
   const [requireUserApproval, setRequireUserApproval] = useState(false);
-  const [allowedMerchants, setAllowedMerchants] = useState<string[]>([]);
   const [blockedMerchants, setBlockedMerchants] = useState<string[]>([]);
   const [frequencyLimit, setFrequencyLimit] = useState<string>("");
 
   // Merchant dialog input states
-  const [merchantAction, setMerchantAction] = useState<"whitelist" | "blacklist">("whitelist");
   const [merchantInput, setMerchantInput] = useState("");
 
   const [tableSearch, setTableSearch] = useState("");
-  const [tableFilter, setTableFilter] = useState<"ALL" | "whitelist" | "blacklist">("ALL");
+  const [tableFilter, setTableFilter] = useState<"ALL" | "blacklist">("ALL");
 
   const [seeded, setSeeded] = useState(false);
 
@@ -189,7 +186,6 @@ export default function PolicySettings() {
     setMaxTotalRupees(String(policy.data.maxTotalSpending / 100));
     setCurrency(policy.data.currency || "INR");
     setRequireUserApproval(Boolean(policy.data.requireUserApproval));
-    setAllowedMerchants(policy.data.allowedMerchants ?? []);
     setBlockedMerchants(policy.data.blockedMerchants ?? []);
     setFrequencyLimit(
       policy.data.frequencyLimit === null || policy.data.frequencyLimit === undefined
@@ -242,7 +238,6 @@ export default function PolicySettings() {
       maxTotalSpending: policy.data?.maxTotalSpending ?? 0,
       currency: policy.data?.currency || "INR",
       requireUserApproval: Boolean(policy.data?.requireUserApproval),
-      allowedMerchants: policy.data?.allowedMerchants ?? [],
       blockedMerchants: policy.data?.blockedMerchants ?? [],
       frequencyLimit: policy.data?.frequencyLimit ?? null,
     });
@@ -267,7 +262,6 @@ export default function PolicySettings() {
       maxTotalSpending: valInPaisa,
       currency: policy.data?.currency || "INR",
       requireUserApproval: Boolean(policy.data?.requireUserApproval),
-      allowedMerchants: policy.data?.allowedMerchants ?? [],
       blockedMerchants: policy.data?.blockedMerchants ?? [],
       frequencyLimit: policy.data?.frequencyLimit ?? null,
     });
@@ -280,7 +274,6 @@ export default function PolicySettings() {
       maxTotalSpending: policy.data?.maxTotalSpending ?? 0,
       currency: policy.data?.currency || "INR",
       requireUserApproval: requireApproval,
-      allowedMerchants: policy.data?.allowedMerchants ?? [],
       blockedMerchants: policy.data?.blockedMerchants ?? [],
       frequencyLimit: policy.data?.frequencyLimit ?? null,
     });
@@ -300,7 +293,6 @@ export default function PolicySettings() {
       maxTotalSpending: policy.data?.maxTotalSpending ?? 0,
       currency: policy.data?.currency || "INR",
       requireUserApproval: Boolean(policy.data?.requireUserApproval),
-      allowedMerchants: policy.data?.allowedMerchants ?? [],
       blockedMerchants: policy.data?.blockedMerchants ?? [],
       frequencyLimit: parsed,
     });
@@ -325,11 +317,8 @@ export default function PolicySettings() {
     setEditingStat("velocity");
   };
 
-  const handleOpenDialog = (dialog: ActiveDialog, initialAction?: "whitelist" | "blacklist") => {
+  const handleOpenDialog = (dialog: ActiveDialog) => {
     syncFormFromData();
-    if (initialAction) {
-      setMerchantAction(initialAction);
-    }
     setActiveDialog(dialog);
   };
 
@@ -338,72 +327,44 @@ export default function PolicySettings() {
     setActiveDialog(null);
   };
 
-  const handleSaveNewMerchantRule = (customName?: string, customAction?: "whitelist" | "blacklist") => {
+  const handleSaveNewMerchantRule = (customName?: string) => {
     const target = (customName ?? merchantInput).trim().toLowerCase();
     if (!target) {
       toast.error("Please enter a merchant name or keyword");
       return;
     }
-    const action = customAction ?? merchantAction;
-    const currentAllowed = policy.data?.allowedMerchants ?? [];
     const currentBlocked = policy.data?.blockedMerchants ?? [];
-
-    let newAllowed = [...currentAllowed];
     let newBlocked = [...currentBlocked];
-
-    if (action === "whitelist") {
-      if (!newAllowed.includes(target)) {
-        newAllowed.push(target);
-      }
-      newBlocked = newBlocked.filter((m) => m !== target);
-    } else {
-      if (!newBlocked.includes(target)) {
-        newBlocked.push(target);
-      }
-      newAllowed = newAllowed.filter((m) => m !== target);
-    }
+    if (!newBlocked.includes(target)) newBlocked.push(target);
 
     update.mutate({
       maxTransactionAmount: policy.data?.maxTransactionAmount ?? 0,
       maxTotalSpending: policy.data?.maxTotalSpending ?? 0,
       currency: policy.data?.currency || "INR",
       requireUserApproval: Boolean(policy.data?.requireUserApproval),
-      allowedMerchants: newAllowed,
       blockedMerchants: newBlocked,
       frequencyLimit: policy.data?.frequencyLimit ?? null,
     });
   };
 
-  const handleDeleteRuleDirect = (name: string, type: "whitelist" | "blacklist") => {
+  const handleDeleteRuleDirect = (name: string) => {
     if (!policy.data) return;
-    const newAllowed =
-      type === "whitelist"
-        ? (policy.data.allowedMerchants ?? []).filter((m) => m !== name)
-        : policy.data.allowedMerchants ?? [];
-    const newBlocked =
-      type === "blacklist"
-        ? (policy.data.blockedMerchants ?? []).filter((m) => m !== name)
-        : policy.data.blockedMerchants ?? [];
+    const newBlocked = (policy.data.blockedMerchants ?? []).filter((m) => m !== name);
 
     update.mutate({
       maxTransactionAmount: policy.data.maxTransactionAmount,
       maxTotalSpending: policy.data.maxTotalSpending,
       currency: policy.data.currency || "INR",
       requireUserApproval: Boolean(policy.data.requireUserApproval),
-      allowedMerchants: newAllowed,
       blockedMerchants: newBlocked,
       frequencyLimit: policy.data.frequencyLimit,
     });
   };
 
-  const savedAllowed = policy.data?.allowedMerchants ?? [];
   const savedBlocked = policy.data?.blockedMerchants ?? [];
 
   const combinedRules = useMemo(() => {
-    const rules: Array<{ name: string; type: "whitelist" | "blacklist" }> = [
-      ...savedAllowed.map((name) => ({ name, type: "whitelist" as const })),
-      ...savedBlocked.map((name) => ({ name, type: "blacklist" as const })),
-    ];
+    const rules = savedBlocked.map((name) => ({ name, type: "blacklist" as const }));
 
     return rules.filter((rule) => {
       const matchesSearch = rule.name.toLowerCase().includes(tableSearch.trim().toLowerCase());
@@ -411,7 +372,7 @@ export default function PolicySettings() {
         tableFilter === "ALL" ? true : rule.type === tableFilter;
       return matchesSearch && matchesFilter;
     });
-  }, [savedAllowed, savedBlocked, tableSearch, tableFilter]);
+  }, [savedBlocked, tableSearch, tableFilter]);
 
   return (
     <div className="w-full text-foreground px-6 sm:px-8 pt-10 sm:pt-12 pb-24">
@@ -746,18 +707,6 @@ export default function PolicySettings() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setTableFilter("whitelist")}
-                  className={cn(
-                    "inline-flex h-full items-center rounded-md px-3 text-xs font-semibold transition-colors cursor-pointer",
-                    tableFilter === "whitelist"
-                      ? "bg-zinc-800 text-white shadow-xs"
-                      : "text-zinc-400 hover:text-zinc-200"
-                  )}
-                >
-                  Allowed
-                </button>
-                <button
-                  type="button"
                   onClick={() => setTableFilter("blacklist")}
                   className={cn(
                     "inline-flex h-full items-center rounded-md px-3 text-xs font-semibold transition-colors cursor-pointer",
@@ -805,7 +754,6 @@ export default function PolicySettings() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {combinedRules.map((rule) => {
-                const isWhitelist = rule.type === "whitelist";
                 return (
                   <div
                     key={`${rule.type}-${rule.name}`}
@@ -820,9 +768,7 @@ export default function PolicySettings() {
                             {rule.name}
                           </h3>
                           <p className="text-xs text-zinc-400 font-sans leading-relaxed break-words">
-                            {isWhitelist
-                              ? "Permits autonomous purchase within spending caps"
-                              : "Instantly aborts pre-authorization checkout"}
+                            "Instantly aborts pre-authorization checkout"
                           </p>
                         </div>
                       </div>
@@ -831,7 +777,7 @@ export default function PolicySettings() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDeleteRuleDirect(rule.name, rule.type)}
+                        onClick={() => handleDeleteRuleDirect(rule.name)}
                         disabled={update.isPending}
                         className="h-7 w-7 p-0 text-zinc-500 hover:text-rose-400 hover:bg-zinc-800/60 rounded-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
                         title="Remove rule"
@@ -844,20 +790,14 @@ export default function PolicySettings() {
                     <div className="space-y-2.5 pt-3 border-t border-zinc-800/60 text-xs">
                       <div className="flex items-center justify-between text-zinc-400">
                         <span>Enforcement Gate</span>
-                        {isWhitelist ? (
-                          <span className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-950/60 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-400">
-                            Cleared (Whitelist)
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/60 px-2.5 py-0.5 text-[11px] font-semibold text-rose-400">
-                            Restricted (Blacklist)
-                          </span>
-                        )}
+                        <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/60 px-2.5 py-0.5 text-[11px] font-semibold text-rose-400">
+                          Blocked merchant
+                        </span>
                       </div>
                       <div className="flex items-center justify-between text-zinc-400">
                         <span>Action Effect</span>
                         <span className="font-mono text-[11px] text-zinc-300">
-                          {isWhitelist ? "EXECUTE_PASS" : "ABORT_REJECT"}
+                          "ABORT_REJECT"
                         </span>
                       </div>
                     </div>
@@ -882,38 +822,12 @@ export default function PolicySettings() {
             </div>
 
             <div className="px-5 py-4 space-y-4">
-              {/* Field 1: Rule Type (Segmented toggle) */}
+              {/* Field 1: Rule Type */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-300">Clearance Status</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setMerchantAction("whitelist")}
-                    className={cn(
-                      "flex items-center justify-center gap-2 rounded-lg border p-2.5 text-xs font-semibold transition-all cursor-pointer",
-                      merchantAction === "whitelist"
-                        ? "border-emerald-500/50 bg-emerald-950/40 text-emerald-300 ring-1 ring-emerald-500/30"
-                        : "border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
-                    )}
-                  >
-                    <CheckCircle2 className={cn("h-4 w-4", merchantAction === "whitelist" ? "text-emerald-400" : "text-zinc-500")} />
-                    <span>Cleared (Whitelist)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setMerchantAction("blacklist")}
-                    className={cn(
-                      "flex items-center justify-center gap-2 rounded-lg border p-2.5 text-xs font-semibold transition-all cursor-pointer",
-                      merchantAction === "blacklist"
-                        ? "border-rose-500/50 bg-rose-950/40 text-rose-300 ring-1 ring-rose-500/30"
-                        : "border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
-                    )}
-                  >
-                    <Ban className={cn("h-4 w-4", merchantAction === "blacklist" ? "text-rose-400" : "text-zinc-500")} />
-                    <span>Restricted (Blacklist)</span>
-                  </button>
-                </div>
+                <label className="inline-flex items-center gap-2 rounded-lg border border-rose-500/40 bg-rose-950/30 p-2.5 text-xs font-semibold text-rose-300">
+                  <Ban className="h-4 w-4 text-rose-400" />
+                  Block this merchant
+                </label>
               </div>
 
               {/* Field 2: Merchant Name / Keyword Input */}
@@ -932,19 +846,13 @@ export default function PolicySettings() {
                         handleSaveNewMerchantRule();
                       }
                     }}
-                    placeholder={
-                      merchantAction === "whitelist"
-                        ? "e.g. Nike, Amazon India, Flipkart, Zara"
-                        : "e.g. Untrusted Vendor, Unknown Store"
-                    }
+                    placeholder="e.g. Untrusted Vendor, Unknown Store"
                     className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-600 focus:outline-none"
                     autoFocus
                   />
                 </div>
                 <p className="text-[11px] text-zinc-500">
-                  {merchantAction === "whitelist"
-                    ? "Orders at this merchant will be pre-approved within your spending caps."
-                    : "Orders at this merchant will be aborted immediately."}
+                  "Orders at this merchant will be aborted immediately. All other merchants remain allowed by default."
                 </p>
               </div>
             </div>

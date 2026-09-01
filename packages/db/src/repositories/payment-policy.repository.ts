@@ -115,7 +115,9 @@ export async function upsertPolicy(
       maxTotalSpending: input.maxTotalSpending,
       currency: input.currency,
       requireUserApproval: input.requireUserApproval ?? existing.requireUserApproval,
-      allowedMerchants: input.allowedMerchants ?? existing.allowedMerchants,
+      // Merchant policy is deny-list only: every merchant is allowed unless
+      // explicitly blocked. Clear legacy whitelist data on every update.
+      allowedMerchants: [],
       blockedMerchants: input.blockedMerchants ?? existing.blockedMerchants,
       frequencyLimit:
         input.frequencyLimit !== undefined ? input.frequencyLimit : existing.frequencyLimit,

@@ -19,7 +19,7 @@ export const policiesRouter = router({
    *   - maxTotalSpending (lifetime/reserved + settled cap, minor units)
    *   - currency
    *   - requireUserApproval (force an explicit approve step for every purchase)
-   *   - allowedMerchants / blockedMerchants
+   *   - blockedMerchants (deny list; all other merchants are allowed)
    *   - frequencyLimit (max approvals per rolling hour)
    */
   update: protectedProcedure
@@ -29,7 +29,6 @@ export const policiesRouter = router({
         maxTotalSpending: z.number().int().positive(),
         currency: z.string().length(3),
         requireUserApproval: z.boolean().optional(),
-        allowedMerchants: z.array(z.string()).optional(),
         blockedMerchants: z.array(z.string()).optional(),
         frequencyLimit: z.number().int().nonnegative().nullable().optional(),
       }),
