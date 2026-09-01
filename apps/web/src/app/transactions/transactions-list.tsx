@@ -73,8 +73,8 @@ function FormattedAmount({
 
   return (
     <span className={cn("font-mono text-sm whitespace-nowrap", className)}>
-      <span className="font-normal text-zinc-400 mr-0.5">{parts.symbol}</span>
-      <span className="font-bold text-zinc-100">{parts.number}</span>
+      <span className="font-normal text-muted-foreground mr-0.5">{parts.symbol}</span>
+      <span className="font-bold text-foreground">{parts.number}</span>
     </span>
   );
 }
@@ -103,20 +103,20 @@ function CustomSelect({
           <button
             type="button"
             className={cn(
-              "inline-flex w-auto items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-900/90 text-xs font-medium text-zinc-200 shadow-xs transition-colors hover:border-zinc-700 hover:bg-zinc-800/80 focus:border-zinc-700 focus:outline-none cursor-pointer whitespace-nowrap shrink-0",
+              "inline-flex w-auto items-center justify-between gap-2 rounded-lg border border-border bg-muted text-xs font-medium text-foreground transition-colors hover:border-border hover:bg-accent focus:border-border focus:outline-none cursor-pointer whitespace-nowrap shrink-0",
               size === "sm" ? "h-7 px-2.5" : "h-9 px-3",
               className
             )}
           >
             <span>{selected ? selected.label : placeholder}</span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </button>
         }
       />
       <DropdownMenuContent
         align="start"
         sideOffset={4}
-        className="z-50 w-max min-w-full rounded-xl border border-zinc-800 bg-[#18181b] p-1 shadow-2xl text-xs text-zinc-200 backdrop-blur-md"
+        className="z-50 w-max min-w-full rounded-xl border border-border bg-popover p-1 text-xs text-foreground backdrop-blur-md"
       >
         <DropdownMenuGroup>
           {options.map((opt) => {
@@ -128,8 +128,8 @@ function CustomSelect({
                 className={cn(
                   "flex items-center rounded-lg px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors whitespace-nowrap",
                   isSelected
-                    ? "bg-zinc-800 text-white font-semibold"
-                    : "text-zinc-300 hover:bg-zinc-800/60 hover:text-white"
+                    ? "bg-accent text-foreground font-semibold"
+                    : "text-foreground hover:bg-accent/60 hover:text-foreground"
                 )}
               >
                 <span>{opt.label}</span>
@@ -161,20 +161,20 @@ function getStatusDetails(status: string) {
     case "APPROVED":
       return {
         statusLabel: "Paid",
-        statusTone: "bg-emerald-950/60 border-emerald-500/40 text-emerald-400",
+        statusTone: "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/60 dark:border-emerald-500/40 dark:text-emerald-400",
         dotColor: "bg-emerald-400",
         fulfillmentLabel: "Delivered",
-        fulfillmentTone: "bg-zinc-900 border-zinc-700/80 text-zinc-200",
+        fulfillmentTone: "bg-muted border-border text-foreground",
         progressPercent: 100,
         boardColumn: "Delivered",
       };
     case "PAYMENT_PROCESSING":
       return {
         statusLabel: "Paid",
-        statusTone: "bg-emerald-950/60 border-emerald-500/40 text-emerald-400",
+        statusTone: "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/60 dark:border-emerald-500/40 dark:text-emerald-400",
         dotColor: "bg-emerald-400",
         fulfillmentLabel: "In Transit",
-        fulfillmentTone: "bg-zinc-900 border-zinc-700/80 text-zinc-200",
+        fulfillmentTone: "bg-muted border-border text-foreground",
         progressPercent: 80,
         boardColumn: "In Transit",
       };
@@ -184,10 +184,10 @@ function getStatusDetails(status: string) {
     case "CREATED":
       return {
         statusLabel: "Pending",
-        statusTone: "bg-amber-950/60 border-amber-500/40 text-amber-400",
+        statusTone: "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/60 dark:border-amber-500/40 dark:text-amber-400",
         dotColor: "bg-amber-400",
         fulfillmentLabel: norm === "AWAITING_APPROVAL" ? "Awaiting Approval" : "Processing",
-        fulfillmentTone: "bg-zinc-900 border-zinc-700/80 text-zinc-200",
+        fulfillmentTone: "bg-muted border-border text-foreground",
         progressPercent: norm === "AWAITING_APPROVAL" ? 40 : 20,
         boardColumn: "Pending",
       };
@@ -198,10 +198,10 @@ function getStatusDetails(status: string) {
     default:
       return {
         statusLabel: "Failed",
-        statusTone: "bg-rose-950/60 border-rose-500/40 text-rose-400",
+        statusTone: "bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/60 dark:border-rose-500/40 dark:text-rose-400",
         dotColor: "bg-rose-400",
         fulfillmentLabel: norm === "CANCELLED" ? "Cancelled" : norm === "PRICE_CHANGED" ? "Price Changed" : "Blocked",
-        fulfillmentTone: "bg-zinc-900 border-zinc-700/80 text-zinc-200",
+        fulfillmentTone: "bg-muted border-border text-foreground",
         progressPercent: 0,
         boardColumn: "Failed",
       };
@@ -220,7 +220,7 @@ function SegmentedProgressBar({ percent }: { percent: number }) {
             key={i}
             className={cn(
               "h-3.5 w-1 rounded-full transition-colors",
-              i < filledBars ? "bg-white" : "bg-zinc-700/70"
+              i < filledBars ? "bg-primary" : "bg-muted"
             )}
           />
         ))}
@@ -245,16 +245,16 @@ function getEventBadge(eventType: string) {
     return {
       dotBg: "bg-rose-500",
       ringColor: "ring-rose-500/20",
-      textColor: "text-rose-400",
-      badgeBg: "bg-rose-950/40 border-rose-800/50 text-rose-300",
+      textColor: "text-rose-600 dark:text-rose-400",
+      badgeBg: "bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/50 text-rose-700 dark:text-rose-300",
     };
   }
 
   return {
-    dotBg: "bg-zinc-500",
-    ringColor: "ring-zinc-700/30",
-    textColor: "text-zinc-300",
-    badgeBg: "bg-zinc-900/90 border-zinc-750 border-zinc-700/60 text-zinc-300",
+    dotBg: "bg-muted",
+    ringColor: "ring-border/30",
+    textColor: "text-foreground",
+    badgeBg: "bg-muted border-border border-border text-foreground",
   };
 }
 
@@ -282,12 +282,12 @@ function AuditTrailPanel({
     <div className="text-xs">
       {/* Timeline view */}
       {audit.isLoading ? (
-        <div className="flex items-center gap-2 py-4 text-zinc-400 pl-4">
-          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200" />
+        <div className="flex items-center gap-2 py-4 text-muted-foreground pl-4">
+          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-border border-t-foreground" />
           <span>Fetching event timeline…</span>
         </div>
       ) : sortedEvents.length === 0 ? (
-        <p className="py-4 text-zinc-500 pl-4">No audit events recorded for this transaction.</p>
+        <p className="py-4 text-muted-foreground pl-4">No audit events recorded for this transaction.</p>
       ) : (
         <div className="space-y-0">
           {sortedEvents.map((event: any, idx: number) => {
@@ -302,13 +302,13 @@ function AuditTrailPanel({
               <div key={eventId} className="relative flex items-start gap-3.5 pb-4 last:pb-0.5">
                 {/* Continuous connecting vertical line to next dot */}
                 {!isLast && (
-                  <div className="absolute left-[5px] top-[14px] bottom-0 w-[1.5px] bg-zinc-600/70 z-0" />
+                  <div className="absolute left-[5px] top-[14px] bottom-0 w-[1.5px] bg-muted z-0" />
                 )}
 
                 {/* Node Dot */}
                 <div
                   className={cn(
-                    "h-3 w-3 rounded-full ring-4 bg-zinc-800 transition-all shrink-0 mt-0.5 z-10",
+                    "h-3 w-3 rounded-full ring-4 bg-accent transition-all shrink-0 mt-0.5 z-10",
                     style.dotBg,
                     style.ringColor
                   )}
@@ -320,7 +320,7 @@ function AuditTrailPanel({
                     onClick={() => hasMetadata && togglePayload(eventId)}
                     className={cn(
                       "flex flex-wrap items-center justify-between gap-2 p-1 -m-1 rounded-lg transition-colors",
-                      hasMetadata ? "cursor-pointer hover:bg-zinc-900/60" : "cursor-default"
+                      hasMetadata ? "cursor-pointer hover:bg-muted" : "cursor-default"
                     )}
                     title={hasMetadata ? "Click to view event payload details" : undefined}
                   >
@@ -329,27 +329,27 @@ function AuditTrailPanel({
                         className={cn(
                           "font-mono font-semibold text-[11px] px-2 py-0.5 rounded-md border inline-flex items-center gap-1.5 transition-colors shrink-0",
                           style.badgeBg,
-                          hasMetadata && "hover:border-zinc-500"
+                          hasMetadata && "hover:border-border"
                         )}
                       >
                         <span>{event.eventType}</span>
                         {hasMetadata && (
                           <ChevronDown
                             className={cn(
-                              "h-3 w-3 text-zinc-400 transition-transform duration-200",
+                              "h-3 w-3 text-muted-foreground transition-transform duration-200",
                               isPayloadOpen ? "rotate-180" : "rotate-0"
                             )}
                           />
                         )}
                       </span>
                       {event.reason && (
-                        <span className="text-zinc-300 font-medium text-xs truncate">
+                        <span className="text-foreground font-medium text-xs truncate">
                           {event.reason}
                         </span>
                       )}
                     </div>
 
-                    <span className="font-mono text-[11px] text-zinc-500 whitespace-nowrap">
+                    <span className="font-mono text-[11px] text-muted-foreground whitespace-nowrap">
                       {new Date(event.createdAt).toLocaleString()}
                     </span>
                   </div>
@@ -357,7 +357,7 @@ function AuditTrailPanel({
                   {/* Metadata payload expandable */}
                   {hasMetadata && isPayloadOpen && (
                     <div className="mt-2">
-                      <pre className="rounded-lg bg-zinc-950/90 border border-zinc-800/80 p-3 font-mono text-[11px] text-zinc-300 overflow-x-auto leading-relaxed shadow-inner animate-in fade-in-0 duration-150">
+                      <pre className="rounded-lg bg-card border border-border p-3 font-mono text-[11px] text-foreground overflow-x-auto leading-relaxed shadow-inner animate-in fade-in-0 duration-150">
                         {JSON.stringify(event.metadata, null, 2)}
                       </pre>
                     </div>
@@ -508,10 +508,10 @@ export default function TransactionsList() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           {/* Left: Icon Box + Title */}
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/80 text-zinc-300 shadow-xs">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
               <ShoppingBag className="h-4 w-4" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-white">
+            <h1 className="text-xl font-bold tracking-tight text-foreground">
               Past Orders
             </h1>
           </div>
@@ -520,7 +520,7 @@ export default function TransactionsList() {
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Search Input */}
             <div className="relative w-60 max-sm:w-full">
-              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <input
                 type="text"
                 value={searchQuery}
@@ -529,7 +529,7 @@ export default function TransactionsList() {
                   setCurrentPage(1);
                 }}
                 placeholder="Search orders..."
-                className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900/90 pl-9 pr-3 text-xs text-zinc-200 placeholder:text-zinc-500 focus:border-zinc-700 focus:outline-none focus:ring-1 focus:ring-zinc-700"
+                className="h-9 w-full rounded-lg border border-border bg-muted pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
 
@@ -571,7 +571,7 @@ export default function TransactionsList() {
                   setSearchQuery("");
                   setCurrentPage(1);
                 }}
-                className="h-9 rounded-lg border border-zinc-800 bg-zinc-900/60 px-2.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                className="h-9 rounded-lg border border-border bg-muted px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
                 title="Reset filters"
               >
                 Reset
@@ -579,15 +579,15 @@ export default function TransactionsList() {
             )}
 
             {/* View Mode Toggle: List / Board */}
-            <div className="inline-flex h-9 items-center rounded-lg border border-zinc-800 bg-zinc-900/90 p-0.5">
+            <div className="inline-flex h-9 items-center rounded-lg bg-muted p-0.5">
               <button
                 type="button"
                 onClick={() => setViewMode("list")}
                 className={cn(
                   "inline-flex h-full items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition-colors",
                   viewMode === "list"
-                    ? "bg-zinc-800 text-white shadow-xs"
-                    : "text-zinc-400 hover:text-zinc-200"
+                    ? "bg-card text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <ListIcon className="h-3.5 w-3.5" />
@@ -599,8 +599,8 @@ export default function TransactionsList() {
                 className={cn(
                   "inline-flex h-full items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition-colors",
                   viewMode === "board"
-                    ? "bg-zinc-800 text-white shadow-xs"
-                    : "text-zinc-400 hover:text-zinc-200"
+                    ? "bg-card text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
@@ -612,32 +612,32 @@ export default function TransactionsList() {
 
         {/* Content Section */}
         {list.isLoading ? (
-          <div className="flex h-64 items-center justify-center rounded-xl border border-zinc-800/80 bg-zinc-900/40 text-sm text-zinc-400">
+          <div className="flex h-64 items-center justify-center rounded-xl border border-border bg-muted/40 text-sm text-muted-foreground">
             Loading orders...
           </div>
         ) : list.error ? (
-          <div className="flex h-64 items-center justify-center rounded-xl border border-zinc-800/80 bg-zinc-900/40 text-sm text-red-400">
+          <div className="flex h-64 items-center justify-center rounded-xl border border-border bg-muted/40 text-sm text-red-400">
             Could not load orders. Please try refreshing.
           </div>
         ) : filteredTransactions.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-zinc-800/80 bg-zinc-900/40 text-center">
-            <ShoppingBag className="mb-2 h-8 w-8 text-zinc-600" />
-            <p className="text-sm font-medium text-zinc-300">
+          <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-border bg-muted/40 text-center">
+            <ShoppingBag className="mb-2 h-8 w-8 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">
               {searchQuery ? `No orders matching "${searchQuery}"` : "No orders found"}
             </p>
-            <p className="text-xs text-zinc-500 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Autonomous purchases and transactions will appear here.
             </p>
           </div>
         ) : viewMode === "list" ? (
           /* Table View */
           <TooltipProvider delay={100}>
-            <div className="rounded-xl border border-zinc-800/80 bg-[#161616]/90 shadow-2xl">
+            <div className="rounded-xl border border-border bg-card">
               <div>
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="border-b border-zinc-800/80 text-[11px] font-semibold tracking-wider text-zinc-400">
-                      <th className="w-12 px-4 py-3.5 font-mono text-zinc-500">#</th>
+                    <tr className="border-b border-border text-[11px] font-semibold tracking-wider text-muted-foreground">
+                      <th className="w-12 px-4 py-3.5 font-mono text-muted-foreground">#</th>
                       <th className="px-4 py-3.5">Transaction ID</th>
                       <th className="px-4 py-3.5">Merchant</th>
                       <th className="px-4 py-3.5">Items / Query</th>
@@ -649,7 +649,7 @@ export default function TransactionsList() {
                       <th className="px-4 py-3.5 text-right">Date</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-800/60 font-medium">
+                  <tbody className="divide-y divide-border font-medium">
                     {paginatedTransactions.map((tx, index) => {
                       const rowNumber = (safeCurrentPage - 1) * pageSize + index + 1;
                       const isRowSelected = selectedRowIds.has(tx.transactionId);
@@ -665,25 +665,25 @@ export default function TransactionsList() {
                           <tr
                             onClick={() => setSelectedTxId(isDetailActive ? null : tx.transactionId)}
                             className={cn(
-                              "cursor-pointer transition-colors hover:bg-zinc-800/40",
-                              isDetailActive ? "bg-zinc-800/50" : isRowSelected ? "bg-zinc-900/50" : ""
+                              "cursor-pointer transition-colors hover:bg-accent/40",
+                              isDetailActive ? "bg-accent/50" : isRowSelected ? "bg-muted/50" : ""
                             )}
                           >
                             {/* Row Number */}
-                            <td className="px-4 py-4 font-mono text-xs text-zinc-500 font-medium">
+                            <td className="px-4 py-4 font-mono text-xs text-muted-foreground font-medium">
                               {rowNumber}
                             </td>
 
                             {/* Real Transaction ID */}
                             <td className="px-4 py-4 whitespace-nowrap">
                               <div className="flex items-center gap-1.5">
-                                <span className="font-mono font-bold text-zinc-100">
+                                <span className="font-mono font-bold text-foreground">
                                   {tx.transactionId.slice(0, 8)}…
                                 </span>
                                 <button
                                   type="button"
                                   onClick={(e) => handleCopy(tx.transactionId, e)}
-                                  className="text-zinc-500 hover:text-zinc-300 p-0.5 rounded transition-colors"
+                                  className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
                                   title="Copy Transaction UUID"
                                 >
                                   {isCopied ? (
@@ -698,11 +698,11 @@ export default function TransactionsList() {
                             {/* Merchant */}
                             <td className="px-4 py-4">
                               <div className="flex flex-col">
-                                <span className="font-bold text-sm text-zinc-100 whitespace-nowrap">
+                                <span className="font-bold text-sm text-foreground whitespace-nowrap">
                                   {merchant}
                                 </span>
                                 {subtitle && (
-                                  <span className="text-xs text-zinc-500 font-normal">
+                                  <span className="text-xs text-muted-foreground font-normal">
                                     {subtitle}
                                   </span>
                                 )}
@@ -710,32 +710,32 @@ export default function TransactionsList() {
                             </td>
 
                             {/* Real Items / Search Query */}
-                            <td className="px-4 py-4 text-zinc-300 max-w-[260px]">
+                            <td className="px-4 py-4 text-foreground max-w-[260px]">
                               <Tooltip>
                                 <TooltipTrigger
                                   render={
                                     <div className="cursor-default">
-                                      <span className="line-clamp-2 leading-snug font-normal text-zinc-200 hover:text-white transition-colors">
+                                      <span className="line-clamp-2 leading-snug font-normal text-foreground hover:text-foreground transition-colors">
                                         {itemsText}
                                       </span>
                                     </div>
                                   }
                                 />
-                                <TooltipContent side="top" className="max-w-md bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs p-3 rounded-lg shadow-2xl space-y-2">
+                                <TooltipContent side="top" className="max-w-md bg-popover border border-border text-foreground text-xs p-3 rounded-lg space-y-2 shadow-md">
                                   <div>
-                                    <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider block mb-0.5">
+                                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block mb-0.5">
                                       Item / Product
                                     </span>
-                                    <p className="font-semibold text-zinc-100 leading-snug text-xs break-words">
+                                    <p className="font-semibold text-foreground leading-snug text-xs break-words">
                                       {itemsText}
                                     </p>
                                   </div>
                                   {tx.rawQuery && tx.rawQuery !== itemsText && (
-                                    <div className="pt-2 border-t border-zinc-800">
-                                      <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider block mb-0.5">
+                                    <div className="pt-2 border-t border-border">
+                                      <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block mb-0.5">
                                         Search Query
                                       </span>
-                                      <p className="text-zinc-300 text-xs font-normal break-words">
+                                      <p className="text-foreground text-xs font-normal break-words">
                                         &quot;{tx.rawQuery}&quot;
                                       </p>
                                     </div>
@@ -787,19 +787,19 @@ export default function TransactionsList() {
                                       </div>
                                     }
                                   />
-                                  <TooltipContent side="top" className="max-w-md bg-rose-950/95 border border-rose-800 text-rose-100 text-xs p-3 rounded-lg shadow-2xl">
+                                  <TooltipContent side="top" className="max-w-md bg-rose-50 dark:bg-rose-950/95 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-100 text-xs p-3 rounded-lg shadow-md">
                                     <div className="space-y-1.5">
-                                      <div className="flex items-center gap-1.5 text-rose-300 font-bold">
+                                      <div className="flex items-center gap-1.5 text-rose-600 dark:text-rose-300 font-bold">
                                         <AlertTriangle className="h-3.5 w-3.5" />
                                         <span>Failure / Policy Error</span>
                                       </div>
-                                      <p className="text-xs text-rose-100 leading-relaxed font-medium">{tx.failureReason}</p>
-                                      <p className="text-[10px] text-rose-300/70 font-mono">Status: {tx.status}</p>
+                                      <p className="text-xs text-rose-700 dark:text-rose-100 leading-relaxed font-medium">{tx.failureReason}</p>
+                                      <p className="text-[10px] text-rose-500 dark:text-rose-300/70 font-mono">Status: {tx.status}</p>
                                     </div>
                                   </TooltipContent>
                                 </Tooltip>
                               ) : (
-                                <span className="text-zinc-500 text-xs">—</span>
+                                <span className="text-muted-foreground text-xs">—</span>
                               )}
                             </td>
 
@@ -809,14 +809,14 @@ export default function TransactionsList() {
                             </td>
 
                             {/* Date */}
-                            <td className="px-4 py-4 text-right font-mono text-xs text-zinc-400 whitespace-nowrap">
+                            <td className="px-4 py-4 text-right font-mono text-xs text-muted-foreground whitespace-nowrap">
                               {formatDate(tx.createdAt)}
                             </td>
                           </tr>
 
                           {/* Inline Audit Trail Subrow */}
                           {isDetailActive && (
-                            <tr className="bg-zinc-800/50 border-b border-zinc-800/80">
+                            <tr className="bg-accent/50 border-b border-border">
                               <td colSpan={10} className="pl-16 pr-6 py-4">
                                 <AuditTrailPanel audit={audit} />
                               </td>
@@ -851,18 +851,18 @@ export default function TransactionsList() {
                     key={tx.transactionId}
                     onClick={() => setSelectedTxId(isDetailActive ? null : tx.transactionId)}
                     className={cn(
-                      "group relative flex flex-col justify-between rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-5 shadow-2xl transition-all hover:border-zinc-700/80 cursor-pointer space-y-3.5",
+                      "group relative flex flex-col justify-between rounded-xl border border-border bg-card p-5 transition-all hover:border-border cursor-pointer space-y-3.5",
                       isDetailActive
-                        ? "border-zinc-500 bg-zinc-800/40 ring-1 ring-zinc-500/30"
+                        ? "border-border bg-accent/40 ring-1 ring-border/30"
                         : isRowSelected
-                        ? "border-zinc-700 bg-zinc-900/60"
+                        ? "border-border bg-muted"
                         : ""
                     )}
                   >
                     {/* Top Row: Order ID + Status Pill + Number */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-xs text-zinc-100">
+                        <span className="font-mono font-bold text-xs text-foreground">
                           {tx.transactionId.slice(0, 8)}…
                         </span>
                         <span
@@ -875,18 +875,18 @@ export default function TransactionsList() {
                         </span>
                       </div>
 
-                      <span className="font-mono text-xs font-semibold text-zinc-500 bg-zinc-900/80 px-2 py-0.5 rounded border border-zinc-800">
+                      <span className="font-mono text-xs font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded border border-border">
                         #{rowNumber}
                       </span>
                     </div>
 
                     {/* Merchant & Subtitle */}
                     <div>
-                      <h3 className="text-sm font-bold text-white tracking-tight">
+                      <h3 className="text-sm font-bold text-foreground tracking-tight">
                         {merchant}
                       </h3>
                       {subtitle && (
-                        <p className="text-xs text-zinc-400 font-mono mt-0.5">
+                        <p className="text-xs text-muted-foreground font-mono mt-0.5">
                           {subtitle}
                         </p>
                       )}
@@ -894,33 +894,33 @@ export default function TransactionsList() {
 
                     {/* Items / Query Section */}
                     <div>
-                      <span className="text-xs text-zinc-500 block mb-0.5">Items / Query</span>
+                      <span className="text-xs text-muted-foreground block mb-0.5">Items / Query</span>
                       <Tooltip>
                         <TooltipTrigger
                           render={
-                            <p className="text-xs font-semibold text-zinc-200 line-clamp-1">
+                            <p className="text-xs font-semibold text-foreground line-clamp-1">
                               {itemsText}
                             </p>
                           }
                         />
                         <TooltipContent
                           side="top"
-                          className="max-w-md bg-zinc-900 border border-zinc-700 text-zinc-100 text-xs p-3 rounded-lg shadow-2xl space-y-2"
+                          className="max-w-md bg-popover border border-border text-foreground text-xs p-3 rounded-lg space-y-2 shadow-md"
                         >
                           <div>
-                            <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider block mb-0.5">
+                            <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block mb-0.5">
                               Item / Product
                             </span>
-                            <p className="font-semibold text-zinc-100 leading-snug text-xs break-words">
+                            <p className="font-semibold text-foreground leading-snug text-xs break-words">
                               {itemsText}
                             </p>
                           </div>
                           {tx.rawQuery && tx.rawQuery !== itemsText && (
-                            <div className="pt-2 border-t border-zinc-800">
-                              <span className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider block mb-0.5">
+                            <div className="pt-2 border-t border-border">
+                              <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider block mb-0.5">
                                 Search Query
                               </span>
-                              <p className="text-zinc-300 text-xs font-normal break-words">
+                              <p className="text-foreground text-xs font-normal break-words">
                                 &quot;{tx.rawQuery}&quot;
                               </p>
                             </div>
@@ -930,8 +930,8 @@ export default function TransactionsList() {
                     </div>
 
                     {/* Fulfillment */}
-                    <div className="flex items-center justify-between text-xs pt-1 border-t border-zinc-800/60">
-                      <span className="text-zinc-500">Fulfillment</span>
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-border">
+                      <span className="text-muted-foreground">Fulfillment</span>
                       <span
                         className={cn(
                           "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
@@ -944,13 +944,13 @@ export default function TransactionsList() {
 
                     {/* Progress */}
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-500">Progress</span>
+                      <span className="text-muted-foreground">Progress</span>
                       <SegmentedProgressBar percent={details.progressPercent} />
                     </div>
 
                     {/* Error / Details */}
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-500">Error / Details</span>
+                      <span className="text-muted-foreground">Error / Details</span>
                       {tx.failureReason ? (
                         <Tooltip>
                           <TooltipTrigger
@@ -965,20 +965,20 @@ export default function TransactionsList() {
                           />
                           <TooltipContent
                             side="top"
-                            className="max-w-xs bg-rose-950/95 border border-rose-800 text-rose-100 text-xs p-2.5 rounded-lg shadow-xl"
+                            className="max-w-xs bg-rose-50 dark:bg-rose-950/95 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-100 text-xs p-2.5 rounded-lg shadow-md"
                           >
-                            <p className="font-semibold text-rose-300 mb-1">Failure Reason</p>
-                            <p>{tx.failureReason}</p>
+                            <p className="font-semibold text-rose-600 dark:text-rose-300 mb-1">Failure Reason</p>
+                            <p className="text-rose-700 dark:text-rose-100">{tx.failureReason}</p>
                           </TooltipContent>
                         </Tooltip>
                       ) : (
-                        <span className="text-zinc-500">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </div>
 
                     {/* Bottom: Date and Amount */}
-                    <div className="flex items-center justify-between pt-2.5 border-t border-zinc-800/60 text-xs">
-                      <span className="font-mono text-zinc-400">
+                    <div className="flex items-center justify-between pt-2.5 border-t border-border text-xs">
+                      <span className="font-mono text-muted-foreground">
                         {formatDate(tx.createdAt)}
                       </span>
                       <FormattedAmount minor={tx.amountInMinor} currency={tx.currency} />
@@ -987,7 +987,7 @@ export default function TransactionsList() {
                     {/* Inline Audit Trail in Board Card */}
                     {isDetailActive && (
                       <div
-                        className="pt-3 border-t border-zinc-700/60"
+                        className="pt-3 border-t border-border"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <AuditTrailPanel audit={audit} />
@@ -1004,27 +1004,27 @@ export default function TransactionsList() {
         {filteredTransactions.length > 0 && (
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-1">
             {/* Left: Count & Page Size Selector */}
-            <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
               <div>
                 Showing{" "}
-                <span className="font-semibold text-zinc-200">
+                <span className="font-semibold text-foreground">
                   {(safeCurrentPage - 1) * pageSize + 1}
                 </span>{" "}
                 to{" "}
-                <span className="font-semibold text-zinc-200">
+                <span className="font-semibold text-foreground">
                   {Math.min(safeCurrentPage * pageSize, filteredTransactions.length)}
                 </span>{" "}
                 of{" "}
-                <span className="font-semibold text-zinc-200">
+                <span className="font-semibold text-foreground">
                   {filteredTransactions.length}
                 </span>{" "}
                 orders
               </div>
 
-              <div className="h-3.5 w-px bg-zinc-800 hidden sm:block" />
+              <div className="h-3.5 w-px bg-accent hidden sm:block" />
 
               <div className="flex items-center gap-1.5">
-                <span className="text-zinc-400">Rows per page:</span>
+                <span className="text-muted-foreground">Rows per page:</span>
                 <CustomSelect
                   value={pageSize}
                   onChange={(val) => {
@@ -1050,13 +1050,13 @@ export default function TransactionsList() {
                 size="sm"
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={safeCurrentPage <= 1}
-                className="h-9 px-3 rounded-lg border border-zinc-800 bg-zinc-900/90 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                className="h-9 px-3 rounded-lg border border-border bg-muted text-xs text-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <ChevronLeft className="h-3.5 w-3.5 mr-1" />
                 <span>Previous</span>
               </Button>
 
-              <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900/90 p-0.5">
+              <div className="inline-flex rounded-lg border border-border bg-muted p-0.5">
                 {Array.from({ length: totalPages }).map((_, i) => {
                   const pageNum = i + 1;
                   return (
@@ -1067,8 +1067,8 @@ export default function TransactionsList() {
                       className={cn(
                         "h-8 min-w-8 rounded-md px-2.5 text-xs font-semibold transition-colors",
                         safeCurrentPage === pageNum
-                          ? "bg-zinc-800 text-white shadow-xs"
-                          : "text-zinc-400 hover:text-zinc-200"
+                          ? "bg-accent text-foreground"
+                          : "text-muted-foreground hover:text-foreground"
                       )}
                     >
                       {pageNum}
@@ -1082,7 +1082,7 @@ export default function TransactionsList() {
                 size="sm"
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={safeCurrentPage >= totalPages}
-                className="h-9 px-3 rounded-lg border border-zinc-800 bg-zinc-900/90 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                className="h-9 px-3 rounded-lg border border-border bg-muted text-xs text-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <span>Next</span>
                 <ChevronRight className="h-3.5 w-3.5 ml-1" />
