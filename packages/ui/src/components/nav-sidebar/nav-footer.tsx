@@ -1,6 +1,8 @@
 'use client';
 
-import { LogOut, Settings, User } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useTheme } from 'next-themes';
+import { Check, LogOut, Moon, Settings, Sun, Monitor, User } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@cartwright/ui/components/avatar';
 import {
   DropdownMenu,
@@ -14,6 +16,11 @@ import {
   SidebarMenuItem,
 } from '@cartwright/ui/components/sidebar';
 
+const themeOptions = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
+] as const;
 
 export function NavFooter({
   user,
@@ -24,6 +31,11 @@ export function NavFooter({
     avatar: string;
   };
 }) {
+  const [mounted, setMounted] = useState(false);
+  const { theme, setTheme } = useTheme();
+
+  useEffect(() => setMounted(true), []);
+
   return (
     <SidebarFooter className="p-4">
       <SidebarMenu>
@@ -46,19 +58,18 @@ export function NavFooter({
                     Profile
                   </DropdownMenuItem>
                   <DropdownMenuItem>
-                    <Settings
-                      aria-hidden="true"
-                      className="opacity-80"
-                      size={16}
-                    />
+                    <Settings aria-hidden="true" className="opacity-80" size={16} />
                     Settings
                   </DropdownMenuItem>
+                  {mounted && themeOptions.map(({ value, label, icon: Icon }) => (
+                    <DropdownMenuItem key={value} onClick={() => setTheme(value)}>
+                      <Icon aria-hidden="true" className="opacity-80" size={16} />
+                      {label}
+                      {theme === value && <Check className="ml-auto" size={14} />}
+                    </DropdownMenuItem>
+                  ))}
                   <DropdownMenuItem>
-                    <LogOut
-                      aria-hidden="true"
-                      className="opacity-80"
-                      size={16}
-                    />
+                    <LogOut aria-hidden="true" className="opacity-80" size={16} />
                     Logout
                   </DropdownMenuItem>
                 </DropdownMenuContent>
