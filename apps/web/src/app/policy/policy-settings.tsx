@@ -7,7 +7,6 @@ import {
   Store,
   Save,
   Plus,
-  Ban,
   SlidersHorizontal,
   Pencil,
   Trash2,
@@ -21,6 +20,8 @@ import { Button } from "@cartwright/ui/components/button";
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
+  DialogFooter,
 } from "@cartwright/ui/components/dialog";
 import { cn } from "@cartwright/ui/lib/utils";
 import { trpc } from "@/utils/trpc";
@@ -810,64 +811,23 @@ export default function PolicySettings() {
 
         {/* Add Merchant Rule Dialog */}
         <Dialog open={activeDialog === "merchants"} onOpenChange={(open) => !open && handleCloseDialog()}>
-          <DialogContent className="top-[20%] translate-y-0 sm:max-w-md max-w-[calc(100%-2rem)] overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 text-zinc-100 shadow-2xl p-0">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
-              <div>
-                <span className="text-sm font-bold text-zinc-100 block">Add Merchant Rule</span>
-                <p className="text-xs text-zinc-400 mt-0.5">
-                  Configure clearance rules for automated store checkouts
-                </p>
-              </div>
-            </div>
-
-            <div className="px-5 py-4 space-y-4">
-              {/* Field 1: Rule Type */}
-              <div className="space-y-1.5">
-                <label className="inline-flex items-center gap-2 rounded-lg border border-rose-500/40 bg-rose-950/30 p-2.5 text-xs font-semibold text-rose-300">
-                  <Ban className="h-4 w-4 text-rose-400" />
-                  Block this merchant
-                </label>
-              </div>
-
-              {/* Field 2: Merchant Name / Keyword Input */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-300">
-                  Merchant / Store Name
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={merchantInput}
-                    onChange={(e) => setMerchantInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleSaveNewMerchantRule();
-                      }
-                    }}
-                    placeholder="e.g. Untrusted Vendor, Unknown Store"
-                    className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-600 focus:outline-none"
-                    autoFocus
-                  />
-                </div>
-                <p className="text-[11px] text-zinc-500">
-                  "Orders at this merchant will be aborted immediately. All other merchants remain allowed by default."
-                </p>
-              </div>
-            </div>
-
-            {/* Modal Footer Actions */}
-            <div className="flex items-center justify-end gap-2 border-t border-zinc-800 bg-zinc-950/40 px-5 py-3">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleCloseDialog}
-                className="h-8 px-3 text-xs rounded-lg border-zinc-700 hover:bg-zinc-800 text-zinc-300 cursor-pointer"
-              >
-                Cancel
-              </Button>
+          <DialogContent className="sm:max-w-sm" showCloseButton={true}>
+            <DialogTitle>Add Merchant Rule</DialogTitle>
+            <input
+              type="text"
+              value={merchantInput}
+              onChange={(e) => setMerchantInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSaveNewMerchantRule();
+                }
+              }}
+              placeholder="Merchant name..."
+              className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-600 focus:outline-none"
+              autoFocus
+            />
+            <DialogFooter>
               <Button
                 type="button"
                 size="sm"
@@ -875,10 +835,9 @@ export default function PolicySettings() {
                 disabled={update.isPending || !merchantInput.trim()}
                 className="h-8 px-4 text-xs font-bold rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 shadow-sm cursor-pointer disabled:opacity-50"
               >
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                <span>{update.isPending ? "Adding..." : "Add Rule"}</span>
+                {update.isPending ? "Adding..." : "Add"}
               </Button>
-            </div>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
