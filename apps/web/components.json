@@ -21,6 +21,7 @@
   "menuColor": "default",
   "menuAccent": "subtle",
   "registries": {
-    "@paceui": "https://paceui.com/r/{name}.json"
+    "@paceui": "https://paceui.com/r/{name}.json",
+    "@ai-elements": "https://ai-sdk.dev/elements/api/registry/{name}.json"
   }
 }
