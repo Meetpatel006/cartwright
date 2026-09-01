@@ -95,56 +95,56 @@ function MerchantLogo({ name, className = "h-4 w-4" }: { name: string; className
 
   if (text.includes("nike") || text.includes("jordan")) {
     return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/90 text-zinc-200 shadow-xs">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
         <NikeIcon className={className} />
       </span>
     );
   }
   if (text.includes("amazon") || text.includes("amzn") || text.includes("prime")) {
     return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/90 text-zinc-200 shadow-xs">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
         <AmazonIcon className={className} />
       </span>
     );
   }
   if (text.includes("flipkart")) {
     return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/90 text-zinc-200 shadow-xs">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
         <FlipkartIcon className={className} />
       </span>
     );
   }
   if (text.includes("apple") || text.includes("iphone") || text.includes("macbook")) {
     return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/90 text-zinc-200 shadow-xs">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
         <AppleIcon className={className} />
       </span>
     );
   }
   if (text.includes("adidas") || text.includes("yeezy") || text.includes("samba")) {
     return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/90 text-zinc-200 shadow-xs">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
         <AdidasIcon className={className} />
       </span>
     );
   }
   if (text.includes("shopify")) {
     return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/90 text-zinc-200 shadow-xs">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
         <ShopifyIcon className={className} />
       </span>
     );
   }
   if (text.includes("sony") || text.includes("playstation") || text.includes("ps5")) {
     return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/90 text-zinc-200 shadow-xs">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
         <SonyIcon className={className} />
       </span>
     );
   }
 
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/90 text-zinc-400 shadow-xs">
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground">
       <Store className={className} />
     </span>
   );
@@ -381,21 +381,21 @@ export default function PolicySettings() {
         {/* Policy Telemetry & Guardrail Stats Cards */}
         {policy.isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="h-32 animate-pulse rounded-xl border border-zinc-800/80 bg-zinc-900/40" />
-            <div className="h-32 animate-pulse rounded-xl border border-zinc-800/80 bg-zinc-900/40" />
-            <div className="h-32 animate-pulse rounded-xl border border-zinc-800/80 bg-zinc-900/40" />
+            <div className="h-32 animate-pulse rounded-xl border border-border bg-muted/40" />
+            <div className="h-32 animate-pulse rounded-xl border border-border bg-muted/40" />
+            <div className="h-32 animate-pulse rounded-xl border border-border bg-muted/40" />
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* Stat 1: Single Order Limit */}
-            <div className="group relative flex flex-col justify-between rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-5 shadow-2xl transition-all hover:border-zinc-700/80 space-y-3">
+            <div className="group relative flex flex-col justify-between rounded-xl border border-border bg-card p-5 transition-all hover:border-border space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-zinc-400">Single Order Limit</span>
+                <span className="text-xs font-semibold text-muted-foreground">Single Order Limit</span>
                 {editingStat !== "singleTx" && (
                   <button
                     type="button"
                     onClick={startEditingSingleTx}
-                    className="p-1 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                    className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                     title="Click to edit single order limit"
                   >
                     <Pencil className="h-3.5 w-3.5" />
@@ -406,7 +406,7 @@ export default function PolicySettings() {
               {editingStat === "singleTx" ? (
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1 min-w-0 flex-1">
-                    <span className="text-2xl font-bold font-mono tracking-tight text-zinc-500">₹</span>
+                    <span className="text-2xl font-bold font-mono tracking-tight text-muted-foreground">₹</span>
                     <input
                       type="text"
                       value={maxTxRupees}
@@ -417,7 +417,7 @@ export default function PolicySettings() {
                         if (e.key === "Escape") setEditingStat(null);
                       }}
                       placeholder="10000"
-                      className="w-full bg-transparent pb-0.5 font-mono text-2xl font-bold tracking-tight text-white focus:outline-none border-none"
+                      className="w-full bg-transparent pb-0.5 font-mono text-2xl font-bold tracking-tight text-foreground focus:outline-none border-none"
                       autoFocus
                     />
                   </div>
@@ -437,7 +437,7 @@ export default function PolicySettings() {
                         setMaxTxRupees(String((policy.data?.maxTransactionAmount ?? 0) / 100));
                         setEditingStat(null);
                       }}
-                      className="p-1 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                      className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
                       title="Cancel (Esc)"
                     >
                       <X className="h-4 w-4" />
@@ -450,27 +450,27 @@ export default function PolicySettings() {
                   className="cursor-pointer group/val"
                   title="Click to edit single order limit"
                 >
-                  <span className="text-2xl font-bold font-mono tracking-tight text-white group-hover/val:text-zinc-200">
+                  <span className="text-2xl font-bold font-mono tracking-tight text-foreground group-hover/val:text-foreground">
                     {formatRupees(currentSavedTx)}
                   </span>
                 </div>
               )}
 
-              <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-1 border-t border-zinc-800/60">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1">
                 <span>Per checkout cap</span>
                 <span className="text-emerald-400 font-medium">Active</span>
               </div>
             </div>
 
             {/* Stat 2: Lifetime Budget */}
-            <div className="group relative flex flex-col justify-between rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-5 shadow-2xl transition-all hover:border-zinc-700/80 space-y-3">
+            <div className="group relative flex flex-col justify-between rounded-xl border border-border bg-card p-5 transition-all hover:border-border space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-zinc-400">Lifetime Budget Cap</span>
+                <span className="text-xs font-semibold text-muted-foreground">Lifetime Budget Cap</span>
                 {editingStat !== "lifetime" && (
                   <button
                     type="button"
                     onClick={startEditingLifetime}
-                    className="p-1 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                    className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                     title="Click to edit lifetime budget"
                   >
                     <Pencil className="h-3.5 w-3.5" />
@@ -481,7 +481,7 @@ export default function PolicySettings() {
               {editingStat === "lifetime" ? (
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1 min-w-0 flex-1">
-                    <span className="text-2xl font-bold font-mono tracking-tight text-zinc-500">₹</span>
+                    <span className="text-2xl font-bold font-mono tracking-tight text-muted-foreground">₹</span>
                     <input
                       type="text"
                       value={maxTotalRupees}
@@ -492,7 +492,7 @@ export default function PolicySettings() {
                         if (e.key === "Escape") setEditingStat(null);
                       }}
                       placeholder="50000"
-                      className="w-full bg-transparent pb-0.5 font-mono text-2xl font-bold tracking-tight text-white focus:outline-none border-none"
+                      className="w-full bg-transparent pb-0.5 font-mono text-2xl font-bold tracking-tight text-foreground focus:outline-none border-none"
                       autoFocus
                     />
                   </div>
@@ -512,7 +512,7 @@ export default function PolicySettings() {
                         setMaxTotalRupees(String((policy.data?.maxTotalSpending ?? 0) / 100));
                         setEditingStat(null);
                       }}
-                      className="p-1 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                      className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
                       title="Cancel (Esc)"
                     >
                       <X className="h-4 w-4" />
@@ -525,14 +525,14 @@ export default function PolicySettings() {
                   className="cursor-pointer group/val"
                   title="Click to edit lifetime budget"
                 >
-                  <span className="text-2xl font-bold font-mono tracking-tight text-white group-hover/val:text-zinc-200">
+                  <span className="text-2xl font-bold font-mono tracking-tight text-foreground group-hover/val:text-foreground">
                     {formatRupees(currentSavedTotal)}
                   </span>
                 </div>
               )}
 
-              <div className="space-y-1.5 pt-1 border-t border-zinc-800/60">
-                <div className="h-1 w-full rounded-full bg-zinc-800 overflow-hidden">
+              <div className="space-y-1.5 pt-1">
+                <div className="h-1 w-full rounded-full bg-accent overflow-hidden">
                   <div
                     className={cn(
                       "h-full transition-all duration-500 rounded-full",
@@ -541,7 +541,7 @@ export default function PolicySettings() {
                     style={{ width: `${Math.max(4, utilizationPercent)}%` }}
                   />
                 </div>
-                <div className="flex items-center justify-between text-[11px] font-mono text-zinc-500">
+                <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground">
                   <span>Spent: {formatRupees(consumedRupees)}</span>
                   <span>{utilizationPercent}%</span>
                 </div>
@@ -549,14 +549,14 @@ export default function PolicySettings() {
             </div>
 
             {/* Stat 3: Hourly Velocity & Checkout Mode */}
-            <div className="group relative flex flex-col justify-between rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-5 shadow-2xl transition-all hover:border-zinc-700/80 space-y-3">
+            <div className="group relative flex flex-col justify-between rounded-xl border border-border bg-card p-5 transition-all hover:border-border space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-zinc-400">Hourly Velocity & Mode</span>
+                <span className="text-xs font-semibold text-muted-foreground">Hourly Velocity & Mode</span>
                 {editingStat !== "velocity" && (
                   <button
                     type="button"
                     onClick={startEditingVelocity}
-                    className="p-1 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                    className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                     title="Click to edit velocity limit"
                   >
                     <Pencil className="h-3.5 w-3.5" />
@@ -579,10 +579,10 @@ export default function PolicySettings() {
                         if (e.key === "Escape") setEditingStat(null);
                       }}
                       placeholder="Unlimited"
-                      className="w-full bg-transparent pb-0.5 font-mono text-2xl font-bold tracking-tight text-white placeholder:text-zinc-600 focus:outline-none border-none"
+                      className="w-full bg-transparent pb-0.5 font-mono text-2xl font-bold tracking-tight text-foreground placeholder:text-muted-foreground focus:outline-none border-none"
                       autoFocus
                     />
-                    <span className="text-sm font-mono font-semibold text-zinc-400 shrink-0">/hr</span>
+                    <span className="text-sm font-mono font-semibold text-muted-foreground shrink-0">/hr</span>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
@@ -602,7 +602,7 @@ export default function PolicySettings() {
                         );
                         setEditingStat(null);
                       }}
-                      className="p-1 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+                      className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
                       title="Cancel (Esc)"
                     >
                       <X className="h-4 w-4" />
@@ -616,12 +616,12 @@ export default function PolicySettings() {
                     className="cursor-pointer group/val"
                     title="Click to edit velocity limit"
                   >
-                    <span className="text-2xl font-bold font-mono tracking-tight text-white group-hover/val:text-zinc-200">
+                    <span className="text-2xl font-bold font-mono tracking-tight text-foreground group-hover/val:text-foreground">
                       {policy.data?.frequencyLimit ? `${policy.data.frequencyLimit}/hr` : "Unlimited"}
                     </span>
                   </div>
 
-                  <div className="inline-flex items-center gap-1 p-0.5 rounded-lg border border-zinc-800 bg-zinc-950/80">
+                  <div className="inline-flex items-center gap-1 p-0.5 rounded-lg border border-border bg-muted">
                     <button
                       type="button"
                       onClick={() => handleToggleApproval(false)}
@@ -629,8 +629,8 @@ export default function PolicySettings() {
                       className={cn(
                         "flex items-center rounded-md px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer",
                         !policy.data?.requireUserApproval
-                          ? "bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-xs"
-                          : "text-zinc-400 hover:text-zinc-200"
+                          ? "bg-emerald-950/80 text-emerald-300 border border-emerald-500/40"
+                          : "text-muted-foreground hover:text-foreground"
                       )}
                       title="Autonomous checkout within limits"
                     >
@@ -644,8 +644,8 @@ export default function PolicySettings() {
                       className={cn(
                         "flex items-center rounded-md px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer",
                         policy.data?.requireUserApproval
-                          ? "bg-amber-950/80 text-amber-300 border border-amber-500/40 shadow-xs"
-                          : "text-zinc-400 hover:text-zinc-200"
+                          ? "bg-amber-950/80 text-amber-300 border border-amber-500/40"
+                          : "text-muted-foreground hover:text-foreground"
                       )}
                       title="Require manual user approval before checkout"
                     >
@@ -655,7 +655,7 @@ export default function PolicySettings() {
                 </div>
               )}
 
-              <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-1 border-t border-zinc-800/60">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1">
                 <span>Rolling 60m rate limit</span>
                 <span className="text-[11px] font-mono">
                   {policy.data?.requireUserApproval ? (
@@ -673,7 +673,7 @@ export default function PolicySettings() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-2">
             {/* Left: Title */}
             <div>
-              <h2 className="text-xl font-bold tracking-tight text-white">
+              <h2 className="text-xl font-bold tracking-tight text-foreground">
                 Merchant Rules
               </h2>
             </div>
@@ -682,26 +682,26 @@ export default function PolicySettings() {
             <div className="flex flex-wrap items-center gap-2.5">
               {/* Search */}
               <div className="relative w-48 sm:w-56">
-                <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-zinc-400" />
+                <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <input
                   type="text"
                   value={tableSearch}
                   onChange={(e) => setTableSearch(e.target.value)}
                   placeholder="Search merchant rules..."
-                  className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900/90 pl-9 pr-3 text-xs text-zinc-200 placeholder:text-zinc-500 focus:border-zinc-700 focus:outline-none focus:ring-1 focus:ring-zinc-700"
+                  className="h-9 w-full rounded-lg border border-border bg-muted pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>
 
               {/* Status Filter Toggle */}
-              <div className="inline-flex h-9 items-center rounded-lg border border-zinc-800 bg-zinc-900/90 p-0.5">
+              <div className="inline-flex h-9 items-center rounded-lg bg-muted p-0.5">
                 <button
                   type="button"
                   onClick={() => setTableFilter("ALL")}
                   className={cn(
                     "inline-flex h-full items-center rounded-md px-3 text-xs font-semibold transition-colors cursor-pointer",
                     tableFilter === "ALL"
-                      ? "bg-zinc-800 text-white shadow-xs"
-                      : "text-zinc-400 hover:text-zinc-200"
+                      ? "bg-card text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
                   )}
                 >
                   All
@@ -712,8 +712,8 @@ export default function PolicySettings() {
                   className={cn(
                     "inline-flex h-full items-center rounded-md px-3 text-xs font-semibold transition-colors cursor-pointer",
                     tableFilter === "blacklist"
-                      ? "bg-zinc-800 text-white shadow-xs"
-                      : "text-zinc-400 hover:text-zinc-200"
+                      ? "bg-card text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
                   )}
                 >
                   Blocked
@@ -724,7 +724,7 @@ export default function PolicySettings() {
               <Button
                 type="button"
                 onClick={() => handleOpenDialog("merchants")}
-                className="h-9 px-3.5 text-xs font-semibold rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 gap-1.5 shadow-sm cursor-pointer"
+                className="h-9 px-3.5 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5 cursor-pointer"
               >
                 <Plus className="h-3.5 w-3.5" />
                 <span>Add Rule</span>
@@ -734,12 +734,12 @@ export default function PolicySettings() {
 
           {/* Rules Content: Board Grid View */}
           {combinedRules.length === 0 ? (
-            <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-zinc-800/80 bg-zinc-900/40 text-center">
-              <Building2 className="mb-2 h-8 w-8 text-zinc-600" />
-              <p className="text-sm font-medium text-zinc-300">
+            <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-border bg-muted/40 text-center">
+              <Building2 className="mb-2 h-8 w-8 text-muted-foreground" />
+              <p className="text-sm font-medium text-foreground">
                 {tableSearch ? `No rules matching "${tableSearch}"` : "No merchant rules configured"}
               </p>
-              <p className="text-xs text-zinc-500 mt-0.5 max-w-sm">
+              <p className="text-xs text-muted-foreground mt-0.5 max-w-sm">
                 All verified store checkouts are permitted under default pre-authorization guardrails.
               </p>
               <Button
@@ -747,7 +747,7 @@ export default function PolicySettings() {
                 variant="outline"
                 size="sm"
                 onClick={() => handleOpenDialog("merchants")}
-                className="mt-3 h-7.5 px-3 text-xs border-zinc-700 text-zinc-300 hover:bg-zinc-800 cursor-pointer"
+                className="mt-3 h-7.5 px-3 text-xs border-border text-foreground hover:bg-accent cursor-pointer"
               >
                 Add First Rule
               </Button>
@@ -758,17 +758,17 @@ export default function PolicySettings() {
                 return (
                   <div
                     key={`${rule.type}-${rule.name}`}
-                    className="group relative flex flex-col justify-between rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-5 shadow-2xl transition-all hover:border-zinc-700/80 space-y-4"
+                    className="group relative flex flex-col justify-between rounded-xl border border-border bg-card p-5 transition-all hover:border-border space-y-4"
                   >
                     {/* Top Row: Merchant Logo, Name & Delete Action */}
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3 min-w-0">
                         <MerchantLogo name={rule.name} className="h-4 w-4 mt-0.5" />
                         <div className="min-w-0 space-y-0.5">
-                          <h3 className="text-base font-bold text-white tracking-tight font-mono capitalize truncate">
+                          <h3 className="text-base font-bold text-foreground tracking-tight font-mono capitalize truncate">
                             {rule.name}
                           </h3>
-                          <p className="text-xs text-zinc-400 font-sans leading-relaxed break-words">
+                          <p className="text-xs text-muted-foreground font-sans leading-relaxed break-words">
                             "Instantly aborts pre-authorization checkout"
                           </p>
                         </div>
@@ -780,7 +780,7 @@ export default function PolicySettings() {
                         size="sm"
                         onClick={() => handleDeleteRuleDirect(rule.name)}
                         disabled={update.isPending}
-                        className="h-7 w-7 p-0 text-zinc-500 hover:text-rose-400 hover:bg-zinc-800/60 rounded-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-rose-400 hover:bg-accent/60 rounded-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
                         title="Remove rule"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -788,16 +788,16 @@ export default function PolicySettings() {
                     </div>
 
                     {/* Policy Details */}
-                    <div className="space-y-2.5 pt-3 border-t border-zinc-800/60 text-xs">
-                      <div className="flex items-center justify-between text-zinc-400">
+                    <div className="space-y-2.5 pt-3 border-t border-border text-xs">
+                      <div className="flex items-center justify-between text-muted-foreground">
                         <span>Enforcement Gate</span>
                         <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/60 px-2.5 py-0.5 text-[11px] font-semibold text-rose-400">
                           Blocked merchant
                         </span>
                       </div>
-                      <div className="flex items-center justify-between text-zinc-400">
+                      <div className="flex items-center justify-between text-muted-foreground">
                         <span>Action Effect</span>
-                        <span className="font-mono text-[11px] text-zinc-300">
+                        <span className="font-mono text-[11px] text-foreground">
                           "ABORT_REJECT"
                         </span>
                       </div>
@@ -824,7 +824,7 @@ export default function PolicySettings() {
                 }
               }}
               placeholder="Merchant name..."
-              className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-zinc-600 focus:outline-none"
+              className="h-10 w-full rounded-lg border border-border bg-muted/60 px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
               autoFocus
             />
             <DialogFooter>
@@ -833,7 +833,7 @@ export default function PolicySettings() {
                 size="sm"
                 onClick={() => handleSaveNewMerchantRule()}
                 disabled={update.isPending || !merchantInput.trim()}
-                className="h-8 px-4 text-xs font-bold rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 shadow-sm cursor-pointer disabled:opacity-50"
+                className="h-8 px-4 text-xs font-bold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer disabled:opacity-50"
               >
                 {update.isPending ? "Adding..." : "Add"}
               </Button>
