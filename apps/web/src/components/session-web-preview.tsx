@@ -115,28 +115,28 @@ export function SessionWebPreview({
   };
 
   return (
-    <div ref={containerRef} className="flex size-full flex-col overflow-hidden bg-[#111111] text-foreground">
+    <div ref={containerRef} className="flex size-full flex-col overflow-hidden bg-card text-foreground">
       <WebPreview defaultUrl={url} className="size-full rounded-none border-0 bg-transparent flex flex-col">
         {/* Navigation / Toolbar with only Fullscreen & Close buttons */}
-        <WebPreviewNavigation className="border-b border-zinc-800/80 bg-zinc-900/90 px-3 py-2 flex items-center justify-between shrink-0">
-          <span className="text-xs font-semibold text-zinc-300">
+        <WebPreviewNavigation className="border-b border-border bg-muted px-3 py-2 flex items-center justify-between shrink-0">
+          <span className="text-xs font-semibold text-foreground">
             {activeView === "video" ? "Session Recording" : "Agent Browser"}
           </span>
 
           <div className="flex items-center gap-1">
             <WebPreviewNavigationButton tooltip="Fullscreen" onClick={handleToggleFullscreen}>
-              <Maximize2Icon className="size-3.5 text-zinc-400" />
+              <Maximize2Icon className="size-3.5 text-muted-foreground" />
             </WebPreviewNavigationButton>
             {onClose && (
               <WebPreviewNavigationButton tooltip="Close panel" onClick={onClose}>
-                <X className="size-3.5 text-zinc-400" />
+                <X className="size-3.5 text-muted-foreground" />
               </WebPreviewNavigationButton>
             )}
           </div>
         </WebPreviewNavigation>
 
         {/* Viewport Frame */}
-        <div className="flex-1 bg-black overflow-hidden flex flex-col justify-center relative min-h-0">
+        <div className="flex-1 bg-muted overflow-hidden flex flex-col justify-center relative min-h-0">
           {activeView === "video" && videoUrl ? (
             <div className="group/video relative w-full h-full flex flex-col items-center justify-center bg-black overflow-hidden select-none">
               <video
@@ -182,11 +182,11 @@ export function SessionWebPreview({
                     step={0.1}
                     value={videoCurrentTime}
                     onChange={handleSeek}
-                    className="w-full h-1.5 bg-zinc-700/80 rounded-lg appearance-none cursor-pointer accent-white hover:accent-purple-400 transition-all"
+                    className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-white hover:accent-purple-400 transition-all"
                   />
                 </div>
 
-                <div className="flex items-center justify-between text-xs text-zinc-300">
+                <div className="flex items-center justify-between text-xs text-foreground">
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -210,9 +210,9 @@ export function SessionWebPreview({
                       className="p-1 rounded hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                       title={isVideoMuted ? "Unmute" : "Mute"}
                     >
-                      {isVideoMuted ? <VolumeX className="h-4 w-4 text-zinc-400" /> : <Volume2 className="h-4 w-4" />}
+                      {isVideoMuted ? <VolumeX className="h-4 w-4 text-muted-foreground" /> : <Volume2 className="h-4 w-4" />}
                     </button>
-                    <span className="font-mono text-[11px] text-zinc-400 pl-1">
+                    <span className="font-mono text-[11px] text-muted-foreground pl-1">
                       {formatVideoTime(videoCurrentTime)} / {formatVideoTime(videoDuration)}
                     </span>
                   </div>
@@ -229,13 +229,13 @@ export function SessionWebPreview({
           ) : isLivePending ? (
             <div className="flex flex-col items-center justify-center p-6 text-center space-y-2">
               <div className="h-6 w-6 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
-              <span className="text-xs text-zinc-400">Streaming live browser feed…</span>
+              <span className="text-xs text-muted-foreground">Streaming live browser feed…</span>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center p-8 text-center space-y-2.5 text-zinc-500">
-              <Globe className="h-8 w-8 text-zinc-700 stroke-[1.5]" />
-              <p className="text-xs font-medium text-zinc-400">Viewport Standby</p>
-              <p className="text-[11px] text-zinc-600 max-w-[220px]">
+            <div className="flex flex-col items-center justify-center p-8 text-center space-y-2.5 text-muted-foreground">
+              <Globe className="h-8 w-8 text-muted-foreground/50 stroke-[1.5]" />
+              <p className="text-xs font-medium text-muted-foreground">Viewport Standby</p>
+              <p className="text-[11px] text-muted-foreground max-w-[220px]">
                 Live browser stream or session recording will appear here when available.
               </p>
             </div>
