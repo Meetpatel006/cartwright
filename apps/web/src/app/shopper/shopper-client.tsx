@@ -1,12 +1,13 @@
 "use client";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@cartwright/ui/components/button";
 import { trpc } from "@/utils/trpc";
 import { cn } from "@cartwright/ui/lib/utils";
+import { SessionWebPreview } from "@/components/session-web-preview";
+import { ApprovalCard, type ApprovalQuestion } from "@/components/approval-card";
 import {
-  Store,
   ShoppingBag,
   ArrowUp,
   Headphones,
@@ -96,6 +97,7 @@ interface ShoppingIntent {
   excludedMerchants: string[];
   constraints: string[];
   store?: string;
+  clarifyingQuestions?: ApprovalQuestion[];
 }
 
 interface ShoppingRunResult {
@@ -173,7 +175,6 @@ interface ShopperPageProps {
 
 export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   const [query, setQuery] = useState("wireless headphones under 5000");
-  const [store, setStore] = useState("raven");
   const [browserMode, setBrowserMode] = useState<"local" | "browserbase">("local");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialSessionId ?? null);
@@ -288,10 +289,117 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   const status: TransactionStatus | undefined = effectivePurchase?.status;
   const paymentSource = effectivePurchase?.paymentSource;
   const merchantResult = approve.data?.merchantResult;
+  const intent = (runResult?.intent ?? loadedSession.data?.intent) as ShoppingIntent | undefined;
   const [payMethod, setPayMethod] = useState<"card" | "wallet">("card");
   const [isBrowserSidebarOpen, setIsBrowserSidebarOpen] = useState(true);
+  const [dismissedClarifications, setDismissedClarifications] = useState<Record<string, boolean>>({});
 
-  // Video session recordings query & playback state
+  const parseIntent = useMutation(trpc.shopping.parseIntent.mutationOptions());
+  const [pendingClarification, setPendingClarification] = useState<{
+    query: string;
+    questions: ApprovalQuestion[];
+    parsedIntent?: ShoppingIntent;
+  } | null>(null);
+
+  const activeSessionKey = runResult?.sessionId || "initial";
+  const clarifyingQuestions: ApprovalQuestion[] = useMemo(() => {
+    return intent?.clarifyingQuestions ?? [];
+  }, [intent]);
+
+  const showClarifications =
+    clarifyingQuestions.length > 0 &&
+    !dismissedClarifications[activeSessionKey] &&
+    !selectData;
+
+  const handleClarificationSubmitted = (answers: Record<number, number[]>) => {
+    const additions: string[] = [];
+    clarifyingQuestions.forEach((q, idx) => {
+      const picked = answers[idx] ?? [];
+      picked.forEach((optIdx) => {
+        const option = q.options[optIdx];
+        if (
+          option &&
+          !option.toLowerCase().includes("no strict") &&
+          !option.toLowerCase().includes("search all") &&
+          !option.toLowerCase().includes("flexible") &&
+          !option.toLowerCase().includes("no preference") &&
+          !option.toLowerCase().includes("any /") &&
+          !option.toLowerCase().includes("any top") &&
+          !option.toLowerCase().includes("any brand")
+        ) {
+          additions.push(option);
+        }
+      });
+    });
+
+    setDismissedClarifications((prev) => ({ ...prev, [activeSessionKey]: true }));
+
+    if (additions.length > 0) {
+      const currentQuery = query.trim() || runResult?.rawQuery || "";
+      const refined = `${currentQuery} ${additions.join(" ")}`.trim();
+      setQuery(refined);
+      run.mutate({
+        sessionId: selectedSessionId ?? runResult?.sessionId,
+        query: refined,
+        browserMode,
+      });
+    }
+  };
+
+  const handlePreSearchClarificationSubmitted = (answers: Record<number, number[]>) => {
+    if (!pendingClarification) return;
+    const additions: string[] = [];
+    pendingClarification.questions.forEach((q, idx) => {
+      const picked = answers[idx] ?? [];
+      picked.forEach((optIdx) => {
+        const option = q.options[optIdx];
+        if (
+          option &&
+          !option.toLowerCase().includes("no strict") &&
+          !option.toLowerCase().includes("search all") &&
+          !option.toLowerCase().includes("flexible") &&
+          !option.toLowerCase().includes("no preference") &&
+          !option.toLowerCase().includes("any /") &&
+          !option.toLowerCase().includes("any top") &&
+          !option.toLowerCase().includes("any brand")
+        ) {
+          additions.push(option);
+        }
+      });
+    });
+
+    const activeId = selectedSessionId ?? runResult?.sessionId;
+    const base = pendingClarification.query;
+    const refined = additions.length > 0 ? `${base} ${additions.join(" ")}`.trim() : base;
+    setQuery(refined);
+    setPendingClarification(null);
+
+    const key = crypto.randomUUID();
+    setIdempotencyKey(key);
+    run.mutate({
+      sessionId: activeId,
+      query: refined,
+      browserMode,
+      idempotencyKey: key,
+    });
+  };
+
+  const handlePreSearchDismiss = () => {
+    if (!pendingClarification) return;
+    const activeId = selectedSessionId ?? runResult?.sessionId;
+    const base = pendingClarification.query;
+    setPendingClarification(null);
+    const key = crypto.randomUUID();
+    setIdempotencyKey(key);
+    run.mutate({
+      sessionId: activeId,
+      query: base,
+      browserMode,
+      idempotencyKey: key,
+    });
+  };
+
+  // Video session recordings query
   const recordingsQuery = useQuery({
     queryKey: ["recordings"],
     queryFn: async () => {
@@ -308,67 +416,72 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
 
   const availableRecordings = recordingsQuery.data?.recordings ?? [];
   const [selectedRecording, setSelectedRecording] = useState<string | null>(null);
-  const [sidebarViewMode, setSidebarViewMode] = useState<"auto" | "live" | "video">("auto");
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
-  const [videoCurrentTime, setVideoCurrentTime] = useState(0);
-  const [videoDuration, setVideoDuration] = useState(0);
-  const [isVideoMuted, setIsVideoMuted] = useState(false);
-
   const activeRecordingFile = selectedRecording ?? availableRecordings[0] ?? null;
   const videoUrl = activeRecordingFile ? `/api/recordings/${encodeURIComponent(activeRecordingFile)}` : null;
 
-  const hasLiveFeed = run.isPending || !!liveFeed.data?.frame;
-  const hasVideo = !!videoUrl;
+  // Real-time activity logs for the WebPreviewConsole
+  const sessionLogs = useMemo(() => {
+    const logs: Array<{ level: "log" | "warn" | "error"; message: string; timestamp: Date }> = [
+      {
+        level: "log",
+        message: "Cartwright Agent initialized",
+        timestamp: new Date(runResult?.createdAt || Date.now() - 30_000),
+      },
+    ];
 
-  const currentView =
-    sidebarViewMode === "live"
-      ? "live"
-      : sidebarViewMode === "video"
-      ? "video"
-      : hasLiveFeed
-      ? "live"
-      : hasVideo
-      ? "video"
-      : "standby";
-
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play().catch(() => {});
-    } else {
-      videoRef.current.pause();
+    if (run.isPending) {
+      logs.push({
+        level: "log",
+        message: `Searching catalogs for query: "${query}"`,
+        timestamp: new Date(Date.now() - 15_000),
+      });
+      logs.push({
+        level: "log",
+        message: "Navigating store and extracting product candidates...",
+        timestamp: new Date(Date.now() - 5_000),
+      });
     }
-  };
 
-  const toggleMute = () => {
-    if (!videoRef.current) return;
-    videoRef.current.muted = !videoRef.current.muted;
-    setIsVideoMuted(videoRef.current.muted);
-  };
-
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const time = parseFloat(e.target.value);
-    if (videoRef.current) {
-      videoRef.current.currentTime = time;
-      setVideoCurrentTime(time);
+    if (runResult?.recommendations?.length) {
+      logs.push({
+        level: "log",
+        message: `Extracted & ranked ${runResult.recommendations.length} matching products`,
+        timestamp: new Date(),
+      });
     }
-  };
 
-  const handleRestart = () => {
-    if (!videoRef.current) return;
-    videoRef.current.currentTime = 0;
-    videoRef.current.play().catch(() => {});
-  };
-
-  const handleFullscreen = () => {
-    if (!videoRef.current) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    } else {
-      videoRef.current.requestFullscreen().catch(() => {});
+    if (run.isError) {
+      logs.push({
+        level: "error",
+        message: run.error instanceof Error ? run.error.message : String(run.error),
+        timestamp: new Date(),
+      });
     }
-  };
+
+    if (selectData) {
+      logs.push({
+        level: "log",
+        message: `Selected product: ${selectData.plan.merchant} (${formatCurrency(selectData.plan.expectedAmountInMinor, selectData.plan.currency)})`,
+        timestamp: new Date(selectData.plan.selectedAt),
+      });
+    }
+
+    if (status === "PAYMENT_SUCCEEDED") {
+      logs.push({
+        level: "log",
+        message: "Payment successfully settled via Razorpay/Merchant UI",
+        timestamp: new Date(),
+      });
+    } else if (status === "PAYMENT_FAILED" || status === "POLICY_BLOCKED") {
+      logs.push({
+        level: "error",
+        message: effectivePurchase?.policyReason || "Transaction blocked or failed",
+        timestamp: new Date(),
+      });
+    }
+
+    return logs;
+  }, [runResult, run.isPending, run.isError, run.error, query, selectData, status, effectivePurchase]);
 
   useEffectLoadRazorpay(setRazorpayReady);
 
@@ -401,13 +514,34 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
     initiatePayment.mutate({ transactionId: effectivePurchase.transactionId });
   };
 
-  const onSubmit = (event: React.FormEvent) => {
+  const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    const cleanQ = query.trim();
+    if (!cleanQ || run.isPending || parseIntent.isPending) return;
+
     select.reset();
     setSelectedSessionId(null);
+    setPendingClarification(null);
+
+    try {
+      const res = await parseIntent.mutateAsync({ query: cleanQ, browserMode });
+      const clarifyingQuestions = (res.intent as ShoppingIntent)?.clarifyingQuestions ?? [];
+
+      if (clarifyingQuestions.length > 0) {
+        setPendingClarification({
+          query: cleanQ,
+          questions: clarifyingQuestions,
+          parsedIntent: res.intent as ShoppingIntent,
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn("Fast intent parse fallback to direct run:", err);
+    }
+
     const key = crypto.randomUUID();
     setIdempotencyKey(key);
-    run.mutate({ query, store: store.trim() || undefined, browserMode, idempotencyKey: key });
+    run.mutate({ query: cleanQ, browserMode, idempotencyKey: key });
   };
 
   const onSelect = (productId: string) => {
@@ -418,8 +552,6 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
       idempotencyKey: crypto.randomUUID(),
     });
   };
-
-  const intent = runResult?.intent;
 
   const sessionState =
     loadedSession.data?.status ??
@@ -446,7 +578,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   ];
 
   const currentSessionId = selectedSessionId ?? runResult?.sessionId ?? loadedSession.data?.sessionId ?? "Pending";
-  const targetStoreDisplay = runResult?.intent?.store || store || (loadedSession.data?.intent as any)?.store || "All Stores";
+  const targetStoreDisplay = runResult?.intent?.store || (loadedSession.data?.intent as any)?.store || "All Stores";
   const discoveredCandidatesCount = loadedSession.data?.candidates?.length ?? runResult?.recommendations?.length ?? 0;
 
   useEffect(() => {
@@ -464,9 +596,6 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
     if (loadedSession.data) {
       if (loadedSession.data.rawQuery) {
         setQuery(loadedSession.data.rawQuery);
-      }
-      if (loadedSession.data.intent && typeof loadedSession.data.intent === "object" && "store" in loadedSession.data.intent) {
-        setStore((loadedSession.data.intent as any).store ?? "");
       }
     }
   }, [loadedSession.data]);
@@ -490,38 +619,41 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
               </p>
             </div>
 
-            {/* Centered AI Prompt Input Container */}
-            <div className="w-full space-y-3">
-              <div className="relative rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-4 shadow-2xl transition-all focus-within:border-zinc-700/80 focus-within:ring-1 focus-within:ring-zinc-700/50 space-y-2.5">
-                <form onSubmit={onSubmit} className="space-y-2.5">
-                  <textarea
-                    rows={2}
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        onSubmit(e);
-                      }
-                    }}
-                    placeholder="Ask Cartwright AI to find, evaluate and purchase anything... (e.g. wireless headphones under 5000 from sony)"
-                    className="w-full resize-none border-none bg-transparent p-0 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-0 leading-relaxed font-normal"
-                  />
+            {pendingClarification ? (
+              <div className="flex flex-col items-center justify-center w-full space-y-4 animate-in fade-in zoom-in-95 duration-200">
+                <ApprovalCard
+                  questions={pendingClarification.questions}
+                  labels={{
+                    skip: "Skip & Search",
+                    continue: "Next",
+                    send: "Search Products",
+                    sentMessage: "Searching with Firecrawl...",
+                    customPlaceholder: "Other specific preference...",
+                  }}
+                  onDismiss={handlePreSearchDismiss}
+                  onSubmitted={handlePreSearchClarificationSubmitted}
+                />
+              </div>
+            ) : (
+              /* Centered AI Prompt Input Container */
+              <div className="w-full space-y-3">
+                <div className="relative rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-4 shadow-2xl transition-all focus-within:border-zinc-700/80 focus-within:ring-1 focus-within:ring-zinc-700/50 space-y-2.5">
+                  <form onSubmit={onSubmit} className="space-y-2.5">
+                    <textarea
+                      rows={2}
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          onSubmit(e);
+                        }
+                      }}
+                      placeholder="Ask Cartwright AI to find, evaluate and purchase anything... (e.g. wireless headphones under 5000 from sony)"
+                      className="w-full resize-none border-none bg-transparent p-0 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-0 leading-relaxed font-normal"
+                    />
 
-                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-300">
-                        <Store className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
-                        <span className="text-zinc-500">Store:</span>
-                        <input
-                          type="text"
-                          value={store}
-                          onChange={(e) => setStore(e.target.value)}
-                          placeholder="raven"
-                          className="bg-transparent border-none p-0 w-20 text-xs font-mono text-zinc-200 focus:outline-none placeholder:text-zinc-600"
-                        />
-                      </div>
-
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
                       <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900/90 p-0.5">
                         <button
                           type="button"
@@ -548,46 +680,47 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                           Cloud
                         </button>
                       </div>
+
+                      <button
+                        type="submit"
+                        disabled={run.isPending || parseIntent.isPending || !query.trim()}
+                        className="h-8 w-8 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 flex items-center justify-center shadow-xs transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                        title={parseIntent.isPending ? "Analyzing…" : run.isPending ? "Searching…" : "Run Agent"}
+                      >
+                        {parseIntent.isPending ? (
+                          <span className="h-3.5 w-3.5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <ArrowUp className="h-4 w-4 stroke-[2.5]" />
+                        )}
+                      </button>
                     </div>
+                  </form>
+                </div>
 
-                    <button
-                      type="submit"
-                      disabled={run.isPending || !query.trim()}
-                      className="h-9 px-4 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      <ArrowUp className="h-3.5 w-3.5" />
-                      <span>{run.isPending ? "Searching…" : "Run Agent"}</span>
-                    </button>
-                  </div>
-                </form>
+                {/* Quick Prompt Suggestion Pills with SVG Icons */}
+                <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+                  <span className="text-zinc-500 font-medium">Try:</span>
+                  {[
+                    { label: "Wireless Headphones on Amazon under ₹5k", icon: Headphones, q: "wireless headphones on amazon under 5000" },
+                    { label: "Espresso Coffee Machine on Raven under ₹15k", icon: Coffee, q: "espresso coffee maker on raven under 15000" },
+                    { label: "Nike Running Shoes under ₹6k", icon: Footprints, q: "running shoes from nike under 6000" },
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => setQuery(item.q)}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800/80 bg-zinc-900/60 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800 transition-colors cursor-pointer shadow-xs"
+                      >
+                        <Icon className="h-3.5 w-3.5 text-zinc-400" />
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-
-              {/* Quick Prompt Suggestion Pills with SVG Icons */}
-              <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
-                <span className="text-zinc-500 font-medium">Try:</span>
-                {[
-                  { label: "Wireless Headphones under ₹5k", icon: Headphones, q: "wireless headphones under 5000", s: "raven" },
-                  { label: "Espresso Coffee Machine", icon: Coffee, q: "espresso coffee maker under 15000", s: "raven" },
-                  { label: "Running Shoes under ₹6k", icon: Footprints, q: "running shoes under 6000", s: "raven" },
-                ].map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onClick={() => {
-                        setQuery(item.q);
-                        setStore(item.s);
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800/80 bg-zinc-900/60 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800 transition-colors cursor-pointer shadow-xs"
-                    >
-                      <Icon className="h-3.5 w-3.5 text-zinc-400" />
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            )}
           </div>
         ) : (
           /* Active Search / Results View with Docked Bottom Input matching max-w-7xl */
@@ -641,6 +774,24 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                 <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-4 text-xs text-rose-300">
                   <span className="font-bold">Search Error: </span>
                   {run.error instanceof Error ? run.error.message : String(run.error)}
+                </div>
+              )}
+
+              {/* Human-in-the-loop Clarifying Questions (ApprovalCard) */}
+              {showClarifications && (
+                <div className="flex justify-center w-full py-2">
+                  <ApprovalCard
+                    questions={clarifyingQuestions}
+                    labels={{
+                      skip: "Skip",
+                      continue: "Next",
+                      send: "Refine Search",
+                      sentMessage: "Refining search with answers...",
+                      customPlaceholder: "Other specific preference...",
+                    }}
+                    onDismiss={() => setDismissedClarifications((prev) => ({ ...prev, [activeSessionKey]: true }))}
+                    onSubmitted={handleClarificationSubmitted}
+                  />
                 </div>
               )}
 
@@ -725,6 +876,24 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
               )}
             </div>
 
+            {/* Human-in-the-loop Pre-Search Clarification ApprovalCard */}
+            {pendingClarification && (
+              <div className="flex justify-center w-full py-2 animate-in fade-in zoom-in-95 duration-200">
+                <ApprovalCard
+                  questions={pendingClarification.questions}
+                  labels={{
+                    skip: "Skip & Search",
+                    continue: "Next",
+                    send: "Search Products",
+                    sentMessage: "Searching with Firecrawl...",
+                    customPlaceholder: "Other specific preference...",
+                  }}
+                  onDismiss={handlePreSearchDismiss}
+                  onSubmitted={handlePreSearchClarificationSubmitted}
+                />
+              </div>
+            )}
+
             {/* Docked Prompt Input Bar at Bottom */}
             <div className="w-full space-y-2 pt-3 shrink-0">
               <div className="relative rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-4 shadow-2xl transition-all focus-within:border-zinc-700/80 focus-within:ring-1 focus-within:ring-zinc-700/50 space-y-2.5">
@@ -744,54 +913,40 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                   />
 
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-300">
-                        <Store className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
-                        <span className="text-zinc-500">Store:</span>
-                        <input
-                          type="text"
-                          value={store}
-                          onChange={(e) => setStore(e.target.value)}
-                          placeholder="raven"
-                          className="bg-transparent border-none p-0 w-20 text-xs font-mono text-zinc-200 focus:outline-none placeholder:text-zinc-600"
-                        />
-                      </div>
-
-                      <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900/90 p-0.5">
-                        <button
-                          type="button"
-                          onClick={() => setBrowserMode("local")}
-                          className={cn(
-                            "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
-                            browserMode === "local"
-                              ? "bg-zinc-800 text-white shadow-xs"
-                              : "text-zinc-400 hover:text-zinc-200"
-                          )}
-                        >
-                          Local Chrome
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setBrowserMode("browserbase")}
-                          className={cn(
-                            "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
-                            browserMode === "browserbase"
-                              ? "bg-zinc-800 text-white shadow-xs"
-                              : "text-zinc-400 hover:text-zinc-200"
-                          )}
-                        >
-                          Cloud
-                        </button>
-                      </div>
+                    <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900/90 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setBrowserMode("local")}
+                        className={cn(
+                          "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
+                          browserMode === "local"
+                            ? "bg-zinc-800 text-white shadow-xs"
+                            : "text-zinc-400 hover:text-zinc-200"
+                        )}
+                      >
+                        Local Chrome
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBrowserMode("browserbase")}
+                        className={cn(
+                          "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
+                          browserMode === "browserbase"
+                            ? "bg-zinc-800 text-white shadow-xs"
+                            : "text-zinc-400 hover:text-zinc-200"
+                        )}
+                      >
+                        Cloud
+                      </button>
                     </div>
 
                     <button
                       type="submit"
                       disabled={run.isPending || !query.trim()}
-                      className="h-9 px-4 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                      className="h-8 w-8 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 flex items-center justify-center shadow-xs transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                      title={run.isPending ? "Searching…" : "Run Agent"}
                     >
-                      <ArrowUp className="h-3.5 w-3.5" />
-                      <span>{run.isPending ? "Searching…" : "Run Agent"}</span>
+                      <ArrowUp className="h-4 w-4 stroke-[2.5]" />
                     </button>
                   </div>
                 </form>
@@ -821,7 +976,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
         )}
       </div>
 
-      {/* Right Sidebar: Dedicated Live Agent Browser Session / Video Recording Player */}
+      {/* Right Sidebar: Dedicated WebPreview using AI Elements */}
       <div
         className={cn(
           "h-full border-l border-zinc-800/80 bg-[#111111] flex flex-col shrink-0 transition-all duration-300 z-10",
@@ -830,226 +985,27 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
             : "w-0 opacity-0 overflow-hidden border-l-0"
         )}
       >
-        {/* Sidebar Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/80 bg-zinc-900/60 shrink-0">
-          <div className="flex items-center gap-2">
-            {currentView === "video" ? (
-              <Video className="h-4 w-4 text-purple-400" />
-            ) : (
-              <Globe className="h-4 w-4 text-zinc-400" />
-            )}
-            <span className="text-xs font-semibold text-zinc-200">
-              {currentView === "video" ? "Session Recording" : "Agent Browser"}
-            </span>
-
-            {/* Mode Switcher pill if both live & video exist */}
-            {hasLiveFeed && hasVideo ? (
-              <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900/90 p-0.5 ml-1">
-                <button
-                  type="button"
-                  onClick={() => setSidebarViewMode("live")}
-                  className={cn(
-                    "px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer",
-                    currentView === "live" ? "bg-zinc-800 text-emerald-400 shadow-xs" : "text-zinc-400 hover:text-zinc-200"
-                  )}
-                >
-                  Live
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSidebarViewMode("video")}
-                  className={cn(
-                    "px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer",
-                    currentView === "video" ? "bg-zinc-800 text-purple-400 shadow-xs" : "text-zinc-400 hover:text-zinc-200"
-                  )}
-                >
-                  Video
-                </button>
-              </div>
-            ) : currentView === "live" && run.isPending ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Live
-              </span>
-            ) : currentView === "video" ? (
-              <span className="inline-flex items-center rounded-full bg-purple-950/80 border border-purple-500/40 px-2 py-0.5 text-[10px] font-semibold text-purple-300">
-                Video Replay
-              </span>
-            ) : (
-              <span className="inline-flex items-center rounded-full bg-zinc-800/80 border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400">
-                Standby
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {availableRecordings.length > 1 && currentView === "video" && (
-              <select
-                value={activeRecordingFile ?? ""}
-                onChange={(e) => setSelectedRecording(e.target.value)}
-                className="bg-zinc-900 border border-zinc-800 rounded px-1.5 py-0.5 text-[10px] font-mono text-zinc-300 focus:outline-none max-w-[120px] truncate"
-              >
-                {availableRecordings.map((rec) => (
-                  <option key={rec} value={rec}>
-                    {rec}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setIsBrowserSidebarOpen(false)}
-              className="p-1 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80 cursor-pointer"
-              title="Close sidebar"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Viewport Frame */}
-        <div className="flex-1 bg-black overflow-hidden flex flex-col justify-center relative min-h-0">
-          {currentView === "video" && videoUrl ? (
-            <div className="group/video relative w-full h-full flex flex-col items-center justify-center bg-black overflow-hidden select-none">
-              {/* Video Element */}
-              <video
-                ref={videoRef}
-                src={videoUrl}
-                playsInline
-                className="w-full h-full object-contain cursor-pointer"
-                onClick={togglePlay}
-                onPlay={() => setIsVideoPlaying(true)}
-                onPause={() => setIsVideoPlaying(false)}
-                onTimeUpdate={() => {
-                  if (videoRef.current) {
-                    setVideoCurrentTime(videoRef.current.currentTime);
-                    setVideoDuration(videoRef.current.duration || 0);
-                  }
-                }}
-                onLoadedMetadata={() => {
-                  if (videoRef.current) {
-                    setVideoDuration(videoRef.current.duration || 0);
-                  }
-                }}
-                onEnded={() => setIsVideoPlaying(false)}
-              />
-
-              {/* Big Center Play/Pause Overlay Button */}
-              {!isVideoPlaying && (
-                <button
-                  type="button"
-                  onClick={togglePlay}
-                  className="absolute inset-0 m-auto h-14 w-14 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center backdrop-blur-xs hover:scale-110 hover:bg-black/80 transition-all cursor-pointer shadow-2xl z-10"
-                  title="Play video"
-                >
-                  <Play className="h-6 w-6 fill-white translate-x-0.5" />
-                </button>
-              )}
-
-              {/* Bottom Custom Video Control Bar */}
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent p-3 space-y-2 opacity-95 transition-opacity z-10">
-                {/* Timeline Scrubber */}
-                <div className="flex items-center gap-2">
-                  <input
-                    type="range"
-                    min={0}
-                    max={videoDuration || 100}
-                    step={0.1}
-                    value={videoCurrentTime}
-                    onChange={handleSeek}
-                    className="w-full h-1.5 bg-zinc-700/80 rounded-lg appearance-none cursor-pointer accent-white hover:accent-purple-400 transition-all"
-                  />
-                </div>
-
-                {/* Control Actions & Time Display */}
-                <div className="flex items-center justify-between text-xs text-zinc-300">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={togglePlay}
-                      className="p-1 rounded hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-                      title={isVideoPlaying ? "Pause (Space)" : "Play (Space)"}
-                    >
-                      {isVideoPlaying ? (
-                        <Pause className="h-4 w-4 fill-current" />
-                      ) : (
-                        <Play className="h-4 w-4 fill-current" />
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleRestart}
-                      className="p-1 rounded hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-                      title="Restart video"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={toggleMute}
-                      className="p-1 rounded hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-                      title={isVideoMuted ? "Unmute" : "Mute"}
-                    >
-                      {isVideoMuted ? (
-                        <VolumeX className="h-4 w-4 text-zinc-400" />
-                      ) : (
-                        <Volume2 className="h-4 w-4" />
-                      )}
-                    </button>
-
-                    <span className="font-mono text-[11px] text-zinc-400 pl-1">
-                      {formatVideoTime(videoCurrentTime)} / {formatVideoTime(videoDuration)}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={handleFullscreen}
-                      className="p-1 rounded hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-                      title="Fullscreen"
-                    >
-                      <Maximize2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : currentView === "live" && liveFeed.data?.frame ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={liveFeed.data.frame}
-              alt="Live view of the agent's browser"
-              className="w-full h-full object-contain"
-            />
-          ) : run.isPending ? (
-            <div className="flex flex-col items-center justify-center p-6 text-center space-y-2">
-              <div className="h-6 w-6 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
-              <span className="text-xs text-zinc-400">Streaming live browser feed…</span>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center p-8 text-center space-y-2.5 text-zinc-500">
-              <Globe className="h-8 w-8 text-zinc-700 stroke-[1.5]" />
-              <p className="text-xs font-medium text-zinc-400">Viewport Standby</p>
-              <p className="text-[11px] text-zinc-600 max-w-[220px]">
-                Live browser stream or session recording will appear here when available.
-              </p>
-            </div>
-          )}
-        </div>
+        <SessionWebPreview
+          url={
+            runResult?.recommendations?.[0]?.product?.productUrl ||
+            (targetStoreDisplay.startsWith("http")
+              ? targetStoreDisplay
+              : targetStoreDisplay.toLowerCase() === "raven"
+              ? "https://ravenscents.com"
+              : `https://${targetStoreDisplay.toLowerCase()}.in`)
+          }
+          liveFrame={liveFeed.data?.frame ?? null}
+          videoUrl={videoUrl}
+          isLivePending={run.isPending}
+          onClose={() => setIsBrowserSidebarOpen(false)}
+          availableRecordings={availableRecordings}
+          selectedRecording={activeRecordingFile}
+          onSelectRecording={setSelectedRecording}
+          logs={sessionLogs}
+        />
       </div>
     </div>
   );
-}
-
-function formatVideoTime(seconds: number) {
-  if (isNaN(seconds) || !isFinite(seconds)) return "0:00";
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 /* -------------------------------------------------------------------------- */
