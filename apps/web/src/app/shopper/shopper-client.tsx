@@ -163,7 +163,7 @@ function availabilityTone(availability: NormalizedProduct["availability"]): stri
     case "out_of_stock":
       return "border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400";
     default:
-      return "border-zinc-500/30 bg-zinc-500/10 text-zinc-500";
+      return "border-border bg-muted/40 text-muted-foreground";
   }
 }
 
@@ -634,13 +634,13 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
           /* Empty / Welcome State: Centered Interface matching max-w-4xl */
           <div className="flex flex-col items-center justify-center flex-1 w-full max-w-4xl mx-auto my-auto space-y-6 overflow-y-auto">
             <div className="text-center space-y-2">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900/80 text-zinc-300 shadow-xl mx-auto mb-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-muted text-foreground mx-auto mb-3">
                 <ShoppingBag className="h-6 w-6" />
               </div>
-              <h2 className="text-2xl font-bold text-white tracking-tight">
+              <h2 className="text-2xl font-bold text-foreground tracking-tight">
                 What can Cartwright Agent find for you?
               </h2>
-              <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
+              <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
                 Describe the item and budget below. The agent will autonomously browse stores, compare prices, and prepare a gated checkout.
               </p>
             </div>
@@ -663,7 +663,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
             ) : (
               /* Centered AI Prompt Input Container */
               <div className="w-full space-y-3">
-                <div className="relative rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-4 shadow-2xl transition-all focus-within:border-zinc-700/80 focus-within:ring-1 focus-within:ring-zinc-700/50 space-y-2.5">
+                <div className="relative rounded-xl border border-border bg-card p-4 transition-all focus-within:border-border focus-within:ring-1 focus-within:ring-border space-y-2.5">
                   <form onSubmit={onSubmit} className="space-y-2.5">
                     <textarea
                       rows={2}
@@ -676,19 +676,19 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                         }
                       }}
                       placeholder="Ask Cartwright AI to find, evaluate and purchase anything... (e.g. wireless headphones under 5000 from sony)"
-                      className="w-full resize-none border-none bg-transparent p-0 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-0 leading-relaxed font-normal"
+                      className="w-full resize-none border-none bg-transparent p-0 text-sm sm:text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0 leading-relaxed font-normal"
                     />
 
                     <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
-                      <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900/90 p-0.5">
+                      <div className="inline-flex rounded-lg border border-border bg-muted p-0.5">
                         <button
                           type="button"
                           onClick={() => setBrowserMode("local")}
                           className={cn(
                             "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
                             browserMode === "local"
-                              ? "bg-zinc-800 text-white shadow-xs"
-                              : "text-zinc-400 hover:text-zinc-200"
+                              ? "bg-primary text-primary-foreground"
+                              : "text-muted-foreground hover:text-foreground"
                           )}
                         >
                           Local Chrome
@@ -699,8 +699,8 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                           className={cn(
                             "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
                             browserMode === "browserbase"
-                              ? "bg-zinc-800 text-white shadow-xs"
-                              : "text-zinc-400 hover:text-zinc-200"
+                              ? "bg-primary text-primary-foreground"
+                              : "text-muted-foreground hover:text-foreground"
                           )}
                         >
                           Cloud
@@ -710,11 +710,11 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                       <button
                         type="submit"
                         disabled={run.isPending || createSession.isPending || !query.trim()}
-                        className="h-8 w-8 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 flex items-center justify-center shadow-xs transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                        className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
                         title={createSession.isPending ? "Creating session…" : run.isPending ? "Searching…" : "Run Agent"}
                       >
                         {createSession.isPending ? (
-                          <span className="h-3.5 w-3.5 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+                          <span className="h-3.5 w-3.5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
                         ) : (
                           <ArrowUp className="h-4 w-4 stroke-[2.5]" />
                         )}
@@ -725,7 +725,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
 
                 {/* Quick Prompt Suggestion Pills with SVG Icons */}
                 <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
-                  <span className="text-zinc-500 font-medium">Try:</span>
+                  <span className="text-muted-foreground font-medium">Try:</span>
                   {[
                     { label: "Wireless Headphones on Amazon under ₹5k", icon: Headphones, q: "wireless headphones on amazon under 5000" },
                     { label: "Espresso Coffee Machine on Raven under ₹15k", icon: Coffee, q: "espresso coffee maker on raven under 15000" },
@@ -737,9 +737,9 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                         key={item.label}
                         type="button"
                         onClick={() => setQuery(item.q)}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800/80 bg-zinc-900/60 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800 transition-colors cursor-pointer shadow-xs"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-border hover:bg-muted transition-colors cursor-pointer"
                       >
-                        <Icon className="h-3.5 w-3.5 text-zinc-400" />
+                        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
                         <span>{item.label}</span>
                       </button>
                     );
@@ -754,13 +754,13 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
             {/* Scrollable Results & Policy Gate */}
             <div className="flex-1 overflow-y-auto space-y-6 pr-1 pb-4">
               {/* Top Header Bar matching Policy & Transactions */}
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-zinc-800/60">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-border">
                 {/* Left: Icon Box + Title */}
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/80 text-zinc-300 shadow-xs shrink-0">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-muted text-foreground shrink-0">
                     <ShoppingBag className="h-4 w-4" />
                   </div>
-                  <h1 className="text-xl font-bold tracking-tight text-white capitalize truncate max-w-lg">
+                  <h1 className="text-xl font-bold tracking-tight text-foreground capitalize truncate max-w-lg">
                     {loadedSession.data?.rawQuery || query || "Shopping Session"}
                   </h1>
                 </div>
@@ -778,7 +778,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                         router.push("/shopper", { scroll: false });
                       }
                     }}
-                    className="h-9 rounded-lg border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+                    className="h-9 rounded-lg border border-border bg-muted px-3 py-1.5 text-xs font-semibold text-foreground hover:border-border hover:bg-muted hover:text-foreground transition-colors cursor-pointer flex items-center gap-1.5"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     <span>New Search</span>
@@ -788,7 +788,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                     <button
                       type="button"
                       onClick={() => setIsBrowserSidebarOpen(true)}
-                      className="h-9 rounded-lg border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+                      className="h-9 rounded-lg border border-border bg-muted px-3 py-1.5 text-xs font-semibold text-foreground hover:border-border hover:bg-muted hover:text-foreground transition-colors cursor-pointer flex items-center gap-1.5"
                     >
                       <PanelRight className="h-3.5 w-3.5" />
                       <span>Browser Session</span>
@@ -800,7 +800,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
 
               {/* Error message */}
               {run.isError && (
-                <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-4 text-xs text-rose-300">
+                <div className="rounded-xl border border-rose-500/40 bg-rose-50 dark:bg-rose-950/30 p-4 text-xs text-rose-700 dark:text-rose-300">
                   <span className="font-bold">Search Error: </span>
                   {run.error instanceof Error ? run.error.message : String(run.error)}
                 </div>
@@ -828,10 +828,10 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
               {runResult && runResult.recommendations.length > 0 && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-base font-bold text-white tracking-tight">
+                    <h2 className="text-base font-bold text-foreground tracking-tight">
                       Discovered Products ({runResult.recommendations.length})
                     </h2>
-                    <span className="text-xs text-zinc-400">
+                    <span className="text-xs text-muted-foreground">
                       Ranked by price match & merchant policy
                     </span>
                   </div>
@@ -859,7 +859,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
               {/* Bottom Section: Unified Purchase & Policy Verification Gate */}
               {selectData && (
                 <div className="space-y-4">
-                  <h2 className="text-base font-bold text-white tracking-tight">
+                  <h2 className="text-base font-bold text-foreground tracking-tight">
                     Purchase Authorization & Policy Gate
                   </h2>
 
@@ -895,10 +895,10 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
 
               {/* Live Navigation Feedback when waiting for recommendations */}
               {run.isPending && (!runResult || runResult.recommendations.length === 0) && (
-                <div className="rounded-2xl border border-zinc-800/80 bg-[#141414] p-8 text-center space-y-3">
+                <div className="rounded-2xl border border-border bg-muted p-8 text-center space-y-3">
                   <div className="h-6 w-6 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin mx-auto" />
-                  <p className="text-sm font-semibold text-zinc-200">Agent Navigating Stores</p>
-                  <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+                  <p className="text-sm font-semibold text-foreground">Agent Navigating Stores</p>
+                  <p className="text-xs text-muted-foreground max-w-sm mx-auto">
                     Searching product catalogs, extracting specs, and applying policy rules. Follow the live session in the right sidebar.
                   </p>
                 </div>
@@ -925,7 +925,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
 
             {/* Docked Prompt Input Bar at Bottom */}
             <div className="w-full space-y-2 pt-3 shrink-0">
-              <div className="relative rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-4 shadow-2xl transition-all focus-within:border-zinc-700/80 focus-within:ring-1 focus-within:ring-zinc-700/50 space-y-2.5">
+              <div className="relative rounded-xl border border-border bg-card p-4 transition-all focus-within:border-border focus-within:ring-1 focus-within:ring-border space-y-2.5">
                 <form onSubmit={onSubmit} className="space-y-2.5">
                   <textarea
                     rows={2}
@@ -938,19 +938,19 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                       }
                     }}
                     placeholder="Refine search or ask Cartwright AI to find something else..."
-                    className="w-full resize-none border-none bg-transparent p-0 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-0 leading-relaxed font-normal"
+                    className="w-full resize-none border-none bg-transparent p-0 text-sm sm:text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-0 leading-relaxed font-normal"
                   />
 
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
-                    <div className="inline-flex rounded-lg border border-zinc-800 bg-zinc-900/90 p-0.5">
+                    <div className="inline-flex rounded-lg border border-border bg-muted p-0.5">
                       <button
                         type="button"
                         onClick={() => setBrowserMode("local")}
                         className={cn(
                           "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
                           browserMode === "local"
-                            ? "bg-zinc-800 text-white shadow-xs"
-                            : "text-zinc-400 hover:text-zinc-200"
+                            ? "bg-muted text-foreground"
+                            : "text-muted-foreground hover:text-foreground"
                         )}
                       >
                         Local Chrome
@@ -961,8 +961,8 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                         className={cn(
                           "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
                           browserMode === "browserbase"
-                            ? "bg-zinc-800 text-white shadow-xs"
-                            : "text-zinc-400 hover:text-zinc-200"
+                            ? "bg-muted text-foreground"
+                            : "text-muted-foreground hover:text-foreground"
                         )}
                       >
                         Cloud
@@ -972,7 +972,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                     <button
                       type="submit"
                       disabled={run.isPending || !query.trim()}
-                      className="h-8 w-8 rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 flex items-center justify-center shadow-xs transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                      className="h-8 w-8 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
                       title={run.isPending ? "Searching…" : "Run Agent"}
                     >
                       <ArrowUp className="h-4 w-4 stroke-[2.5]" />
@@ -984,17 +984,17 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
               {/* Parsed Intent breakdown if active */}
               {intent && (
                 <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="text-zinc-500 font-medium">Parsed Constraints:</span>
-                  <span className="inline-flex items-center rounded-full border border-zinc-700 bg-zinc-800/80 px-2.5 py-0.5 font-mono text-[11px] text-zinc-300">
+                  <span className="text-muted-foreground font-medium">Parsed Constraints:</span>
+                  <span className="inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 font-mono text-[11px] text-foreground">
                     Budget: {intent.budgetInMinor ? formatCurrency(intent.budgetInMinor, intent.currency) : "No limit"}
                   </span>
                   {intent.category && (
-                    <span className="inline-flex items-center rounded-full border border-zinc-700 bg-zinc-800/80 px-2.5 py-0.5 text-[11px] text-zinc-300">
+                    <span className="inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 text-[11px] text-foreground">
                       {intent.category}
                     </span>
                   )}
                   {intent.preferredMerchants.map((m) => (
-                    <span key={m} className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-950/60 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-400">
+                    <span key={m} className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
                       Store: {m}
                     </span>
                   ))}
@@ -1008,7 +1008,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
       {/* Right Sidebar: Dedicated WebPreview using AI Elements */}
       <div
         className={cn(
-          "h-full border-l border-zinc-800/80 bg-[#111111] flex flex-col shrink-0 transition-all duration-300 z-10",
+          "h-full border-l border-border bg-card flex flex-col shrink-0 transition-all duration-300 z-10",
           isBrowserSidebarOpen
             ? "w-80 md:w-96 lg:w-[420px] xl:w-[480px]"
             : "w-0 opacity-0 overflow-hidden border-l-0"
@@ -1056,7 +1056,6 @@ function RecommendationCard({
   isSelected?: boolean;
   onSelect: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const { product } = rec;
   const isTop = rec.isTopRecommendation;
   const ratingScore = product.rating == null ? null : Math.round((product.rating / 5) * 100);
@@ -1064,21 +1063,21 @@ function RecommendationCard({
   return (
     <div
       className={cn(
-        "group relative flex flex-col justify-between rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-5 shadow-2xl transition-all hover:border-zinc-700/80 space-y-4",
+        "group relative flex flex-col justify-between rounded-xl border border-border bg-card p-5 transition-all hover:border-border/80 space-y-4",
         isSelected ? "border-emerald-500/80 ring-1 ring-emerald-500/30" : ""
       )}
     >
       {/* Top row: Store Name + Rank Badge */}
       <div className="flex items-center justify-between">
-        <span className="font-mono text-xs font-semibold text-zinc-400 capitalize">
+        <span className="font-mono text-xs font-semibold text-muted-foreground capitalize">
           {product.merchant}
         </span>
         <span
           className={cn(
             "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold",
             isTop
-              ? "border-emerald-500/40 bg-emerald-950/60 text-emerald-400"
-              : "border-zinc-700 bg-zinc-800/80 text-zinc-300"
+              ? "border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400"
+              : "border-border bg-muted text-foreground"
           )}
         >
           {isTop ? "Top Choice" : `#${rank} Match`}
@@ -1087,60 +1086,39 @@ function RecommendationCard({
 
       {/* Product Title & Price */}
       <div className="space-y-1.5">
-        <h3 className="text-sm font-bold text-white tracking-tight leading-snug line-clamp-2">
+        <h3 className="text-sm font-bold text-foreground tracking-tight leading-snug line-clamp-2">
           {product.canonicalTitle}
         </h3>
-        <div className="text-xl font-bold font-mono tracking-tight text-white pt-1">
+        <div className="text-xl font-bold font-mono tracking-tight text-foreground pt-1">
           {formatCurrency(product.amountInMinor, product.currency)}
         </div>
       </div>
 
       {/* Availability & Confidence */}
-      <div className="space-y-2 pt-3 border-t border-zinc-800/60 text-xs">
-        <div className="flex items-center justify-between text-zinc-400">
+      <div className="space-y-2 pt-3 border-t border-border text-xs">
+        <div className="flex items-center justify-between text-muted-foreground">
           <span>Stock</span>
-          <span className="font-medium text-zinc-200 capitalize">
+          <span className="font-medium text-foreground capitalize">
             {product.availability.replace(/_/g, " ")}
           </span>
         </div>
 
-        <div className="flex items-center justify-between text-zinc-400">
+        <div className="flex items-center justify-between text-muted-foreground">
           <span>Confidence</span>
-          <span className="font-mono text-zinc-300">
+          <span className="font-mono text-foreground">
             {Math.round(product.confidence * 100)}%
           </span>
         </div>
 
-        <div className="flex items-center justify-between text-zinc-400">
+        <div className="flex items-center justify-between text-muted-foreground">
           <span>Verified listing rating</span>
-          <span className="font-mono text-zinc-300">
+          <span className="font-mono text-foreground">
             {ratingScore == null ? "Not available" : `${ratingScore}/100`}
           </span>
         </div>
         {product.rating != null && (
-          <div className="text-[11px] text-zinc-500">
+          <div className="text-[11px] text-muted-foreground">
             {product.rating.toFixed(1)}/5 from {product.reviewCount == null ? "an unknown number of" : product.reviewCount.toLocaleString("en-IN")} observed reviews
-          </div>
-        )}
-
-        {rec.explanation.length > 0 && (
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={() => setOpen(!open)}
-              className="text-[11px] text-zinc-400 hover:text-zinc-200 underline cursor-pointer"
-            >
-              {open ? "Hide details" : "Why this match?"}
-            </button>
-            {open && (
-              <ul className="mt-1.5 space-y-1 text-[11px] text-zinc-400 bg-zinc-950/60 p-2 rounded-lg border border-zinc-800/60">
-                {rec.explanation.map((line, i) => (
-                  <li key={i} className="leading-relaxed">
-                    • {line}
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
         )}
       </div>
@@ -1152,14 +1130,14 @@ function RecommendationCard({
           onClick={onSelect}
           disabled={isLocked || isSelectingThis}
           className={cn(
-            "w-full h-9 text-xs font-semibold rounded-lg shadow-xs transition-colors",
+            "w-full h-9 text-xs font-semibold rounded-lg transition-colors",
             isSelected
-              ? "bg-emerald-950/80 text-emerald-300 border border-emerald-500/50 cursor-default"
+              ? "bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/50 cursor-default"
               : isLocked
-              ? "border border-zinc-800/60 bg-zinc-900/40 text-zinc-500 cursor-not-allowed"
+              ? "border border-border bg-muted/40 text-muted-foreground cursor-not-allowed"
               : isTop
-              ? "bg-white hover:bg-zinc-200 text-zinc-950 font-bold cursor-pointer"
-              : "border border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 hover:border-zinc-700 text-zinc-200 cursor-pointer"
+              ? "bg-primary hover:bg-primary/90 text-primary-foreground font-bold cursor-pointer"
+              : "border border-border bg-muted hover:bg-muted hover:border-border text-foreground cursor-pointer"
           )}
         >
           {isSelected
@@ -1206,24 +1184,24 @@ function TransactionPanel(props: {
     status === "PAYMENT_FAILED";
 
   return (
-    <div className="rounded-xl border border-zinc-800/80 bg-[#161616]/90 p-5 shadow-2xl space-y-4">
+    <div className="rounded-xl border border-border bg-card p-5 space-y-4">
       {/* Header with status badge */}
       <div className="flex items-center justify-between">
         <div className="space-y-0.5">
-          <span className="text-xs font-semibold text-zinc-400">Order Verification</span>
-          <p className="font-mono text-xs text-zinc-500">ID: {purchase.transactionId}</p>
+          <span className="text-xs font-semibold text-muted-foreground">Order Verification</span>
+          <p className="font-mono text-xs text-muted-foreground">ID: {purchase.transactionId}</p>
         </div>
 
         <span
           className={cn(
             "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
             isApproved
-              ? "border-emerald-500/40 bg-emerald-950/60 text-emerald-400"
+              ? "border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400"
               : isPendingApproval
-              ? "border-amber-500/40 bg-amber-950/60 text-amber-400"
+              ? "border-amber-500/40 bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400"
               : isBlocked
-              ? "border-rose-500/40 bg-rose-950/60 text-rose-400"
-              : "border-zinc-700 bg-zinc-800 text-zinc-300"
+              ? "border-rose-500/40 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400"
+              : "border-border bg-muted text-foreground"
           )}
         >
           {status?.replace(/_/g, " ")}
@@ -1231,38 +1209,38 @@ function TransactionPanel(props: {
       </div>
 
       {/* Flat Clean Metrics Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 py-3 border-y border-zinc-800/60">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 py-3 border-y border-border">
         <div className="space-y-1">
-          <span className="text-xs text-zinc-400">Order Amount</span>
-          <p className="font-mono font-bold text-base text-white">
+          <span className="text-xs text-muted-foreground">Order Amount</span>
+          <p className="font-mono font-bold text-base text-foreground">
             {formatCurrency(purchase.amountInMinor, currency)}
           </p>
         </div>
 
         <div className="space-y-1">
-          <span className="text-xs text-zinc-400">Policy Gate</span>
-          <p className="font-semibold text-sm text-zinc-200 capitalize">
+          <span className="text-xs text-muted-foreground">Policy Gate</span>
+          <p className="font-semibold text-sm text-foreground capitalize">
             {purchase.policyDecision.replace(/_/g, " ")}
           </p>
         </div>
 
         <div className="space-y-1">
-          <span className="text-xs text-zinc-400">Spending Cap</span>
-          <p className="font-mono text-sm text-zinc-300">
+          <span className="text-xs text-muted-foreground">Spending Cap</span>
+          <p className="font-mono text-sm text-foreground">
             {formatCurrency(purchase.maxTotalSpending, currency)}
           </p>
         </div>
 
         <div className="space-y-1">
-          <span className="text-xs text-zinc-400">Auto Limit</span>
-          <p className="font-mono text-sm text-zinc-300">
+          <span className="text-xs text-muted-foreground">Auto Limit</span>
+          <p className="font-mono text-sm text-foreground">
             {formatCurrency(purchase.autoApprovalLimitInMinor, currency)}
           </p>
         </div>
       </div>
 
       {purchase.policyReason && (
-        <p className="text-sm sm:text-base font-medium text-zinc-200 leading-relaxed pt-1">
+        <p className="text-sm sm:text-base font-medium text-foreground leading-relaxed pt-1">
           {purchase.policyReason}
         </p>
       )}
@@ -1282,7 +1260,7 @@ function TransactionPanel(props: {
               type="button"
               onClick={props.onApprove}
               disabled={props.approveBusy}
-              className="h-9 px-4 text-xs font-bold rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 shadow-xs cursor-pointer transition-colors"
+              className="h-9 px-4 text-xs font-bold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer transition-colors"
             >
               {props.approveBusy ? "Approving…" : "Approve & Permit Purchase"}
             </button>
@@ -1293,7 +1271,7 @@ function TransactionPanel(props: {
               type="button"
               onClick={props.onApprove}
               disabled={props.approveBusy}
-              className="h-9 px-4 text-xs font-bold rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 shadow-xs cursor-pointer transition-colors"
+              className="h-9 px-4 text-xs font-bold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer transition-colors"
             >
               {props.approveBusy ? "Executing on Merchant…" : "Execute Checkout on Merchant"}
             </button>
@@ -1304,7 +1282,7 @@ function TransactionPanel(props: {
               type="button"
               onClick={props.onStartPayment}
               disabled={props.initiateBusy}
-              className="h-9 px-4 text-xs font-bold rounded-lg bg-white hover:bg-zinc-200 text-zinc-950 shadow-xs cursor-pointer transition-colors"
+              className="h-9 px-4 text-xs font-bold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer transition-colors"
             >
               {props.initiateBusy ? "Creating order…" : "Continue to Razorpay Checkout"}
             </button>
@@ -1315,7 +1293,7 @@ function TransactionPanel(props: {
               type="button"
               onClick={props.onOpenCheckout}
               disabled={props.verifyBusy}
-              className="h-9 px-4 text-xs font-bold rounded-lg bg-emerald-400 hover:bg-emerald-300 text-zinc-950 shadow-xs cursor-pointer transition-colors"
+              className="h-9 px-4 text-xs font-bold rounded-lg bg-emerald-400 hover:bg-emerald-300 text-primary-foreground cursor-pointer transition-colors"
             >
               {props.verifyBusy ? "Verifying payment…" : "Open Razorpay Test Checkout"}
             </button>
@@ -1391,8 +1369,8 @@ function TransactionPanel(props: {
         }
 
         return (
-          <div className="space-y-2 border-t border-zinc-800/60 pt-3">
-            <span className="text-[11px] font-semibold text-zinc-400 block">Execution Pipeline</span>
+          <div className="space-y-2 border-t border-border pt-3">
+            <span className="text-[11px] font-semibold text-muted-foreground block">Execution Pipeline</span>
 
             <div className="flex flex-wrap items-center gap-1.5 pt-1">
               {pipelineSteps.map((step, i) => (
@@ -1401,18 +1379,18 @@ function TransactionPanel(props: {
                     className={cn(
                       "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-mono transition-all",
                       step.state === "completed"
-                        ? "border border-emerald-500/30 bg-emerald-950/30 text-emerald-400 font-medium"
+                        ? "border border-emerald-500/30 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 font-medium"
                         : step.state === "current"
-                        ? "border border-purple-500/50 bg-purple-600 text-white font-bold shadow-xs ring-1 ring-purple-400/40"
+                        ? "border border-purple-500/50 bg-purple-100 dark:bg-purple-600 text-purple-800 dark:text-foreground font-bold ring-1 ring-purple-400/40"
                         : step.state === "blocked"
-                        ? "border border-rose-500/60 bg-rose-950/60 text-rose-300 font-bold shadow-xs"
-                        : "border border-zinc-800/80 bg-zinc-900/40 text-zinc-600 font-normal"
+                        ? "border border-rose-500/60 bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-bold"
+                        : "border border-border bg-muted/40 text-muted-foreground font-normal"
                     )}
                   >
                     {step.state === "completed" && <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />}
                     {step.state === "blocked" && <XCircle className="h-3 w-3 text-rose-400 shrink-0" />}
                     {step.state === "current" && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping shrink-0" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-ping shrink-0" />
                     )}
                     <span>{step.label}</span>
                   </div>
@@ -1424,7 +1402,7 @@ function TransactionPanel(props: {
                           ? "text-emerald-400/70"
                           : step.state === "blocked"
                           ? "text-rose-400/70"
-                          : "text-zinc-500"
+                          : "text-muted-foreground"
                       )}
                     />
                   )}
