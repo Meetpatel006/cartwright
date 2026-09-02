@@ -28,3 +28,6 @@ export const merchantAccountsRelations = relations(merchantAccounts, ({ one }) =
     references: [user.id],
   }),
 }));
+
+export type MerchantAccountRow = typeof merchantAccounts.$inferSelect;
+export type NewMerchantAccountRow = typeof merchantAccounts.$inferInsert;

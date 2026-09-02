@@ -1,6 +1,8 @@
-import { db } from "@cartwright/db";
-import { merchantAccounts } from "@cartwright/db/schema";
-import { eq } from "drizzle-orm";
+import {
+  getMerchantAccountByUserId,
+  insertMerchantAccount,
+  updateMerchantAccount,
+} from "@cartwright/db/repositories/merchant-account.repository";
 import { randomBytes } from "node:crypto";
 
 export function generateOpaqueId(prefix: "mch" | "site"): string {
@@ -26,21 +28,16 @@ export async function getOrCreateMerchantAccount(
   userName?: string | null
 ): Promise<MerchantAccountResult> {
   // 1. Fetch existing saved merchant account from database
-  const existing = await db
-    .select()
-    .from(merchantAccounts)
-    .where(eq(merchantAccounts.userId, userId))
-    .limit(1);
+  const existing = await getMerchantAccountByUserId(userId);
 
-  if (existing.length > 0 && existing[0]) {
-    const acc = existing[0];
-    const siteIds = acc.siteIds && acc.siteIds.length > 0 ? acc.siteIds : [acc.primarySiteId];
+  if (existing) {
+    const siteIds = existing.siteIds && existing.siteIds.length > 0 ? existing.siteIds : [existing.primarySiteId];
     return {
-      merchantId: acc.id,
-      name: acc.name,
-      primarySiteId: acc.primarySiteId,
+      merchantId: existing.id,
+      name: existing.name,
+      primarySiteId: existing.primarySiteId,
       siteIds,
-      createdAt: acc.createdAt,
+      createdAt: existing.createdAt,
     };
   }
 
@@ -50,42 +47,32 @@ export async function getOrCreateMerchantAccount(
   const storeName = userName ? `${userName}'s Store` : "Merchant Store";
 
   try {
-    const [created] = await db
-      .insert(merchantAccounts)
-      .values({
-        id: merchantId,
-        userId,
-        name: storeName,
-        primarySiteId: siteId,
-        siteIds: [siteId],
-      })
-      .returning();
+    const created = await insertMerchantAccount({
+      id: merchantId,
+      userId,
+      name: storeName,
+      primarySiteId: siteId,
+      siteIds: [siteId],
+    });
 
-    if (created) {
-      return {
-        merchantId: created.id,
-        name: created.name,
-        primarySiteId: created.primarySiteId,
-        siteIds: created.siteIds,
-        createdAt: created.createdAt,
-      };
-    }
+    return {
+      merchantId: created.id,
+      name: created.name,
+      primarySiteId: created.primarySiteId,
+      siteIds: created.siteIds,
+      createdAt: created.createdAt,
+    };
   } catch {
     // Handle concurrency/race condition if already inserted
-    const retry = await db
-      .select()
-      .from(merchantAccounts)
-      .where(eq(merchantAccounts.userId, userId))
-      .limit(1);
+    const retry = await getMerchantAccountByUserId(userId);
 
-    if (retry.length > 0 && retry[0]) {
-      const acc = retry[0];
+    if (retry) {
       return {
-        merchantId: acc.id,
-        name: acc.name,
-        primarySiteId: acc.primarySiteId,
-        siteIds: acc.siteIds && acc.siteIds.length > 0 ? acc.siteIds : [acc.primarySiteId],
-        createdAt: acc.createdAt,
+        merchantId: retry.id,
+        name: retry.name,
+        primarySiteId: retry.primarySiteId,
+        siteIds: retry.siteIds && retry.siteIds.length > 0 ? retry.siteIds : [retry.primarySiteId],
+        createdAt: retry.createdAt,
       };
     }
   }
@@ -107,13 +94,10 @@ export async function createMerchantSite(userId: string): Promise<MerchantAccoun
   const newSiteId = generateOpaqueId("site");
   const updatedSiteIds = Array.from(new Set([...account.siteIds, newSiteId]));
 
-  await db
-    .update(merchantAccounts)
-    .set({
-      siteIds: updatedSiteIds,
-      primarySiteId: account.primarySiteId || newSiteId,
-    })
-    .where(eq(merchantAccounts.userId, userId));
+  await updateMerchantAccount(userId, {
+    siteIds: updatedSiteIds,
+    primarySiteId: account.primarySiteId || newSiteId,
+  });
 
   return {
     ...account,
@@ -128,13 +112,10 @@ export async function setPrimarySite(userId: string, siteId: string): Promise<Me
   const account = await getOrCreateMerchantAccount(userId);
   const siteIds = Array.from(new Set([...account.siteIds, siteId]));
 
-  await db
-    .update(merchantAccounts)
-    .set({
-      primarySiteId: siteId,
-      siteIds,
-    })
-    .where(eq(merchantAccounts.userId, userId));
+  await updateMerchantAccount(userId, {
+    primarySiteId: siteId,
+    siteIds,
+  });
 
   return {
     ...account,

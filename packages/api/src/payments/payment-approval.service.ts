@@ -19,7 +19,6 @@ import { evaluatePriceRevalidation } from "./price-revalidation";
 import { evaluateMerchantPaymentOutcome } from "./merchant-payment-outcome";
 import {
   InvalidTransactionStateError,
-  PriceChangedError,
   TransactionNotFoundError,
 } from "../transactions/transaction.errors";
 import { assertTransition } from "../transactions/transaction.state";
@@ -27,6 +26,7 @@ import {
   failTransaction,
   getTransactionForUser,
   loadOwnedTransaction,
+  rejectTransactionPriceChanged,
 } from "../transactions/transaction.service";
 import type { TransactionResult } from "../transactions/transaction.types";
 
@@ -90,26 +90,7 @@ export async function approveTransaction(
     merchantName: transaction.merchantName ?? undefined,
   });
   if (recheck.decision === "blocked") {
-    // Centralised state machine: AWAITING_APPROVAL/APPROVED -> PRICE_CHANGED.
-    assertTransition(transaction.status, "PRICE_CHANGED");
-    const updated = await updateTransaction(transaction.id, {
-      status: "PRICE_CHANGED",
-      failureReason: recheck.reason,
-    });
-    if (updated) {
-      await recordAuditEvent({
-        eventType: "PRICE_CHANGED",
-        transactionId: transaction.id,
-        userId: input.userId,
-        previousState: transaction.status,
-        resultingState: "PRICE_CHANGED",
-        outcome: "FAILURE",
-        failureClassification: "PRICE_CHANGED",
-        reason: recheck.reason,
-      });
-    }
-    await releaseReservation(transaction.id);
-    throw new PriceChangedError(recheck.reason);
+    await rejectTransactionPriceChanged(transaction, recheck.reason);
   }
 
   // Best-effort live merchant price re-confirmation (item 4). The currency-aware
@@ -124,27 +105,8 @@ export async function approveTransaction(
       live,
     });
     if (priceChanged) {
-      // Centralised state machine: AWAITING_APPROVAL/APPROVED -> PRICE_CHANGED.
-      assertTransition(transaction.status, "PRICE_CHANGED");
-      const updated = await updateTransaction(transaction.id, {
-        status: "PRICE_CHANGED",
-        failureReason: reason,
-      });
-      if (updated) {
-      await recordAuditEvent({
-        eventType: "PRICE_CHANGED",
-        transactionId: transaction.id,
-        userId: input.userId,
-        previousState: transaction.status,
-        resultingState: "PRICE_CHANGED",
-        outcome: "FAILURE",
-        failureClassification: "PRICE_CHANGED",
-        reason,
-      });
+      await rejectTransactionPriceChanged(transaction, reason!);
     }
-    await releaseReservation(transaction.id);
-    throw new PriceChangedError(reason!);
-  }
   }
 
   if (fromAwaiting) {
