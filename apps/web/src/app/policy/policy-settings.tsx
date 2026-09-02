@@ -4,10 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Building2,
-  Store,
-  Save,
   Plus,
-  SlidersHorizontal,
   Pencil,
   Trash2,
   Search,
@@ -25,136 +22,7 @@ import {
 } from "@cartwright/ui/components/dialog";
 import { cn } from "@cartwright/ui/lib/utils";
 import { trpc } from "@/utils/trpc";
-
-function formatRupees(amountInMajor: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 2,
-  }).format(amountInMajor);
-}
-
-function NikeIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M24 7.8L6.442 15.276c-1.456.616-2.679.925-3.668.925-1.12 0-1.933-.392-2.437-1.177-.317-.504-.41-1.143-.28-1.918.13-.775.476-1.6 1.036-2.478.467-.71 1.232-1.643 2.297-2.8a6.122 6.122 0 00-.784 1.848c-.28 1.195-.028 2.072.756 2.632.373.261.886.392 1.54.392.522 0 1.11-.084 1.764-.252L24 7.8z" />
-    </svg>
-  );
-}
-
-function AmazonIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M.045 18.02c.072-.116.187-.124.348-.022 3.636 2.11 7.594 3.166 11.87 3.166 2.852 0 5.668-.533 8.447-1.595l.315-.14c.138-.06.234-.1.293-.13.226-.088.39-.046.525.13.12.174.09.336-.12.48-.256.19-.6.41-1.006.654-1.244.743-2.64 1.316-4.185 1.726a17.617 17.617 0 01-10.951-.577 17.88 17.88 0 01-5.43-3.35c-.1-.074-.151-.15-.151-.22 0-.047.021-.09.051-.13zm6.565-6.218c0-1.005.247-1.863.743-2.577.495-.71 1.17-1.25 2.04-1.615.796-.335 1.756-.575 2.912-.72.39-.046 1.033-.103 1.92-.174v-.37c0-.93-.105-1.558-.3-1.875-.302-.43-.78-.65-1.44-.65h-.182c-.48.046-.896.196-1.246.46-.35.27-.575.63-.675 1.096-.06.3-.206.465-.435.51l-2.52-.315c-.248-.06-.372-.18-.372-.39 0-.046.007-.09.022-.15.247-1.29.855-2.25 1.82-2.88.976-.616 2.1-.975 3.39-1.05h.54c1.65 0 2.957.434 3.888 1.29.135.15.27.3.405.48.12.165.224.314.283.45.075.134.15.33.195.57.06.254.105.42.135.51.03.104.062.3.076.615.01.313.02.493.02.553v5.28c0 .376.06.72.165 1.036.105.313.21.54.315.674l.51.674c.09.136.136.256.136.36 0 .12-.06.226-.18.314-1.2 1.05-1.86 1.62-1.963 1.71-.165.135-.375.15-.63.045a6.062 6.062 0 01-.526-.496l-.31-.347a9.391 9.391 0 01-.317-.42l-.3-.435c-.81.886-1.603 1.44-2.4 1.665-.494.15-1.093.227-1.83.227-1.11 0-2.04-.343-2.76-1.034-.72-.69-1.08-1.665-1.08-2.94l-.05-.076zm3.753-.438c0 .566.14 1.02.425 1.364.285.34.675.512 1.155.512.045 0 .106-.007.195-.02.09-.016.134-.023.166-.023.614-.16 1.08-.553 1.424-1.178.165-.28.285-.58.36-.91.09-.32.12-.59.135-.8.015-.195.015-.54.015-1.005v-.54c-.84 0-1.484.06-1.92.18-1.275.36-1.92 1.17-1.92 2.43l-.035-.02zm9.162 7.027c.03-.06.075-.11.132-.17.362-.243.714-.41 1.05-.5a8.094 8.094 0 011.612-.24c.14-.012.28 0 .41.03.65.06 1.05.168 1.172.33.063.09.099.228.099.39v.15c0 .51-.149 1.11-.424 1.8-.278.69-.664 1.248-1.156 1.68-.073.06-.14.09-.197.09-.03 0-.06 0-.09-.012-.09-.044-.107-.12-.064-.24.54-1.26.806-2.143.806-2.64 0-.15-.03-.27-.087-.344-.145-.166-.55-.257-1.224-.257-.243 0-.533.016-.87.046-.363.045-.7.09-1 .135-.09 0-.148-.014-.18-.044-.03-.03-.036-.047-.02-.077 0-.017.006-.03.02-.063v-.06z" />
-    </svg>
-  );
-}
-
-function FlipkartIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M3.833 1.333a.993.993 0 0 0-.333.061V1c0-.551.449-1 1-1h14.667c.551 0 1 .449 1 1v.333H3.833zm17.334 2.334H2.833c-.551 0-1 .449-1 1V23c0 .551.449 1 1 1h7.3l1.098-5.645h-2.24c-.051 0-5.158-.241-5.158-.241l4.639-.327-.078-.366-1.978-.285 1.882-.158-.124-.449-3.075-.467s3.341-.373 3.392-.373h3.232l.247-1.331c.289-1.616.945-2.807 1.973-3.693 1.033-.892 2.344-1.332 3.937-1.332.643 0 1.053.151 1.231.463.118.186.201.516.279.859.074.352.14.671.095.903-.057.345-.461.465-1.197.465h-.253c-1.327 0-2.134.763-2.405 2.31l-.243 1.355h1.54c.574 0 .781.402.622 1.306-.17.941-.539 1.36-1.111 1.36H14.9L13.804 24h7.362c.551 0 1-.449 1-1V4.667a1 1 0 0 0-.999-1zM20.5 2.333A.334.334 0 0 0 20.167 2H3.833a.334.334 0 0 0-.333.333V3h17v-.667z" />
-    </svg>
-  );
-}
-
-function AppleIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 4.54c.66-.82 1.11-1.96.99-3.09-1 .04-2.18.66-2.88 1.48-.61.71-1.15 1.87-.99 2.97 1.11.08 2.22-.54 2.88-1.36z" />
-    </svg>
-  );
-}
-
-function AdidasIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="m24 19.535-8.697-15.07-4.659 2.687 7.145 12.383Zm-8.287 0L9.969 9.59 5.31 12.277l4.192 7.258ZM4.658 14.723l-2.029 1.171L0 19.535h4.658Z" />
-    </svg>
-  );
-}
-
-function ShopifyIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M15.337 23.979l7.216-1.561s-2.604-17.613-2.625-17.73c-.018-.116-.114-.192-.211-.192s-1.929-.136-1.929-.136-1.275-1.274-1.439-1.411c-.045-.037-.075-.057-.121-.074l-.914 21.104h.023zM11.71 11.305s-.81-.424-1.774-.424c-1.447 0-1.504.906-1.504 1.141 0 1.232 3.24 1.715 3.24 4.629 0 2.295-1.44 3.76-3.406 3.76-2.354 0-3.54-1.465-3.54-1.465l.646-2.086s1.245 1.066 2.28 1.066c.675 0 .975-.545.975-.932 0-1.619-2.654-1.694-2.654-4.359-.034-2.237 1.571-4.416 4.827-4.416 1.257 0 1.875.361 1.875.361l-.945 2.715-.02.01zM11.17.83c.136 0 .271.038.405.135-.984.465-2.064 1.639-2.508 3.992-.656.213-1.293.405-1.889.578C7.697 3.75 8.951.84 11.17.84V.83zm1.235 2.949v.135c-.754.232-1.583.484-2.394.736.466-1.777 1.333-2.645 2.085-2.971.193.501.309 1.176.309 2.1zm.539-2.234c.694.074 1.141.867 1.429 1.755-.349.114-.735.231-1.158.366v-.252c0-.752-.096-1.371-.271-1.871v.002zm2.992 1.289c-.02 0-.06.021-.078.021s-.289.075-.714.21c-.423-1.233-1.176-2.37-2.508-2.37h-.115C12.135.209 11.669 0 11.265 0 8.159 0 6.675 3.877 6.21 5.846c-1.194.365-2.063.636-2.16.674-.675.213-.694.232-.772.87-.075.462-1.83 14.063-1.83 14.063L15.009 24l.927-21.166z" />
-    </svg>
-  );
-}
-
-function SonyIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M8.55 9.89c.92 0 1.66.23 2.22.74.39.35.6.85.6 1.37a1.9 1.9 0 0 1-.6 1.37c-.52.49-1.34.74-2.22.74-.87 0-1.68-.25-2.21-.74a1.9 1.9 0 0 1-.6-1.37c0-.52.21-1.02.6-1.37.5-.45 1.39-.74 2.21-.74zm.01 3.67c.46 0 .89-.16 1.19-.46.3-.3.43-.66.43-1.1 0-.43-.15-.82-.43-1.1-.3-.3-.74-.46-1.19-.46s-.9.16-1.19.46c-.29.28-.44.68-.44 1.1 0 .41.15.8.44 1.1.3.3.73.46 1.19.46zm-4.84-1.97c.16.04.31.09.46.16.14.07.27.16.38.26.2.2.31.48.31.77 0 .31-.13.58-.38.78-.21.17-.45.29-.71.35a3.72 3.72 0 0 1-1.19.17c-.35 0-.55-.04-.82-.1l-.07-.01a3.02 3.02 0 0 1-.86-.28.07.07 0 0 0-.04-.01c-.05 0-.08.04-.08.08v.2H.12v-1.48h.53c.03.15.08.29.13.42.22.26.44.36.66.44.37.12.75.18 1.14.2.55 0 .87-.14.94-.17.07-.02.32-.11.32-.39 0-.27-.24-.33-.39-.37l-.02-.01c-.17-.04-.56-.08-.99-.13l-.15-.02c-.49-.05-.97-.13-1.2-.17-.5-.11-.7-.29-.82-.41A1.02 1.02 0 0 1 .03 10.9c0-.31.14-.6.38-.79.23-.19.51-.31.8-.37.37-.08.76-.12 1.15-.12.3 0 .46.03.7.07.24.05.47.12.69.21.05.02.09.02.12 0 .04-.03.06-.07.06-.11v-.15h.57v1.44h-.47a.78.78 0 0 0-.13-.39c-.19-.24-.38-.34-.58-.4a3.14 3.14 0 0 0-.96-.16c-.46 0-.74.1-.81.12-.08.03-.35.12-.35.39 0 .23.18.3.3.34.13.04.45.08.79.11l.16.02c.51.05 1.03.12 1.28.18.49.12.69.3.8.41l.01.01zM18.89 9.9h.65l3.29 4.88v-4.88h1.05v5.86h-.66l-3.29-4.88v4.88h-1.04V9.9zm-4.71 0h1.16l1.79 3.09 1.77-3.09h1.17l-2.4 4.02v1.84h-1.07v-1.84l-2.42-4.02z" />
-    </svg>
-  );
-}
-
-function MerchantLogo({ name, className = "h-4 w-4" }: { name: string; className?: string }) {
-  const text = name.toLowerCase().trim();
-
-  if (text.includes("nike") || text.includes("jordan")) {
-    return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
-        <NikeIcon className={className} />
-      </span>
-    );
-  }
-  if (text.includes("amazon") || text.includes("amzn") || text.includes("prime")) {
-    return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
-        <AmazonIcon className={className} />
-      </span>
-    );
-  }
-  if (text.includes("flipkart")) {
-    return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
-        <FlipkartIcon className={className} />
-      </span>
-    );
-  }
-  if (text.includes("apple") || text.includes("iphone") || text.includes("macbook")) {
-    return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
-        <AppleIcon className={className} />
-      </span>
-    );
-  }
-  if (text.includes("adidas") || text.includes("yeezy") || text.includes("samba")) {
-    return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
-        <AdidasIcon className={className} />
-      </span>
-    );
-  }
-  if (text.includes("shopify")) {
-    return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
-        <ShopifyIcon className={className} />
-      </span>
-    );
-  }
-  if (text.includes("sony") || text.includes("playstation") || text.includes("ps5")) {
-    return (
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
-        <SonyIcon className={className} />
-      </span>
-    );
-  }
-
-  return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground">
-      <Store className={className} />
-    </span>
-  );
-}
-
-function parseInputToRupees(val: string): number {
-  const clean = val.replace(/[^0-9.]/g, "");
-  const num = parseFloat(clean);
-  return isNaN(num) ? 0 : num;
-}
+import { formatRupees, MerchantLogo, parseInputToRupees } from "@/components/policy/policy-helpers";
 
 type ActiveDialog = "merchants" | null;
 type EditingStat = "singleTx" | "lifetime" | "velocity" | null;
@@ -217,8 +85,6 @@ export default function PolicySettings() {
     })
   );
 
-  const numMaxTx = parseInputToRupees(maxTxRupees);
-  const numMaxTotal = parseInputToRupees(maxTotalRupees);
   const currentSavedTx = (policy.data?.maxTransactionAmount ?? 0) / 100;
   const currentSavedTotal = (policy.data?.maxTotalSpending ?? 0) / 100;
   const consumedRupees = (policy.data?.consumedInMinor ?? 0) / 100;
@@ -669,177 +535,177 @@ export default function PolicySettings() {
           </div>
         )}
 
-          {/* Merchant Rules Section Header */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-2">
-            {/* Left: Title */}
-            <div>
-              <h2 className="text-xl font-bold tracking-tight text-foreground">
-                Merchant Rules
-              </h2>
-            </div>
-
-            {/* Right: Search + Filter + View Toggle (List / Board) + Add Rule */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              {/* Search */}
-              <div className="relative w-48 sm:w-56">
-                <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                <input
-                  type="text"
-                  value={tableSearch}
-                  onChange={(e) => setTableSearch(e.target.value)}
-                  placeholder="Search merchant rules..."
-                  className="h-9 w-full rounded-lg border border-border bg-muted pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-              </div>
-
-              {/* Status Filter Toggle */}
-              <div className="inline-flex h-9 items-center rounded-lg bg-muted p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setTableFilter("ALL")}
-                  className={cn(
-                    "inline-flex h-full items-center rounded-md px-3 text-xs font-semibold transition-colors cursor-pointer",
-                    tableFilter === "ALL"
-                      ? "bg-card text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTableFilter("blacklist")}
-                  className={cn(
-                    "inline-flex h-full items-center rounded-md px-3 text-xs font-semibold transition-colors cursor-pointer",
-                    tableFilter === "blacklist"
-                      ? "bg-card text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  Blocked
-                </button>
-              </div>
-
-              {/* Add Rule Button */}
-              <Button
-                type="button"
-                onClick={() => handleOpenDialog("merchants")}
-                className="h-9 px-3.5 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5 cursor-pointer"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Add Rule</span>
-              </Button>
-            </div>
+        {/* Merchant Rules Section Header */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-2">
+          {/* Left: Title */}
+          <div>
+            <h2 className="text-xl font-bold tracking-tight text-foreground">
+              Merchant Rules
+            </h2>
           </div>
 
-          {/* Rules Content: Board Grid View */}
-          {combinedRules.length === 0 ? (
-            <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-border bg-muted/40 text-center">
-              <Building2 className="mb-2 h-8 w-8 text-muted-foreground" />
-              <p className="text-sm font-medium text-foreground">
-                {tableSearch ? `No rules matching "${tableSearch}"` : "No merchant rules configured"}
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5 max-w-sm">
-                All verified store checkouts are permitted under default pre-authorization guardrails.
-              </p>
-              <Button
+          {/* Right: Search + Filter + View Toggle (List / Board) + Add Rule */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Search */}
+            <div className="relative w-48 sm:w-56">
+              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                value={tableSearch}
+                onChange={(e) => setTableSearch(e.target.value)}
+                placeholder="Search merchant rules..."
+                className="h-9 w-full rounded-lg border border-border bg-muted pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+
+            {/* Status Filter Toggle */}
+            <div className="inline-flex h-9 items-center rounded-lg bg-muted p-0.5">
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => handleOpenDialog("merchants")}
-                className="mt-3 h-7.5 px-3 text-xs border-border text-foreground hover:bg-accent cursor-pointer"
+                onClick={() => setTableFilter("ALL")}
+                className={cn(
+                  "inline-flex h-full items-center rounded-md px-3 text-xs font-semibold transition-colors cursor-pointer",
+                  tableFilter === "ALL"
+                    ? "bg-card text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
               >
-                Add First Rule
-              </Button>
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setTableFilter("blacklist")}
+                className={cn(
+                  "inline-flex h-full items-center rounded-md px-3 text-xs font-semibold transition-colors cursor-pointer",
+                  tableFilter === "blacklist"
+                    ? "bg-card text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Blocked
+              </button>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {combinedRules.map((rule) => {
-                return (
-                  <div
-                    key={`${rule.type}-${rule.name}`}
-                    className="group relative flex flex-col justify-between rounded-xl border border-border bg-card p-5 transition-all hover:border-border space-y-4"
-                  >
-                    {/* Top Row: Merchant Logo, Name & Delete Action */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <MerchantLogo name={rule.name} className="h-4 w-4 mt-0.5" />
-                        <div className="min-w-0 space-y-0.5">
-                          <h3 className="text-base font-bold text-foreground tracking-tight font-mono capitalize truncate">
-                            {rule.name}
-                          </h3>
-                          <p className="text-xs text-muted-foreground font-sans leading-relaxed break-words">
-                            "Instantly aborts pre-authorization checkout"
-                          </p>
-                        </div>
-                      </div>
 
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteRuleDirect(rule.name)}
-                        disabled={update.isPending}
-                        className="h-7 w-7 p-0 text-muted-foreground hover:text-rose-400 hover:bg-accent/60 rounded-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
-                        title="Remove rule"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-
-                    {/* Policy Details */}
-                    <div className="space-y-2.5 pt-3 border-t border-border text-xs">
-                      <div className="flex items-center justify-between text-muted-foreground">
-                        <span>Enforcement Gate</span>
-                        <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/60 px-2.5 py-0.5 text-[11px] font-semibold text-rose-400">
-                          Blocked merchant
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-muted-foreground">
-                        <span>Action Effect</span>
-                        <span className="font-mono text-[11px] text-foreground">
-                          "ABORT_REJECT"
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+            {/* Add Rule Button */}
+            <Button
+              type="button"
+              onClick={() => handleOpenDialog("merchants")}
+              className="h-9 px-3.5 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5 cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Add Rule</span>
+            </Button>
+          </div>
         </div>
 
-        {/* Add Merchant Rule Dialog */}
-        <Dialog open={activeDialog === "merchants"} onOpenChange={(open) => !open && handleCloseDialog()}>
-          <DialogContent className="sm:max-w-sm" showCloseButton={true}>
-            <DialogTitle>Add Merchant Rule</DialogTitle>
-            <input
-              type="text"
-              value={merchantInput}
-              onChange={(e) => setMerchantInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleSaveNewMerchantRule();
-                }
-              }}
-              placeholder="Merchant name..."
-              className="h-10 w-full rounded-lg border border-border bg-muted/60 px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
-              autoFocus
-            />
-            <DialogFooter>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => handleSaveNewMerchantRule()}
-                disabled={update.isPending || !merchantInput.trim()}
-                className="h-8 px-4 text-xs font-bold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer disabled:opacity-50"
-              >
-                {update.isPending ? "Adding..." : "Add"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {/* Rules Content: Board Grid View */}
+        {combinedRules.length === 0 ? (
+          <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-border bg-muted/40 text-center">
+            <Building2 className="mb-2 h-8 w-8 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">
+              {tableSearch ? `No rules matching "${tableSearch}"` : "No merchant rules configured"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5 max-w-sm">
+              All verified store checkouts are permitted under default pre-authorization guardrails.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleOpenDialog("merchants")}
+              className="mt-3 h-7.5 px-3 text-xs border-border text-foreground hover:bg-accent cursor-pointer"
+            >
+              Add First Rule
+            </Button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {combinedRules.map((rule) => {
+              return (
+                <div
+                  key={`${rule.type}-${rule.name}`}
+                  className="group relative flex flex-col justify-between rounded-xl border border-border bg-card p-5 transition-all hover:border-border space-y-4"
+                >
+                  {/* Top Row: Merchant Logo, Name & Delete Action */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <MerchantLogo name={rule.name} className="h-4 w-4 mt-0.5" />
+                      <div className="min-w-0 space-y-0.5">
+                        <h3 className="text-base font-bold text-foreground tracking-tight font-mono capitalize truncate">
+                          {rule.name}
+                        </h3>
+                        <p className="text-xs text-muted-foreground font-sans leading-relaxed break-words">
+                          "Instantly aborts pre-authorization checkout"
+                        </p>
+                      </div>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeleteRuleDirect(rule.name)}
+                      disabled={update.isPending}
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-rose-400 hover:bg-accent/60 rounded-md opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+                      title="Remove rule"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+
+                  {/* Policy Details */}
+                  <div className="space-y-2.5 pt-3 border-t border-border text-xs">
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span>Enforcement Gate</span>
+                      <span className="inline-flex items-center rounded-full border border-rose-500/40 bg-rose-950/60 px-2.5 py-0.5 text-[11px] font-semibold text-rose-400">
+                        Blocked merchant
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span>Action Effect</span>
+                      <span className="font-mono text-[11px] text-foreground">
+                        "ABORT_REJECT"
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      {/* Add Merchant Rule Dialog */}
+      <Dialog open={activeDialog === "merchants"} onOpenChange={(open) => !open && handleCloseDialog()}>
+        <DialogContent className="sm:max-w-sm" showCloseButton={true}>
+          <DialogTitle>Add Merchant Rule</DialogTitle>
+          <input
+            type="text"
+            value={merchantInput}
+            onChange={(e) => setMerchantInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleSaveNewMerchantRule();
+              }
+            }}
+            placeholder="Merchant name..."
+            className="h-10 w-full rounded-lg border border-border bg-muted/60 px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => handleSaveNewMerchantRule()}
+              disabled={update.isPending || !merchantInput.trim()}
+              className="h-8 px-4 text-xs font-bold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer disabled:opacity-50"
+            >
+              {update.isPending ? "Adding..." : "Add"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
