@@ -61,4 +61,4 @@ packages/db/src/migrations/
 todo/
 scripts/
 data/
-.agents/
+opencode.jsonc
