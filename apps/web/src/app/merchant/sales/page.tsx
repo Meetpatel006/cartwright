@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   Search,
   DollarSign,
@@ -12,7 +11,6 @@ import {
   Store,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   ArrowUpRight,
   Package,
   IndianRupee,
@@ -22,97 +20,30 @@ import {
   Receipt,
 } from "lucide-react";
 import { cn } from "@cartwright/ui/lib/utils";
-import { trpc } from "@/utils/trpc";
+import { useMerchantContext } from "@/components/merchant/use-merchant-context";
+import { FormattedAmount } from "@/components/merchant/formatted-amount";
+import { SelectMenu } from "@cartwright/ui/components/select-menu";
 import { BarChartStacked } from "@/components/bar-chart-stacked";
+import { fetchTrackerStats } from "@/utils/tracker-api";
+import { Button } from "@cartwright/ui/components/button";
+import { Card } from "@cartwright/ui/components/card";
+import { Badge } from "@cartwright/ui/components/badge";
+import { Input } from "@cartwright/ui/components/input";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-} from "@cartwright/ui/components/dropdown-menu";
-
-function FormattedAmount({ amount, className }: { amount: number; className?: string }) {
-  const parts = new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).formatToParts(amount);
-
-  const symbol = parts.find((p) => p.type === "currency")?.value || "₹";
-  const num = parts.filter((p) => p.type !== "currency").map((p) => p.value).join("").trim();
-
-  return (
-    <span suppressHydrationWarning className={cn("font-mono whitespace-nowrap", className)}>
-      <span className="text-muted-foreground font-normal mr-0.5">{symbol}</span>
-      <span className="font-bold text-foreground">{num}</span>
-    </span>
-  );
-}
-
-function CustomSelect({
-  value,
-  onChange,
-  options,
-  placeholder,
-  className,
-  size = "md",
-}: {
-  value: string | number;
-  onChange: (val: string) => void;
-  options: Array<{ value: string | number; label: string }>;
-  placeholder?: string;
-  className?: string;
-  size?: "sm" | "md";
-}) {
-  const selected = options.find((o) => String(o.value) === String(value));
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <button
-            type="button"
-            className={cn(
-              "inline-flex w-auto items-center justify-between gap-2 rounded-lg border border-border bg-card text-xs font-medium text-foreground shadow-xs transition-colors hover:bg-muted/80 focus:border-ring focus:outline-none cursor-pointer whitespace-nowrap shrink-0",
-              size === "sm" ? "h-7 px-2.5" : "h-9 px-3",
-              className
-            )}
-          >
-            <span>{selected ? selected.label : placeholder}</span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          </button>
-        }
-      />
-      <DropdownMenuContent
-        align="start"
-        sideOffset={4}
-        className="z-50 w-max min-w-full rounded-xl border border-border bg-popover p-1 shadow-2xl text-xs text-popover-foreground backdrop-blur-md"
-      >
-        <DropdownMenuGroup>
-          {options.map((opt) => {
-            const isSelected = String(opt.value) === String(value);
-            return (
-              <DropdownMenuItem
-                key={String(opt.value)}
-                onClick={() => onChange(String(opt.value))}
-                className={cn(
-                  "flex items-center rounded-lg px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors whitespace-nowrap",
-                  isSelected
-                    ? "bg-muted text-foreground font-semibold"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                )}
-              >
-                <span>{opt.label}</span>
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@cartwright/ui/components/empty";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@cartwright/ui/components/table";
 // Payment Channel Radar / Distribution
 interface ChannelDimension {
   key: string;
@@ -128,19 +59,22 @@ function PaymentChannelRadar({
 }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
-  const dimensions: ChannelDimension[] = [
-    { key: "upi", label: "Instant UPI", aiShare: 96, humanShare: 78 },
-    { key: "card", label: "Credit / Debit Cards", aiShare: 88, humanShare: 64 },
-    { key: "netbanking", label: "Net Banking", aiShare: 72, humanShare: 45 },
-    { key: "wallets", label: "Digital Wallets", aiShare: 84, humanShare: 58 },
-    { key: "recurring", label: "Auto-Debit / Mandates", aiShare: 92, humanShare: 32 },
-    { key: "discounts", label: "Coupon Optimization", aiShare: 98, humanShare: 62 },
-  ];
+  // Channel-level scores are not part of the telemetry API response yet.
+  const dimensions: ChannelDimension[] = [];
 
   const cx = 190;
   const cy = 125;
   const radius = 75;
   const numSides = dimensions.length;
+
+  if (dimensions.length === 0) {
+    return (
+      <Card className="rounded-xl border border-border bg-card p-5">
+        <h2 className="text-sm font-semibold text-foreground">Payment &amp; Channel Efficiency</h2>
+        <p className="mt-4 text-xs text-muted-foreground">No channel efficiency data reported by the API.</p>
+      </Card>
+    );
+  }
 
   const getCoordinates = (index: number, score: number) => {
     const angle = (index * 2 * Math.PI) / numSides - Math.PI / 2;
@@ -174,7 +108,7 @@ function PaymentChannelRadar({
   const hoveredDim = hoveredIdx !== null ? dimensions[hoveredIdx] : null;
 
   return (
-    <div className="rounded-xl border border-border bg-card text-card-foreground p-5 flex flex-col justify-between relative overflow-hidden">
+    <Card className="rounded-xl border border-border bg-card text-card-foreground p-5 flex flex-col justify-between relative overflow-hidden">
       <div>
         {/* Header with Dual-Series Legend */}
         <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
@@ -342,7 +276,7 @@ function PaymentChannelRadar({
           )}
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -369,6 +303,12 @@ interface ProductSalesItem {
   trend: string;
 }
 
+interface TelemetryOrder {
+  items?: string;
+  amount?: number;
+  actor?: "agent" | "shopper";
+}
+
 const DEFAULT_STATS: LiveStats = {
   totalOrders: 0,
   grossRevenue: 0,
@@ -388,47 +328,25 @@ export default function MerchantSalesPage() {
 
   const [stats, setStats] = useState<LiveStats>(DEFAULT_STATS);
   const [timeSeries, setTimeSeries] = useState<Array<{ day: string; series: "Human" | "AI Agent"; orders: number }>>([]);
+  const [orders, setOrders] = useState<TelemetryOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Merchant Account & Multi-Site Binding
-  const accountQuery = useQuery({
-    ...trpc.merchantIntelligence.getAccount.queryOptions(),
-  });
-
-  const activeMerchantId = accountQuery.data?.merchantId || "";
-  const userSiteIds = accountQuery.data?.siteIds && accountQuery.data.siteIds.length > 0
-    ? accountQuery.data.siteIds
-    : (accountQuery.data?.primarySiteId ? [accountQuery.data.primarySiteId] : []);
-
-  const [selectedSiteId, setSelectedSiteId] = useState<string>("");
-
-  useEffect(() => {
-    if (accountQuery.data?.primarySiteId && !selectedSiteId) {
-      setSelectedSiteId(accountQuery.data.primarySiteId);
-    }
-  }, [accountQuery.data, selectedSiteId]);
-
-  const activeSiteId = selectedSiteId || accountQuery.data?.primarySiteId || userSiteIds[0] || "";
+  const { accountQuery, activeMerchantId, activeSiteId, selectedSiteId, setSelectedSiteId, siteIds: userSiteIds } = useMerchantContext();
 
   useEffect(() => {
     async function loadPostHogSales() {
       if (!activeMerchantId) return;
       setLoading(true);
       try {
-        const queryUrl = activeSiteId && activeSiteId !== "site_all"
-          ? `/api/tracker/stats?site=${encodeURIComponent(activeSiteId)}`
-          : "/api/tracker/stats?site=all";
-
-        const res = await fetch(queryUrl);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.stats) {
-            setStats(data.stats);
-          }
-          if (data.timeSeries) {
-            setTimeSeries(data.timeSeries);
-          }
+        const data = await fetchTrackerStats(activeSiteId);
+        if (data.stats) {
+          setStats(data.stats);
         }
+        if (data.timeSeries) {
+          setTimeSeries(data.timeSeries);
+        }
+        setOrders(data.orders ?? []);
       } catch (err) {
         console.error("Failed to load sales data:", err);
       } finally {
@@ -438,71 +356,35 @@ export default function MerchantSalesPage() {
     loadPostHogSales();
   }, [activeMerchantId, activeSiteId]);
 
-  // Derived dynamic product catalog sales from telemetry
+  // Derive product sales only from orders returned by the telemetry API.
   const catalogProducts: ProductSalesItem[] = useMemo(() => {
-    const totalRev = stats.grossRevenue || 73451;
-    const totalUnits = stats.totalOrders || 49;
-    const agentUnits = stats.agentOrders || 31;
-    const humanUnits = stats.humanOrders || 18;
-
-    const baseCatalog = [
-      {
-        title: "boAt Airdopes 141 ANC TWS Earbuds",
-        category: "Audio",
-        weight: 0.38,
-        asp: 1499,
-        trend: "+24.2%",
-      },
-      {
-        title: "boAt Stone 352 Wireless Portable Speaker",
-        category: "Audio",
-        weight: 0.24,
-        asp: 1699,
-        trend: "+18.0%",
-      },
-      {
-        title: "boAt Wave Call Smart Watch with Bluetooth Calling",
-        category: "Wearables",
-        weight: 0.16,
-        asp: 1799,
-        trend: "+15.4%",
-      },
-      {
-        title: "boAt Rockerz 450 Bluetooth On-Ear Headphones",
-        category: "Audio",
-        weight: 0.14,
-        asp: 1499,
-        trend: "+9.2%",
-      },
-      {
-        title: "boAt Storm Call 3 Smartwatch 1.83'' HD Display",
-        category: "Wearables",
-        weight: 0.08,
-        asp: 1299,
-        trend: "+11.8%",
-      },
-    ];
-
-    return baseCatalog.map((item) => {
-      const pRevenue = Math.round(totalRev * item.weight);
-      const pUnits = Math.max(1, Math.round(totalUnits * item.weight));
-      const pAgentUnits = Math.round(pUnits * (agentUnits / Math.max(1, totalUnits)));
-      const pHumanUnits = Math.max(0, pUnits - pAgentUnits);
-      const pShare = Number((item.weight * 100).toFixed(1));
-
-      return {
-        title: item.title,
-        category: item.category,
-        units: pUnits,
-        agentUnits: pAgentUnits,
-        humanUnits: pHumanUnits,
-        revenue: pRevenue,
-        share: pShare,
-        asp: item.asp,
-        trend: item.trend,
+    const products = new Map<string, ProductSalesItem>();
+    for (const order of orders) {
+      const title = order.items || "Unknown product";
+      const current = products.get(title) ?? {
+        title,
+        category: "Uncategorized",
+        units: 0,
+        agentUnits: 0,
+        humanUnits: 0,
+        revenue: 0,
+        share: 0,
+        asp: 0,
+        trend: "—",
       };
-    });
-  }, [stats]);
+      current.units += 1;
+      current.revenue += Number(order.amount) || 0;
+      if (order.actor === "agent") current.agentUnits += 1;
+      else current.humanUnits += 1;
+      current.asp = Math.round(current.revenue / current.units);
+      products.set(title, current);
+    }
+
+    const totalRevenue = Array.from(products.values()).reduce((sum, product) => sum + product.revenue, 0);
+    return Array.from(products.values())
+      .map((product) => ({ ...product, share: totalRevenue > 0 ? Number(((product.revenue / totalRevenue) * 100).toFixed(1)) : 0 }))
+      .sort((a, b) => b.revenue - a.revenue);
+  }, [orders]);
 
   // Filtering
   const filteredProducts = useMemo(() => {
@@ -540,7 +422,7 @@ export default function MerchantSalesPage() {
           <div className="flex items-center gap-2.5">
             {/* Storefront Site Selector */}
             {userSiteIds.length > 1 ? (
-              <CustomSelect
+              <SelectMenu
                 value={activeSiteId}
                 onChange={(val) => {
                   setSelectedSiteId(val);
@@ -579,23 +461,23 @@ export default function MerchantSalesPage() {
               <FormattedAmount amount={stats.grossRevenue} />
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
-              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +18.4%</span>
-              <span className="text-muted-foreground truncate">₹{Math.round(stats.agentOrders * (stats.avgOrderValue || 1500)).toLocaleString("en-IN")} via AI</span>
+              <span className="text-muted-foreground font-medium whitespace-nowrap">API data</span>
+              <span className="text-muted-foreground truncate">{stats.agentOrders} orders via AI</span>
             </div>
           </div>
 
           {/* 2. Net Sales */}
           <div className="p-4 sm:p-5 flex flex-col justify-between border-b sm:border-b-0 sm:border-r border-border/60">
             <div className="text-xs text-muted-foreground font-medium flex items-center justify-between">
-              <span>Net Sales</span>
+              <span>Total Orders</span>
               <Wallet className="h-3.5 w-3.5 text-muted-foreground" />
             </div>
             <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
-              <FormattedAmount amount={Math.round(stats.grossRevenue * 0.96)} />
+              <span>{stats.totalOrders.toLocaleString("en-IN")}</span>
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
-              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +16.2%</span>
-              <span className="text-muted-foreground truncate">after discounts & refunds</span>
+              <span className="text-muted-foreground font-medium whitespace-nowrap">API data</span>
+              <span className="text-muted-foreground truncate">Completed orders</span>
             </div>
           </div>
 
@@ -609,22 +491,22 @@ export default function MerchantSalesPage() {
               <FormattedAmount amount={stats.avgOrderValue} />
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
-              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +5.2%</span>
-              <span className="text-muted-foreground truncate">vs ₹{Math.round((stats.avgOrderValue || 1500) * 0.94).toLocaleString("en-IN")} prior</span>
+              <span className="text-muted-foreground font-medium whitespace-nowrap">API data</span>
+              <span className="text-muted-foreground truncate">Current selected storefront</span>
             </div>
           </div>
 
           {/* 4. AI-Driven Sales */}
           <div className="p-4 sm:p-5 flex flex-col justify-between border-b sm:border-b-0 sm:border-r border-border/60">
             <div className="text-xs text-muted-foreground font-medium flex items-center justify-between">
-              <span>AI-Driven Sales</span>
+              <span>AI-Driven Orders</span>
               <Bot className="h-3.5 w-3.5 text-muted-foreground" />
             </div>
             <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
-              <FormattedAmount amount={Math.round(stats.agentOrders * (stats.avgOrderValue || 1500))} />
+              <span>{stats.agentOrders.toLocaleString("en-IN")}</span>
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
-              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +22.5%</span>
+              <span className="text-muted-foreground font-medium whitespace-nowrap">API data</span>
               <span className="text-muted-foreground truncate">{stats.agentSharePct}% channel volume</span>
             </div>
           </div>
@@ -636,11 +518,11 @@ export default function MerchantSalesPage() {
               <ShieldCheck className="h-3.5 w-3.5 text-muted-foreground" />
             </div>
             <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
-              98.6%
+              {stats.fulfillmentRate}%
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
-              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +0.4%</span>
-              <span className="text-muted-foreground truncate">instant UPI settlements</span>
+              <span className="text-muted-foreground font-medium whitespace-nowrap">API data</span>
+              <span className="text-muted-foreground truncate">Fulfillment rate</span>
             </div>
           </div>
         </div>
@@ -662,7 +544,7 @@ export default function MerchantSalesPage() {
       </div>
 
       {/* Big Unified Card for Catalog Sales & Performance Table */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+      <Card className="rounded-xl border border-border bg-card p-5 space-y-4">
         {/* Card Header with Integrated Search & Category Controls */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
@@ -680,20 +562,20 @@ export default function MerchantSalesPage() {
           <div className="flex flex-wrap items-center gap-2 max-sm:w-full">
             {/* Search */}
             <div className="relative w-64 max-sm:w-full">
-              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-              <input
+              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground z-10 pointer-events-none" />
+              <Input
                 placeholder="Search products or categories..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full rounded-lg border border-input bg-background pl-9 pr-4 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+                className="w-full rounded-lg bg-background pl-9 pr-4 py-2 text-xs text-foreground placeholder:text-muted-foreground"
               />
             </div>
 
             {/* Category Filter */}
-            <CustomSelect
+            <SelectMenu
               value={categoryFilter}
               onChange={(val) => {
                 setCategoryFilter(val);
@@ -707,76 +589,86 @@ export default function MerchantSalesPage() {
             />
 
             {(categoryFilter !== "ALL" || searchQuery) && (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   setCategoryFilter("ALL");
                   setSearchQuery("");
                   setCurrentPage(1);
                 }}
-                className="h-9 rounded-lg border border-border bg-muted/60 px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                className="h-9 rounded-lg border-border bg-muted/60 px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
               >
                 Reset
-              </button>
+              </Button>
             )}
           </div>
         </div>
 
         {/* Catalog Sales Table */}
         <div className="overflow-x-auto rounded-lg border border-border/80">
-          <table className="w-full text-xs text-left">
-            <thead className="border-b border-border bg-muted/40 text-muted-foreground font-medium text-[11px]">
-              <tr>
-                <th className="px-4 py-3">Product Name</th>
-                <th className="px-3 py-3">Category</th>
-                <th className="px-3 py-3 text-right">Units Sold</th>
-                <th className="px-3 py-3 text-right">Gross Sales</th>
-                <th className="px-4 py-3">Revenue Share</th>
-                <th className="px-3 py-3 text-right">Avg Price (ASP)</th>
-                <th className="px-4 py-3 text-right">Trend</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
+          <Table className="w-full text-xs text-left">
+            <TableHeader className="border-b border-border bg-muted/40 text-muted-foreground font-medium text-[11px]">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="px-4 py-3">Product Name</TableHead>
+                <TableHead className="px-3 py-3">Category</TableHead>
+                <TableHead className="px-3 py-3 text-right">Units Sold</TableHead>
+                <TableHead className="px-3 py-3 text-right">Gross Sales</TableHead>
+                <TableHead className="px-4 py-3">Revenue Share</TableHead>
+                <TableHead className="px-3 py-3 text-right">Avg Price (ASP)</TableHead>
+                <TableHead className="px-4 py-3 text-right">Trend</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-border font-normal">
               {loading ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                <TableRow>
+                  <TableCell colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                       <span>Loading real-time catalog sales...</span>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : paginatedProducts.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
-                    <div className="flex flex-col items-center justify-center gap-1.5">
-                      <Package className="h-6 w-6 text-muted-foreground/60" />
-                      <p className="text-xs font-medium text-foreground">No matching products found</p>
-                      <p className="text-[11px]">Try adjusting your search query or category filters.</p>
-                    </div>
-                  </td>
-                </tr>
+                <TableRow>
+                  <TableCell colSpan={7} className="p-0">
+                    <Empty className="py-12">
+                      <EmptyHeader>
+                        <EmptyMedia variant="default">
+                          <Package className="h-6 w-6 text-muted-foreground/60" />
+                        </EmptyMedia>
+                        <EmptyTitle className="text-xs font-medium text-foreground">
+                          No matching products found
+                        </EmptyTitle>
+                        <EmptyDescription className="text-[11px] text-muted-foreground">
+                          Try adjusting your search query or category filters.
+                        </EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  </TableCell>
+                </TableRow>
               ) : (
                 paginatedProducts.map((p, idx) => (
-                  <tr key={idx} className="hover:bg-muted/40 transition-colors">
-                    <td className="px-4 py-3 font-medium text-foreground max-w-[280px] truncate">
+                  <TableRow key={idx} className="hover:bg-muted/40 transition-colors">
+                    <TableCell className="px-4 py-3 font-medium text-foreground max-w-[280px] truncate">
                       {p.title}
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      <span className="inline-flex items-center rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="px-3 py-3 text-muted-foreground">
+                      <Badge variant="outline" className="rounded-md border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                         {p.category}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 font-mono text-right text-foreground">
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="px-3 py-3 font-mono text-right text-foreground">
                       <span>{p.units.toLocaleString()}</span>
                       <span className="text-[10px] text-muted-foreground block">
                         {p.agentUnits} AI · {p.humanUnits} Hum
                       </span>
-                    </td>
-                    <td className="px-3 py-3 font-mono text-right font-semibold text-foreground">
+                    </TableCell>
+                    <TableCell className="px-3 py-3 font-mono text-right font-semibold text-foreground">
                       <FormattedAmount amount={p.revenue} />
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className="h-1.5 w-24 rounded-full bg-muted overflow-hidden">
                           <div
@@ -786,28 +678,28 @@ export default function MerchantSalesPage() {
                         </div>
                         <span className="font-mono text-[11px] text-muted-foreground">{p.share}%</span>
                       </div>
-                    </td>
-                    <td className="px-3 py-3 font-mono text-right text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="px-3 py-3 font-mono text-right text-muted-foreground">
                       <FormattedAmount amount={p.asp} />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="inline-flex items-center gap-0.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-right">
+                      <Badge variant="outline" className="gap-0.5 rounded-full border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
                         <ArrowUpRight className="h-3 w-3 inline" />
                         {p.trend}
-                      </span>
-                    </td>
-                  </tr>
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
 
         {/* Pagination & Controls Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             <span>Rows per page:</span>
-            <CustomSelect
+            <SelectMenu
               value={pageSize}
               onChange={(val) => {
                 setPageSize(Number(val));
@@ -831,28 +723,32 @@ export default function MerchantSalesPage() {
           </div>
 
           <div className="flex items-center gap-1.5">
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               disabled={currentPage <= 1}
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              className="h-7 w-7 p-0 rounded-md border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
-            </button>
+            </Button>
             <span className="px-2 font-mono text-xs text-foreground">
               {currentPage} / {totalPages}
             </span>
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               disabled={currentPage >= totalPages}
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              className="h-7 w-7 p-0 rounded-md border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               <ChevronRight className="h-3.5 w-3.5" />
-            </button>
+            </Button>
           </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

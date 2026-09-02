@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   Search,
   Bot,
@@ -13,17 +12,36 @@ import {
   IndianRupee,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   Copy,
   Check,
   Repeat,
   ShoppingBag,
 } from "lucide-react";
 import { cn } from "@cartwright/ui/lib/utils";
-import { trpc } from "@/utils/trpc";
+import { useMerchantContext } from "@/components/merchant/use-merchant-context";
+import { FormattedAmount } from "@/components/merchant/formatted-amount";
+import { SelectMenu } from "@cartwright/ui/components/select-menu";
 import { CustomerGrowthChart, type CustomerGrowthDatum } from "@/components/customer-growth-chart";
-import { IndiaMapChart, type GeoCityDatum, DEFAULT_INDIA_HUBS } from "@/components/india-map-chart";
+import { IndiaMapChart, type GeoCityDatum } from "@/components/india-map-chart";
 import { Button } from "@cartwright/ui/components/button";
+import { Card } from "@cartwright/ui/components/card";
+import { Badge } from "@cartwright/ui/components/badge";
+import { Input } from "@cartwright/ui/components/input";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@cartwright/ui/components/empty";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@cartwright/ui/components/table";
 import {
   Tooltip,
   TooltipTrigger,
@@ -31,93 +49,10 @@ import {
   TooltipProvider,
 } from "@cartwright/ui/components/tooltip";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-} from "@cartwright/ui/components/dropdown-menu";
-
-function FormattedAmount({ amount, className }: { amount: number; className?: string }) {
-  const parts = new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).formatToParts(amount);
-
-  const symbol = parts.find((p) => p.type === "currency")?.value || "₹";
-  const num = parts.filter((p) => p.type !== "currency").map((p) => p.value).join("").trim();
-
-  return (
-    <span suppressHydrationWarning className={cn("font-mono whitespace-nowrap", className)}>
-      <span className="text-muted-foreground font-normal mr-0.5">{symbol}</span>
-      <span className="font-bold text-foreground">{num}</span>
-    </span>
-  );
-}
-
-function CustomSelect({
-  value,
-  onChange,
-  options,
-  placeholder,
-  className,
-  size = "md",
-}: {
-  value: string | number;
-  onChange: (val: string) => void;
-  options: Array<{ value: string | number; label: string }>;
-  placeholder?: string;
-  className?: string;
-  size?: "sm" | "md";
-}) {
-  const selected = options.find((o) => String(o.value) === String(value));
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <button
-            type="button"
-            className={cn(
-              "inline-flex w-auto items-center justify-between gap-2 rounded-lg border border-border bg-card text-xs font-medium text-foreground shadow-xs transition-colors hover:bg-muted/80 focus:border-ring focus:outline-none cursor-pointer whitespace-nowrap shrink-0",
-              size === "sm" ? "h-7 px-2.5" : "h-9 px-3",
-              className
-            )}
-          >
-            <span>{selected ? selected.label : placeholder}</span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          </button>
-        }
-      />
-      <DropdownMenuContent
-        align="start"
-        sideOffset={4}
-        className="z-50 w-max min-w-full rounded-xl border border-border bg-popover p-1 shadow-2xl text-xs text-popover-foreground backdrop-blur-md"
-      >
-        <DropdownMenuGroup>
-          {options.map((opt) => {
-            const isSelected = String(opt.value) === String(value);
-            return (
-              <DropdownMenuItem
-                key={String(opt.value)}
-                onClick={() => onChange(String(opt.value))}
-                className={cn(
-                  "flex items-center rounded-lg px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors whitespace-nowrap",
-                  isSelected
-                    ? "bg-muted text-foreground font-semibold"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                )}
-              >
-                <span>{opt.label}</span>
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+  fetchTrackerStats,
+  type CustomerStats,
+  type CohortAnalysisData,
+} from "@/utils/tracker-api";
 
 interface CustomerRecord {
   id: string;
@@ -131,74 +66,6 @@ interface CustomerRecord {
   status?: string;
 }
 
-interface CohortAnalysisData {
-  firstTime: {
-    count: number;
-    sharePct: number;
-    avgSpend: number;
-    totalRevenue: number;
-  };
-  repeat: {
-    count: number;
-    sharePct: number;
-    avgSpend: number;
-    totalRevenue: number;
-    repeatCycleDays: number;
-    retentionRate: number;
-  };
-}
-
-const BASE_CUSTOMERS: CustomerRecord[] = [
-  { id: "USR-01", name: "Rahul Sharma", email: "rahul@example.com", location: "Bengaluru, KA", orders: 4, spend: 5996, isAgent: false, lastActive: "Aug 31", status: "Verified Buyer" },
-  { id: "USR-02", name: "Autonomous AI Agent", email: "agent@cartwright.ai", location: "Cloud (IN-West)", orders: 3, spend: 4697, isAgent: true, lastActive: "Aug 31", status: "Active Agent" },
-  { id: "USR-03", name: "Pooja Verma", email: "pooja@example.com", location: "Delhi NCR, DL", orders: 2, spend: 2998, isAgent: false, lastActive: "Aug 31", status: "Verified Buyer" },
-  { id: "USR-04", name: "Ananya Iyer", email: "ananya@example.com", location: "Chennai, TN", orders: 3, spend: 6497, isAgent: false, lastActive: "Aug 30", status: "Verified Buyer" },
-  { id: "USR-05", name: "Stagehand Agent", email: "agent@stagehand.dev", location: "Cloud (IN-South)", orders: 2, spend: 2598, isAgent: true, lastActive: "Aug 30", status: "Active Agent" },
-  { id: "USR-06", name: "Vikram Malhotra", email: "vikram@example.com", location: "Hyderabad, TS", orders: 1, spend: 999, isAgent: false, lastActive: "Aug 30", status: "Verified Buyer" },
-  { id: "USR-07", name: "Karan Patel", email: "karan@example.com", location: "Ahmedabad, GJ", orders: 2, spend: 2598, isAgent: false, lastActive: "Aug 29", status: "Verified Buyer" },
-  { id: "USR-08", name: "Browserbase Agent", email: "agent@browserbase.com", location: "Cloud (IN-Central)", orders: 4, spend: 7996, isAgent: true, lastActive: "Aug 29", status: "Active Agent" },
-  { id: "USR-09", name: "Sneha Nair", email: "sneha.n@example.com", location: "Kochi, KL", orders: 3, spend: 4497, isAgent: false, lastActive: "Aug 28", status: "Verified Buyer" },
-  { id: "USR-10", name: "DeepSeek Assistant", email: "agent@deepseek.com", location: "Cloud (Global)", orders: 5, spend: 9495, isAgent: true, lastActive: "Aug 28", status: "Active Agent" },
-  { id: "USR-11", name: "Aditya Roy", email: "aditya.roy@example.com", location: "Kolkata, WB", orders: 2, spend: 2998, isAgent: false, lastActive: "Aug 27", status: "Verified Buyer" },
-  { id: "USR-12", name: "Cursor AI Agent", email: "agent@cursor.com", location: "Cloud (US-West)", orders: 4, spend: 7996, isAgent: true, lastActive: "Aug 27", status: "Active Agent" },
-];
-
-const DEFAULT_GROWTH_DATA: CustomerGrowthDatum[] = [
-  { day: "Aug 16", series: "New Signups", count: 82 },
-  { day: "Aug 16", series: "Churned", count: 12 },
-  { day: "Aug 18", series: "New Signups", count: 95 },
-  { day: "Aug 18", series: "Churned", count: 14 },
-  { day: "Aug 20", series: "New Signups", count: 110 },
-  { day: "Aug 20", series: "Churned", count: 16 },
-  { day: "Aug 22", series: "New Signups", count: 124 },
-  { day: "Aug 22", series: "Churned", count: 15 },
-  { day: "Aug 24", series: "New Signups", count: 142 },
-  { day: "Aug 24", series: "Churned", count: 19 },
-  { day: "Aug 26", series: "New Signups", count: 168 },
-  { day: "Aug 26", series: "Churned", count: 21 },
-  { day: "Aug 28", series: "New Signups", count: 215 },
-  { day: "Aug 28", series: "Churned", count: 28 },
-  { day: "Aug 31", series: "New Signups", count: 304 },
-  { day: "Aug 31", series: "Churned", count: 59 },
-];
-
-const DEFAULT_COHORT: CohortAnalysisData = {
-  firstTime: {
-    count: 17823,
-    sharePct: 71.6,
-    avgSpend: 1499,
-    totalRevenue: 26716677,
-  },
-  repeat: {
-    count: 7069,
-    sharePct: 28.4,
-    avgSpend: 4257,
-    totalRevenue: 30092733,
-    repeatCycleDays: 14,
-    retentionRate: 12.4,
-  },
-};
-
 export default function MerchantCustomersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
@@ -207,125 +74,91 @@ export default function MerchantCustomersPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Merchant Account & Multi-Site Binding
-  const accountQuery = useQuery({
-    ...trpc.merchantIntelligence.getAccount.queryOptions(),
-  });
-
-  const activeMerchantId = accountQuery.data?.merchantId || "";
-  const userSiteIds = accountQuery.data?.siteIds && accountQuery.data.siteIds.length > 0
-    ? accountQuery.data.siteIds
-    : (accountQuery.data?.primarySiteId ? [accountQuery.data.primarySiteId] : []);
-
-  const [selectedSiteId, setSelectedSiteId] = useState<string>("");
-
-  useEffect(() => {
-    if (accountQuery.data?.primarySiteId && !selectedSiteId) {
-      setSelectedSiteId(accountQuery.data.primarySiteId);
-    }
-  }, [accountQuery.data, selectedSiteId]);
-
-  const activeSiteId = selectedSiteId || accountQuery.data?.primarySiteId || userSiteIds[0] || "";
+  const { accountQuery, activeMerchantId, activeSiteId, selectedSiteId, setSelectedSiteId, siteIds: userSiteIds } = useMerchantContext();
 
   // Dynamic Customer Metrics state from API
-  const [customerStats, setCustomerStats] = useState({
-    totalCustomers: 24892,
-    activeCustomers: 18420,
-    customerLifetimeValue: 28500,
-    newCustomers: 1240,
-    churnedCustomers: 184,
-    totalGrowthPct: 8.2,
-    activeRetentionPct: 12.4,
-    clvGrowthPct: 5.4,
-    newAcquisitionPct: 18.5,
-  });
+  const [customerStats, setCustomerStats] = useState<CustomerStats | null>(null);
 
-  const [growthData, setGrowthData] = useState<CustomerGrowthDatum[]>(DEFAULT_GROWTH_DATA);
-  const [geoHubs, setGeoHubs] = useState<GeoCityDatum[]>(DEFAULT_INDIA_HUBS);
-  const [cohortData, setCohortData] = useState<CohortAnalysisData>(DEFAULT_COHORT);
+  const [growthData, setGrowthData] = useState<CustomerGrowthDatum[]>([]);
+  const [geoHubs, setGeoHubs] = useState<GeoCityDatum[]>([]);
+  const [cohortData, setCohortData] = useState<CohortAnalysisData | null>(null);
   const [telemetryCustomers, setTelemetryCustomers] = useState<CustomerRecord[]>([]);
 
   useEffect(() => {
     async function loadCustomersTelemetry() {
       if (!activeMerchantId) return;
       try {
-        const queryUrl = activeSiteId && activeSiteId !== "site_all"
-          ? `/api/tracker/stats?site=${encodeURIComponent(activeSiteId)}`
-          : "/api/tracker/stats?site=all";
+        const data = await fetchTrackerStats(activeSiteId);
+        if (data.customerStats) {
+          setCustomerStats(data.customerStats);
+        }
+        if (data.customerGrowthTimeSeries && data.customerGrowthTimeSeries.length > 0) {
+          setGrowthData(data.customerGrowthTimeSeries);
+        }
+        if (data.geoDistribution && Array.isArray(data.geoDistribution) && data.geoDistribution.length > 0) {
+          const coordsMap: Record<string, { x: number; y: number; stateId: string }> = {
+            "Bengaluru": { x: 360, y: 792, stateId: "INKA" },
+            "Bengaluru, KA": { x: 360, y: 792, stateId: "INKA" },
+            "Delhi NCR": { x: 344, y: 321, stateId: "INDL" },
+            "Delhi NCR, DL": { x: 344, y: 321, stateId: "INDL" },
+            "Mumbai": { x: 236, y: 602, stateId: "INMH" },
+            "Mumbai, MH": { x: 236, y: 602, stateId: "INMH" },
+            "Hyderabad": { x: 398, y: 648, stateId: "INTG" },
+            "Hyderabad, TS": { x: 398, y: 648, stateId: "INTG" },
+            "Chennai": { x: 418, y: 778, stateId: "INTN" },
+            "Chennai, TN": { x: 418, y: 778, stateId: "INTN" },
+          };
 
-        const res = await fetch(queryUrl);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.customerStats) {
-            setCustomerStats(data.customerStats);
-          }
-          if (data.customerGrowthTimeSeries && data.customerGrowthTimeSeries.length > 0) {
-            setGrowthData(data.customerGrowthTimeSeries);
-          }
-          if (data.geoDistribution && Array.isArray(data.geoDistribution) && data.geoDistribution.length > 0) {
-            const coordsMap: Record<string, { x: number; y: number; stateId: string }> = {
-              "Bengaluru": { x: 360, y: 792, stateId: "INKA" },
-              "Bengaluru, KA": { x: 360, y: 792, stateId: "INKA" },
-              "Delhi NCR": { x: 344, y: 321, stateId: "INDL" },
-              "Delhi NCR, DL": { x: 344, y: 321, stateId: "INDL" },
-              "Mumbai": { x: 236, y: 602, stateId: "INMH" },
-              "Mumbai, MH": { x: 236, y: 602, stateId: "INMH" },
-              "Hyderabad": { x: 398, y: 648, stateId: "INTG" },
-              "Hyderabad, TS": { x: 398, y: 648, stateId: "INTG" },
-              "Chennai": { x: 418, y: 778, stateId: "INTN" },
-              "Chennai, TN": { x: 418, y: 778, stateId: "INTN" },
+          const mappedHubs: GeoCityDatum[] = data.geoDistribution.map((g: any) => {
+            const matched = coordsMap[g.city] || coordsMap[g.city.split(",")[0].trim()] || { x: 350, y: 500, stateId: "IN" };
+            return {
+              city: g.city.split(",")[0].trim(),
+              state: g.state || "India",
+              stateId: matched.stateId,
+              orders: g.orders,
+              share: g.share,
+              revenue: g.revenue,
+              coords: { x: matched.x, y: matched.y },
             };
+          });
 
-            const mappedHubs: GeoCityDatum[] = data.geoDistribution.map((g: any) => {
-              const matched = coordsMap[g.city] || coordsMap[g.city.split(",")[0].trim()] || { x: 350, y: 500, stateId: "IN" };
-              return {
-                city: g.city.split(",")[0].trim(),
-                state: g.state || "India",
-                stateId: matched.stateId,
-                orders: g.orders,
-                share: g.share,
-                revenue: g.revenue,
-                coords: { x: matched.x, y: matched.y },
-              };
-            });
-
-            if (mappedHubs.length > 0) {
-              setGeoHubs(mappedHubs);
-            }
+          if (mappedHubs.length > 0) {
+            setGeoHubs(mappedHubs);
           }
-          if (data.cohortAnalysis) {
-            setCohortData(data.cohortAnalysis);
-          }
-          if (data.orders && Array.isArray(data.orders) && data.orders.length > 0) {
-            const custMap = new Map<string, CustomerRecord>();
-            data.orders.forEach((o: any, idx: number) => {
-              const name = o.customer || (o.isAgent ? "Autonomous AI Agent" : `Customer #${idx + 1}`);
-              const email = o.isAgent ? "agent@cartwright.ai" : `${name.toLowerCase().replace(/\s+/g, ".")}@example.com`;
-              const id = `USR-${String(idx + 1).padStart(4, "0")}`;
-              const isAgent = Boolean(o.isAgent || (o.method || "").toLowerCase().includes("agent"));
-              const location = o.city ? `${o.city}, IN` : (isAgent ? "Cloud (Telemetry)" : "Bengaluru, KA");
+        }
+        if (data.cohortAnalysis) {
+          setCohortData(data.cohortAnalysis);
+        }
+        if (data.orders && Array.isArray(data.orders) && data.orders.length > 0) {
+          const custMap = new Map<string, CustomerRecord>();
+          data.orders.forEach((o: any, idx: number) => {
+            const name = o.customer || (o.isAgent ? "Autonomous AI Agent" : `Customer #${idx + 1}`);
+            const email = o.email || "—";
+            const id = `USR-${String(idx + 1).padStart(4, "0")}`;
+            const isAgent = Boolean(o.isAgent || (o.method || "").toLowerCase().includes("agent"));
+            const location = o.city ? `${o.city}, IN` : "—";
 
-              if (!custMap.has(name)) {
-                custMap.set(name, {
-                  id,
-                  name,
-                  email,
-                  location,
-                  orders: 1,
-                  spend: Number(o.amount || 1499),
-                  isAgent,
-                  lastActive: o.date ? o.date.split("T")[0] : "Recently",
-                  status: isAgent ? "Active Agent" : "Verified Buyer",
-                });
-              } else {
-                const existing = custMap.get(name)!;
-                existing.orders += 1;
-                existing.spend += Number(o.amount || 1499);
-              }
-            });
-            const derived = Array.from(custMap.values());
-            if (derived.length > 0) {
-              setTelemetryCustomers(derived);
+            if (!custMap.has(name)) {
+              custMap.set(name, {
+                id,
+                name,
+                email,
+                location,
+                orders: 1,
+                spend: Number(o.amount) || 0,
+                isAgent,
+                lastActive: o.date ? o.date.split("T")[0] : "Recently",
+                status: isAgent ? "Active Agent" : "Verified Buyer",
+              });
+            } else {
+              const existing = custMap.get(name)!;
+              existing.orders += 1;
+              existing.spend += Number(o.amount) || 0;
             }
+          });
+          const derived = Array.from(custMap.values());
+          if (derived.length > 0) {
+            setTelemetryCustomers(derived);
           }
         }
       } catch (err) {
@@ -335,14 +168,9 @@ export default function MerchantCustomersPage() {
     loadCustomersTelemetry();
   }, [activeMerchantId, activeSiteId]);
 
-  // Combine telemetry with base customers
+  // Customer rows come exclusively from telemetry returned by the API.
   const allCustomers = useMemo(() => {
-    if (telemetryCustomers.length > 0) {
-      const existingNames = new Set(telemetryCustomers.map((c) => c.name));
-      const complement = BASE_CUSTOMERS.filter((c) => !existingNames.has(c.name));
-      return [...telemetryCustomers, ...complement];
-    }
-    return BASE_CUSTOMERS;
+    return telemetryCustomers;
   }, [telemetryCustomers]);
 
   const handleCopy = (id: string, e: React.MouseEvent) => {
@@ -394,7 +222,7 @@ export default function MerchantCustomersPage() {
           <div className="flex items-center gap-2.5">
             {/* Storefront Site Selector */}
             {userSiteIds.length > 1 ? (
-              <CustomSelect
+              <SelectMenu
                 value={activeSiteId}
                 onChange={(val) => {
                   setSelectedSiteId(val);
@@ -430,10 +258,10 @@ export default function MerchantCustomersPage() {
               <Users className="h-3.5 w-3.5 text-muted-foreground" />
             </div>
             <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
-              {customerStats.totalCustomers.toLocaleString()}
+              {customerStats?.totalCustomers.toLocaleString() ?? "—"}
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
-              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +{customerStats.totalGrowthPct}%</span>
+              <span className="text-emerald-500 font-medium whitespace-nowrap">{customerStats ? `↗ +${customerStats.totalGrowthPct}%` : "—"}</span>
               <span className="text-muted-foreground truncate">Steady user growth</span>
             </div>
           </div>
@@ -445,10 +273,10 @@ export default function MerchantCustomersPage() {
               <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />
             </div>
             <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
-              {customerStats.activeCustomers.toLocaleString()}
+              {customerStats?.activeCustomers.toLocaleString() ?? "—"}
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
-              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +{customerStats.activeRetentionPct}%</span>
+              <span className="text-emerald-500 font-medium whitespace-nowrap">{customerStats ? `↗ +${customerStats.activeRetentionPct}%` : "—"}</span>
               <span className="text-muted-foreground truncate">High retention rate</span>
             </div>
           </div>
@@ -460,14 +288,14 @@ export default function MerchantCustomersPage() {
               <ShoppingBag className="h-3.5 w-3.5 text-muted-foreground" />
             </div>
             <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
-              {cohortData.firstTime.count.toLocaleString()}
+              {cohortData?.firstTime.count.toLocaleString() ?? "—"}
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1 text-muted-foreground">
-              <span className="text-blue-400 font-medium whitespace-nowrap">{cohortData.firstTime.sharePct}%</span>
+              <span className="text-blue-400 font-medium whitespace-nowrap">{cohortData ? `${cohortData.firstTime.sharePct}%` : "—"}</span>
               <span className="text-muted-foreground/60 font-normal">·</span>
               <span className="truncate flex items-center gap-1">
                 <span>Avg Spend:</span>
-                <FormattedAmount amount={cohortData.firstTime.avgSpend} />
+                {cohortData ? <FormattedAmount amount={cohortData.firstTime.avgSpend} /> : "—"}
               </span>
             </div>
           </div>
@@ -479,11 +307,11 @@ export default function MerchantCustomersPage() {
               <Repeat className="h-3.5 w-3.5 text-muted-foreground" />
             </div>
             <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
-              {cohortData.repeat.count.toLocaleString()}
+              {cohortData?.repeat.count.toLocaleString() ?? "—"}
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
-              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ {cohortData.repeat.sharePct}%</span>
-              <span className="text-muted-foreground truncate">+184% basket size</span>
+              <span className="text-emerald-500 font-medium whitespace-nowrap">{cohortData ? `↗ ${cohortData.repeat.sharePct}%` : "—"}</span>
+              <span className="text-muted-foreground truncate">From customer telemetry</span>
             </div>
           </div>
 
@@ -494,11 +322,11 @@ export default function MerchantCustomersPage() {
               <IndianRupee className="h-3.5 w-3.5 text-muted-foreground" />
             </div>
             <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
-              <FormattedAmount amount={customerStats.customerLifetimeValue} />
+              {customerStats ? <FormattedAmount amount={customerStats.customerLifetimeValue} /> : "—"}
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
-              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +{customerStats.clvGrowthPct}%</span>
-              <span className="text-muted-foreground truncate">2.84x multiplier</span>
+              <span className="text-emerald-500 font-medium whitespace-nowrap">{customerStats ? `↗ +${customerStats.clvGrowthPct}%` : "—"}</span>
+              <span className="text-muted-foreground truncate">From customer telemetry</span>
             </div>
           </div>
 
@@ -509,11 +337,11 @@ export default function MerchantCustomersPage() {
               <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
             </div>
             <div className="text-2xl font-bold font-mono text-foreground mt-2 tracking-tight">
-              {customerStats.newCustomers.toLocaleString()}
+              {customerStats?.newCustomers.toLocaleString() ?? "—"}
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
-              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +{customerStats.newAcquisitionPct}%</span>
-              <span className="text-muted-foreground truncate">Accelerating acquisition</span>
+              <span className="text-emerald-500 font-medium whitespace-nowrap">{customerStats ? `↗ +${customerStats.newAcquisitionPct}%` : "—"}</span>
+              <span className="text-muted-foreground truncate">From customer telemetry</span>
             </div>
           </div>
         </div>
@@ -524,8 +352,8 @@ export default function MerchantCustomersPage() {
         {/* Customer Growth: New Signups & Churn over Time */}
         <CustomerGrowthChart
           data={growthData}
-          totalNew={customerStats.newCustomers}
-          totalChurn={customerStats.churnedCustomers}
+          totalNew={customerStats?.newCustomers ?? 0}
+          totalChurn={customerStats?.churnedCustomers ?? 0}
           title="Customer Growth"
         />
 
@@ -537,7 +365,7 @@ export default function MerchantCustomersPage() {
       </div>
 
       {/* Big Unified Card for Customer Directory Table & Controls (Matching Orders Layout) */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+      <Card className="rounded-xl border border-border bg-card p-5 space-y-4">
         {/* Card Header with Integrated Search & Filter Controls */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
@@ -555,8 +383,8 @@ export default function MerchantCustomersPage() {
           <div className="flex flex-wrap items-center gap-2 max-sm:w-full">
             {/* Search */}
             <div className="relative w-64 max-sm:w-full" suppressHydrationWarning>
-              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-              <input
+              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground z-10 pointer-events-none" />
+              <Input
                 placeholder="Search customers, emails, cities..."
                 value={searchTerm}
                 onChange={(e) => {
@@ -566,12 +394,12 @@ export default function MerchantCustomersPage() {
                 suppressHydrationWarning
                 spellCheck={false}
                 autoComplete="off"
-                className="w-full rounded-lg border border-input bg-background pl-9 pr-4 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+                className="w-full rounded-lg bg-background pl-9 pr-4 py-2 text-xs text-foreground placeholder:text-muted-foreground"
               />
             </div>
 
             {/* Type / Channel Filter */}
-            <CustomSelect
+            <SelectMenu
               value={typeFilter}
               onChange={(val) => {
                 setTypeFilter(val);
@@ -585,122 +413,127 @@ export default function MerchantCustomersPage() {
             />
 
             {(typeFilter !== "ALL" || searchTerm) && (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   setTypeFilter("ALL");
                   setSearchTerm("");
                   setCurrentPage(1);
                 }}
-                className="h-9 rounded-lg border border-border bg-muted/60 px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                className="h-9 rounded-lg border-border bg-muted/60 px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
               >
                 Reset
-              </button>
+              </Button>
             )}
           </div>
         </div>
 
         {/* Customers Table View */}
         {filteredCustomers.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-border bg-background text-center p-6">
-            <Users className="mb-2 h-8 w-8 text-muted-foreground/40" />
-            <p className="text-sm font-medium text-foreground">
-              {searchTerm ? `No customers matching "${searchTerm}"` : "No customers found"}
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5 max-w-sm">
-              Verified buyer profiles and order spend across channels will appear here.
-            </p>
-          </div>
+          <Empty className="h-64 rounded-xl border border-border bg-background">
+            <EmptyHeader>
+              <EmptyMedia variant="default">
+                <Users className="h-8 w-8 text-muted-foreground/40" />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm font-medium text-foreground">
+                {searchTerm ? `No customers matching "${searchTerm}"` : "No customers found"}
+              </EmptyTitle>
+              <EmptyDescription className="text-xs text-muted-foreground max-w-sm">
+                Verified buyer profiles and order spend across channels will appear here.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <TooltipProvider delay={100}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="border-b border-border bg-muted/40 text-muted-foreground font-medium text-[11px] uppercase tracking-wider">
-                  <tr>
-                    <th className="w-12 px-4 py-3 font-mono text-muted-foreground">#</th>
-                    <th className="px-4 py-3">Customer ID</th>
-                    <th className="px-4 py-3">Customer</th>
-                    <th className="px-4 py-3">Channel / Type</th>
-                    <th className="px-4 py-3">Location</th>
-                    <th className="px-4 py-3">Orders</th>
-                    <th className="px-4 py-3">Total Spend</th>
-                    <th className="px-4 py-3 text-right">Last Active</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border font-normal">
-                  {paginatedCustomers.map((c, index) => {
-                    const rowNumber = (safeCurrentPage - 1) * pageSize + index + 1;
-                    const isCopied = copiedId === c.id;
+            <Table className="w-full text-xs text-left">
+              <TableHeader className="border-b border-border bg-muted/40 text-muted-foreground font-medium text-[11px] uppercase tracking-wider">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-12 px-4 py-3 font-mono text-muted-foreground">#</TableHead>
+                  <TableHead className="px-4 py-3">Customer ID</TableHead>
+                  <TableHead className="px-4 py-3">Customer</TableHead>
+                  <TableHead className="px-4 py-3">Channel / Type</TableHead>
+                  <TableHead className="px-4 py-3">Location</TableHead>
+                  <TableHead className="px-4 py-3">Orders</TableHead>
+                  <TableHead className="px-4 py-3">Total Spend</TableHead>
+                  <TableHead className="px-4 py-3 text-right">Last Active</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-border font-normal">
+                {paginatedCustomers.map((c, index) => {
+                  const rowNumber = (safeCurrentPage - 1) * pageSize + index + 1;
+                  const isCopied = copiedId === c.id;
 
-                    return (
-                      <tr
-                        key={c.id}
-                        className="hover:bg-muted/40 transition-colors group cursor-default"
-                      >
-                        <td className="px-4 py-3.5 font-mono text-muted-foreground text-[11px]">
-                          {String(rowNumber).padStart(2, "0")}
-                        </td>
+                  return (
+                    <TableRow
+                      key={c.id}
+                      className="hover:bg-muted/40 transition-colors group cursor-default"
+                    >
+                      <TableCell className="px-4 py-3.5 font-mono text-muted-foreground text-[11px]">
+                        {String(rowNumber).padStart(2, "0")}
+                      </TableCell>
 
-                        <td className="px-4 py-3.5">
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleCopy(c.id, e)}
-                                  className="inline-flex items-center gap-1.5 font-mono font-medium text-foreground hover:text-primary transition-colors cursor-pointer group/copy"
-                                >
-                                  <span>{c.id}</span>
-                                  {isCopied ? (
-                                    <Check className="h-3 w-3 text-emerald-500" />
-                                  ) : (
-                                    <Copy className="h-3 w-3 opacity-0 group-hover/copy:opacity-100 transition-opacity text-muted-foreground" />
-                                  )}
-                                </button>
-                              }
-                            />
-                            <TooltipContent side="top" className="text-xs">
-                              {isCopied ? "Copied ID!" : "Click to copy Customer ID"}
-                            </TooltipContent>
-                          </Tooltip>
-                        </td>
+                      <TableCell className="px-4 py-3.5">
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopy(c.id, e)}
+                                aria-label={`Copy customer ID ${c.id}`}
+                                className="inline-flex items-center gap-1.5 font-mono font-medium text-foreground hover:text-primary transition-colors cursor-pointer group/copy"
+                              >
+                                <span>{c.id}</span>
+                                {isCopied ? (
+                                  <Check className="h-3 w-3 text-emerald-500" />
+                                ) : (
+                                  <Copy className="h-3 w-3 opacity-0 group-hover/copy:opacity-100 transition-opacity text-muted-foreground" />
+                                )}
+                              </button>
+                            }
+                          />
+                          <TooltipContent side="top" className="text-xs">
+                            {isCopied ? "Copied ID!" : "Click to copy Customer ID"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TableCell>
 
-                        <td className="px-4 py-3.5">
-                          <div className="font-medium text-foreground">{c.name}</div>
-                          <div className="text-[11px] text-muted-foreground font-normal">{c.email}</div>
-                        </td>
+                      <TableCell className="px-4 py-3.5">
+                        <div className="font-medium text-foreground">{c.name}</div>
+                        <div className="text-[11px] text-muted-foreground font-normal">{c.email}</div>
+                      </TableCell>
 
-                        <td className="px-4 py-3.5">
-                          {c.isAgent ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-md border border-purple-500/20 bg-purple-500/10 px-2.5 py-1 text-[11px] font-medium text-purple-400">
-                              <Bot className="size-3" /> AI Agent
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/20 bg-blue-500/10 px-2.5 py-1 text-[11px] font-medium text-blue-400">
-                              <User className="size-3" /> Human
-                            </span>
-                          )}
-                        </td>
+                      <TableCell className="px-4 py-3.5">
+                        {c.isAgent ? (
+                          <Badge variant="outline" className="gap-1.5 rounded-md border-purple-500/20 bg-purple-500/10 px-2.5 py-1 text-[11px] font-medium text-purple-400">
+                            <Bot className="size-3" /> AI Agent
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="gap-1.5 rounded-md border-blue-500/20 bg-blue-500/10 px-2.5 py-1 text-[11px] font-medium text-blue-400">
+                            <User className="size-3" /> Human
+                          </Badge>
+                        )}
+                      </TableCell>
 
-                        <td className="px-4 py-3.5 text-muted-foreground">{c.location}</td>
+                      <TableCell className="px-4 py-3.5 text-muted-foreground">{c.location}</TableCell>
 
-                        <td className="px-4 py-3.5 font-mono font-medium text-foreground">
-                          {c.orders}
-                        </td>
+                      <TableCell className="px-4 py-3.5 font-mono font-medium text-foreground">
+                        {c.orders}
+                      </TableCell>
 
-                        <td className="px-4 py-3.5 font-mono font-semibold text-emerald-500">
-                          <FormattedAmount amount={c.spend} />
-                        </td>
+                      <TableCell className="px-4 py-3.5 font-mono font-semibold text-emerald-500">
+                        <FormattedAmount amount={c.spend} />
+                      </TableCell>
 
-                        <td className="px-4 py-3.5 text-right font-mono text-muted-foreground">
-                          {c.lastActive}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                      <TableCell className="px-4 py-3.5 text-right font-mono text-muted-foreground">
+                        {c.lastActive}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
 
             {/* Pagination Footer (Matching Orders Page) */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 text-xs text-muted-foreground">
@@ -726,7 +559,7 @@ export default function MerchantCustomersPage() {
 
                 <div className="flex items-center gap-1.5">
                   <span>Rows per page:</span>
-                  <CustomSelect
+                  <SelectMenu
                     value={pageSize}
                     onChange={(val) => {
                       setPageSize(Number(val));
@@ -791,7 +624,7 @@ export default function MerchantCustomersPage() {
             </div>
           </TooltipProvider>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

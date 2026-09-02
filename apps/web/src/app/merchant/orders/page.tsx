@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   Search,
   Bot,
@@ -14,16 +13,35 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   IndianRupee,
   TrendingUp,
   Truck,
   Package,
 } from "lucide-react";
 import { cn } from "@cartwright/ui/lib/utils";
-import { trpc } from "@/utils/trpc";
+import { useMerchantContext } from "@/components/merchant/use-merchant-context";
+import { FormattedAmount } from "@/components/merchant/formatted-amount";
+import { SelectMenu } from "@cartwright/ui/components/select-menu";
 import { BarChartStacked } from "@/components/bar-chart-stacked";
 import { Button } from "@cartwright/ui/components/button";
+import { Card } from "@cartwright/ui/components/card";
+import { Badge } from "@cartwright/ui/components/badge";
+import { Input } from "@cartwright/ui/components/input";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@cartwright/ui/components/empty";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@cartwright/ui/components/table";
 import {
   Tooltip,
   TooltipTrigger,
@@ -31,94 +49,12 @@ import {
   TooltipProvider,
 } from "@cartwright/ui/components/tooltip";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-} from "@cartwright/ui/components/dropdown-menu";
-
-function FormattedAmount({ amount, className }: { amount: number; className?: string }) {
-  const parts = new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).formatToParts(amount);
-
-  const symbol = parts.find((p) => p.type === "currency")?.value || "₹";
-  const num = parts.filter((p) => p.type !== "currency").map((p) => p.value).join("").trim();
-
-  return (
-    <span className={cn("font-mono whitespace-nowrap", className)}>
-      <span className="text-muted-foreground font-normal mr-0.5">{symbol}</span>
-      <span className="font-bold text-foreground">{num}</span>
-    </span>
-  );
-}
-
-function CustomSelect({
-  value,
-  onChange,
-  options,
-  placeholder,
-  className,
-  size = "md",
-}: {
-  value: string | number;
-  onChange: (val: string) => void;
-  options: Array<{ value: string | number; label: string }>;
-  placeholder?: string;
-  className?: string;
-  size?: "sm" | "md";
-}) {
-  const selected = options.find((o) => String(o.value) === String(value));
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <button
-            type="button"
-            className={cn(
-              "inline-flex w-auto items-center justify-between gap-2 rounded-lg border border-border bg-card text-xs font-medium text-foreground shadow-xs transition-colors hover:bg-muted/80 focus:border-ring focus:outline-none cursor-pointer whitespace-nowrap shrink-0",
-              size === "sm" ? "h-7 px-2.5" : "h-9 px-3",
-              className
-            )}
-          >
-            <span>{selected ? selected.label : placeholder}</span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          </button>
-        }
-      />
-      <DropdownMenuContent
-        align="start"
-        sideOffset={4}
-        className="z-50 w-max min-w-full rounded-xl border border-border bg-popover p-1 shadow-2xl text-xs text-popover-foreground backdrop-blur-md"
-      >
-        <DropdownMenuGroup>
-          {options.map((opt) => {
-            const isSelected = String(opt.value) === String(value);
-            return (
-              <DropdownMenuItem
-                key={String(opt.value)}
-                onClick={() => onChange(String(opt.value))}
-                className={cn(
-                  "flex items-center rounded-lg px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors whitespace-nowrap",
-                  isSelected
-                    ? "bg-muted text-foreground font-semibold"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                )}
-              >
-                <span>{opt.label}</span>
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
+  fetchTrackerStats,
+  DEFAULT_STATS,
+  type LiveStats,
+  type OrderItem,
+  type TimeSeriesItem,
+} from "@/utils/tracker-api";
 function getStatusDetails(status: string) {
   const norm = (status || "").toUpperCase();
   switch (norm) {
@@ -199,15 +135,8 @@ interface DimensionComparison {
 }
 
 function getComparisonDimensions(agentSharePct: number): DimensionComparison[] {
-  const baseAi = agentSharePct > 0 ? Math.min(98, Math.max(75, Math.round(agentSharePct * 1.3))) : 88;
-  return [
-    { key: "price", label: "Price Adherence", desc: "Budget cap adherence & discount optimization", aiScore: Math.min(99, baseAi + 8), humanScore: 72 },
-    { key: "stock", label: "Inventory Match", desc: "SKU variant & real-time stock verification", aiScore: Math.min(99, baseAi + 10), humanScore: 66 },
-    { key: "rating", label: "Quality Filter", desc: "Review sentiment & rating threshold filtering", aiScore: Math.min(98, baseAi + 4), humanScore: 80 },
-    { key: "speed", label: "Checkout Latency", desc: "Sub-20s autonomous form checkout completion", aiScore: Math.min(95, baseAi), humanScore: 48 },
-    { key: "schema", label: "Schema.org Parsing", desc: "JSON-LD & structured catalog extraction", aiScore: Math.min(99, baseAi + 7), humanScore: 22 },
-    { key: "retention", label: "Cart Retention", desc: "Frictionless checkout with zero cart abandonment", aiScore: Math.min(94, baseAi - 4), humanScore: 59 },
-  ];
+  // These dimensions are not currently returned by the telemetry API.
+  return [];
 }
 
 function AgentRadarChart({
@@ -220,6 +149,15 @@ function AgentRadarChart({
 }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const comparisonDimensions = getComparisonDimensions(agentSharePct);
+
+  if (comparisonDimensions.length === 0) {
+    return (
+      <Card className="rounded-xl border border-border bg-card p-5">
+        <h2 className="text-sm font-semibold text-foreground">Agent Intelligence</h2>
+        <p className="mt-4 text-xs text-muted-foreground">No agent comparison data reported by the API.</p>
+      </Card>
+    );
+  }
 
   const cx = 190;
   const cy = 125;
@@ -258,7 +196,7 @@ function AgentRadarChart({
   const hoveredDim = hoveredIdx !== null ? comparisonDimensions[hoveredIdx] : null;
 
   return (
-    <div className="rounded-xl border border-border bg-card text-card-foreground p-5 flex flex-col justify-between relative overflow-hidden">
+    <Card className="rounded-xl border border-border bg-card text-card-foreground p-5 flex flex-col justify-between relative overflow-hidden">
       <div>
         {/* Header with Dual-Series Legend */}
         <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
@@ -428,51 +366,9 @@ function AgentRadarChart({
           )}
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
-
-interface LiveStats {
-  totalOrders: number;
-  grossRevenue: number;
-  avgOrderValue: number;
-  fulfillmentRate: number;
-  conversionRate: number;
-  agentOrders: number;
-  agentSharePct: number;
-  humanOrders: number;
-}
-
-interface OrderItem {
-  id: string;
-  date: string;
-  customer: string;
-  city: string;
-  items: string;
-  amount: number;
-  method: string;
-  status: string;
-  actor: "agent" | "shopper";
-  merchantId?: string;
-  siteId?: string;
-}
-
-interface TimeSeriesItem {
-  day: string;
-  series: "Human" | "AI Agent";
-  orders: number;
-}
-
-const DEFAULT_STATS: LiveStats = {
-  totalOrders: 0,
-  grossRevenue: 0,
-  avgOrderValue: 0,
-  fulfillmentRate: 0,
-  conversionRate: 0,
-  agentOrders: 0,
-  agentSharePct: 0,
-  humanOrders: 0,
-};
 
 export default function MerchantOrdersPage() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -488,46 +384,22 @@ export default function MerchantOrdersPage() {
   const [loading, setLoading] = useState(true);
 
   // Merchant Account & Data-Site Binding
-  const accountQuery = useQuery({
-    ...trpc.merchantIntelligence.getAccount.queryOptions(),
-  });
-
-  const activeMerchantId = accountQuery.data?.merchantId || "";
-  const userSiteIds = accountQuery.data?.siteIds && accountQuery.data.siteIds.length > 0
-    ? accountQuery.data.siteIds
-    : (accountQuery.data?.primarySiteId ? [accountQuery.data.primarySiteId] : []);
-
-  const [selectedSiteId, setSelectedSiteId] = useState<string>("");
-
-  useEffect(() => {
-    if (accountQuery.data?.primarySiteId && !selectedSiteId) {
-      setSelectedSiteId(accountQuery.data.primarySiteId);
-    }
-  }, [accountQuery.data, selectedSiteId]);
-
-  const activeSiteId = selectedSiteId || accountQuery.data?.primarySiteId || userSiteIds[0] || "";
+  const { accountQuery, activeMerchantId, activeSiteId, selectedSiteId, setSelectedSiteId, siteIds: userSiteIds } = useMerchantContext();
 
   useEffect(() => {
     async function loadPostHogData() {
       if (!activeMerchantId) return;
       setLoading(true);
       try {
-        const queryUrl = activeSiteId && activeSiteId !== "site_all"
-          ? `/api/tracker/stats?site=${encodeURIComponent(activeSiteId)}`
-          : "/api/tracker/stats?site=all";
-        
-        const res = await fetch(queryUrl);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.stats) {
-            setStats(data.stats);
-          }
-          if (data.timeSeries) {
-            setTimeSeries(data.timeSeries);
-          }
-          if (data.orders) {
-            setOrders(data.orders);
-          }
+        const data = await fetchTrackerStats(activeSiteId);
+        if (data.stats) {
+          setStats(data.stats);
+        }
+        if (data.timeSeries) {
+          setTimeSeries(data.timeSeries);
+        }
+        if (data.orders) {
+          setOrders(data.orders);
         }
       } catch (err) {
         console.error("Failed to fetch live PostHog stats:", err);
@@ -592,7 +464,7 @@ export default function MerchantOrdersPage() {
           <div className="flex items-center gap-2.5">
             {/* Storefront Site Selector */}
             {userSiteIds.length > 1 ? (
-              <CustomSelect
+              <SelectMenu
                 value={activeSiteId}
                 onChange={(val) => {
                   setSelectedSiteId(val);
@@ -646,8 +518,8 @@ export default function MerchantOrdersPage() {
               <FormattedAmount amount={stats.grossRevenue} />
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
-              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +18.4%</span>
-              <span className="text-muted-foreground truncate">₹{Math.round(stats.agentOrders * (stats.avgOrderValue || 1500)).toLocaleString("en-IN")} via AI</span>
+              <span className="text-muted-foreground font-medium whitespace-nowrap">API data</span>
+              <span className="text-muted-foreground truncate">{stats.agentOrders} orders via AI</span>
             </div>
           </div>
 
@@ -662,7 +534,7 @@ export default function MerchantOrdersPage() {
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
               <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +5.2%</span>
-              <span className="text-muted-foreground truncate">vs ₹{Math.round((stats.avgOrderValue || 1500) * 0.94).toLocaleString("en-IN")} prior</span>
+              <span className="text-muted-foreground truncate">Current selected storefront</span>
             </div>
           </div>
 
@@ -676,7 +548,7 @@ export default function MerchantOrdersPage() {
               {stats.agentOrders.toLocaleString()} <span className="text-xs font-normal text-muted-foreground font-sans">orders</span>
             </div>
             <div className="text-[11px] flex items-center gap-1.5 mt-1">
-              <span className="text-emerald-500 font-medium whitespace-nowrap">↗ +22.5%</span>
+              <span className="text-muted-foreground font-medium whitespace-nowrap">API data</span>
               <span className="text-muted-foreground truncate">{stats.agentSharePct}% of volume</span>
             </div>
           </div>
@@ -714,7 +586,7 @@ export default function MerchantOrdersPage() {
       </div>
 
       {/* Big Unified Card for Past Orders Table & Controls */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+      <Card className="rounded-xl border border-border bg-card p-5 space-y-4">
         {/* Card Header with Integrated Search & Filter Controls */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
@@ -732,20 +604,20 @@ export default function MerchantOrdersPage() {
           <div className="flex flex-wrap items-center gap-2 max-sm:w-full">
             {/* Search */}
             <div className="relative w-64 max-sm:w-full">
-              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-              <input
+              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground z-10 pointer-events-none" />
+              <Input
                 placeholder="Search orders, customers, items..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full rounded-lg border border-input bg-background pl-9 pr-4 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
+                className="w-full rounded-lg bg-background pl-9 pr-4 py-2 text-xs text-foreground placeholder:text-muted-foreground"
               />
             </div>
 
             {/* Status Filter */}
-            <CustomSelect
+            <SelectMenu
               value={statusFilter}
               onChange={(val) => {
                 setStatusFilter(val);
@@ -761,105 +633,115 @@ export default function MerchantOrdersPage() {
             />
 
             {(statusFilter !== "ALL" || searchQuery) && (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   setStatusFilter("ALL");
                   setSearchQuery("");
                   setCurrentPage(1);
                 }}
-                className="h-9 rounded-lg border border-border bg-muted/60 px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                className="h-9 rounded-lg border-border bg-muted/60 px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
               >
                 Reset
-              </button>
+              </Button>
             )}
           </div>
         </div>
 
         {/* Orders Table */}
         {filteredOrders.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-border bg-background text-center p-6">
-            <ShoppingCart className="mb-2 h-8 w-8 text-muted-foreground/40" />
-            <p className="text-sm font-medium text-foreground">
-              {searchQuery ? `No orders matching "${searchQuery}"` : "No orders found"}
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5 max-w-sm">
-              Live transactions recorded with telemetry and payment signatures will appear here.
-            </p>
-          </div>
+          <Empty className="h-64 rounded-xl border border-border bg-background">
+            <EmptyHeader>
+              <EmptyMedia variant="default">
+                <ShoppingCart className="h-8 w-8 text-muted-foreground/40" />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm font-medium text-foreground">
+                {searchQuery ? `No orders matching "${searchQuery}"` : "No orders found"}
+              </EmptyTitle>
+              <EmptyDescription className="text-xs text-muted-foreground max-w-sm">
+                Live transactions recorded with telemetry and payment signatures will appear here.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           /* Table View */
           <TooltipProvider delay={100}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="border-b border-border bg-muted/40 text-muted-foreground font-medium text-[11px] uppercase tracking-wider">
-                <tr>
-                  <th className="w-12 px-4 py-3 font-mono text-muted-foreground">#</th>
-                  <th className="px-4 py-3">Order ID</th>
-                  <th className="px-4 py-3">Date & Time</th>
-                  <th className="px-4 py-3">Customer & City</th>
-                  <th className="px-4 py-3">Items Purchased</th>
-                  <th className="px-4 py-3">Fulfillment</th>
-                  <th className="px-4 py-3">Progress</th>
-                  <th className="px-4 py-3">Payment</th>
-                  <th className="px-4 py-3">Total Amount</th>
-                  <th className="px-4 py-3 text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border font-normal">
+            <Table className="w-full text-xs text-left">
+              <TableHeader className="border-b border-border bg-muted/40 text-muted-foreground font-medium text-[11px] uppercase tracking-wider">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-12 px-4 py-3 font-mono text-muted-foreground">#</TableHead>
+                  <TableHead className="px-4 py-3">Order ID</TableHead>
+                  <TableHead className="px-4 py-3">Date & Time</TableHead>
+                  <TableHead className="px-4 py-3">Customer & City</TableHead>
+                  <TableHead className="px-4 py-3">Items Purchased</TableHead>
+                  <TableHead className="px-4 py-3">Fulfillment</TableHead>
+                  <TableHead className="px-4 py-3">Progress</TableHead>
+                  <TableHead className="px-4 py-3">Payment</TableHead>
+                  <TableHead className="px-4 py-3">Total Amount</TableHead>
+                  <TableHead className="px-4 py-3 text-right">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-border font-normal">
                 {paginatedOrders.map((o, index) => {
                   const rowNumber = (safeCurrentPage - 1) * pageSize + index + 1;
                   const isCopied = copiedId === o.id;
                   const details = getStatusDetails(o.status);
 
                   return (
-                    <tr
+                    <TableRow
                       key={`${o.id}-${index}`}
                       className="hover:bg-muted/30 transition-colors"
                     >
-                      <td className="px-4 py-3.5 font-mono text-xs text-muted-foreground">
+                      <TableCell className="px-4 py-3.5 font-mono text-xs text-muted-foreground">
                         {rowNumber}
-                      </td>
+                      </TableCell>
 
                       {/* Order ID + Copy */}
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-foreground">
-                            {o.id.slice(0, 14)}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={(e) => handleCopy(o.id, e)}
-                            className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors cursor-pointer"
-                            title="Copy Order ID"
-                          >
-                            {isCopied ? (
-                              <Check className="h-3 w-3 text-emerald-500" />
-                            ) : (
-                              <Copy className="h-3 w-3" />
-                            )}
-                          </button>
-                        </div>
-                      </td>
+                      <TableCell className="px-4 py-3.5 whitespace-nowrap">
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopy(o.id, e)}
+                                aria-label="Copy order ID"
+                                className="inline-flex items-center gap-1.5 font-mono font-medium text-foreground hover:text-primary transition-colors cursor-pointer group/copy"
+                              >
+                                <span>{o.id.slice(0, 14)}</span>
+                                {isCopied ? (
+                                  <Check className="h-3 w-3 text-emerald-500" />
+                                ) : (
+                                  <Copy className="h-3 w-3 opacity-0 group-hover/copy:opacity-100 transition-opacity text-muted-foreground" />
+                                )}
+                              </button>
+                            }
+                          />
+                          <TooltipContent side="top" className="text-xs">
+                            {isCopied ? "Copied ID!" : "Click to copy Order ID"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TableCell>
 
-                      <td className="px-4 py-3.5 text-muted-foreground font-mono whitespace-nowrap">
+                      <TableCell className="px-4 py-3.5 text-muted-foreground font-mono whitespace-nowrap">
                         {o.date}
-                      </td>
+                      </TableCell>
 
-                      <td className="px-4 py-3.5">
+                      <TableCell className="px-4 py-3.5">
                         <div className="font-medium text-foreground flex items-center gap-1.5 whitespace-nowrap">
                           {o.customer}
                           {o.actor === "agent" && (
-                            <span className="rounded-full border border-purple-500/20 bg-purple-500/10 px-1.5 py-0.2 text-[10px] font-semibold text-purple-400">
+                            <Badge variant="outline" className="rounded-full border-purple-500/20 bg-purple-500/10 px-1.5 py-0.2 text-[10px] font-semibold text-purple-400">
                               AI Bot
-                            </span>
+                            </Badge>
                           )}
                         </div>
                         <div className="text-[11px] text-muted-foreground">{o.city}</div>
-                      </td>
+                      </TableCell>
 
                       {/* Item with Tooltip */}
-                      <td className="px-4 py-3.5 max-w-[240px]">
+                      <TableCell className="px-4 py-3.5 max-w-[240px]">
                         <Tooltip>
                           <TooltipTrigger
                             render={
@@ -875,39 +757,38 @@ export default function MerchantOrdersPage() {
                             <p className="font-semibold text-foreground">{o.items}</p>
                           </TooltipContent>
                         </Tooltip>
-                      </td>
+                      </TableCell>
 
-                      <td className="px-4 py-3.5 whitespace-nowrap">
-                        <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold", details.fulfillmentTone)}>
+                      <TableCell className="px-4 py-3.5 whitespace-nowrap">
+                        <Badge variant="outline" className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", details.fulfillmentTone)}>
                           {details.fulfillmentLabel}
-                        </span>
-                      </td>
+                        </Badge>
+                      </TableCell>
 
-                      <td className="px-4 py-3.5 whitespace-nowrap">
+                      <TableCell className="px-4 py-3.5 whitespace-nowrap">
                         <SegmentedProgressBar percent={details.progressPercent} />
-                      </td>
+                      </TableCell>
 
-                      <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">
+                      <TableCell className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">
                         {o.method}
-                      </td>
+                      </TableCell>
 
-                      <td className="px-4 py-3.5 font-mono font-semibold text-emerald-500 whitespace-nowrap">
+                      <TableCell className="px-4 py-3.5 font-mono font-semibold text-emerald-500 whitespace-nowrap">
                         <FormattedAmount amount={o.amount} />
-                      </td>
+                      </TableCell>
 
-                      <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                        <span className={cn("inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium border", details.statusTone)}>
+                      <TableCell className="px-4 py-3.5 text-right whitespace-nowrap">
+                        <Badge variant="outline" className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-medium border", details.statusTone)}>
                           {details.statusLabel}
-                        </span>
-                      </td>
-                    </tr>
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        </TooltipProvider>
-      )}
+              </TableBody>
+            </Table>
+          </TooltipProvider>
+        )}
 
         {/* Pagination Controls Bar */}
         {filteredOrders.length > 0 && (
@@ -934,7 +815,7 @@ export default function MerchantOrdersPage() {
 
               <div className="flex items-center gap-1.5">
                 <span>Rows per page:</span>
-                <CustomSelect
+                <SelectMenu
                   value={pageSize}
                   onChange={(val) => {
                     setPageSize(Number(val));
@@ -998,7 +879,7 @@ export default function MerchantOrdersPage() {
             </div>
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
