@@ -200,9 +200,9 @@ export function NavCollapsible({
   onNewSession,
 }: NavCollapsibleProps) {
   return (
-    <div className="space-y-0">
-      <Collapsible className="group/collapsible" defaultOpen>
-        <SidebarGroup className="p-2">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Collapsible className="group/collapsible flex min-h-0 flex-1 flex-col" defaultOpen>
+        <SidebarGroup className="flex min-h-0 flex-1 flex-col p-2">
           {/* Section Header */}
           <div className="flex items-center justify-between pb-1.5">
             <SidebarGroupLabel
@@ -232,8 +232,8 @@ export function NavCollapsible({
             </button>
           </div>
 
-          <CollapsibleContent>
-            <SidebarGroupContent className="pt-1">
+          <CollapsibleContent className="flex min-h-0 flex-1 flex-col">
+            <SidebarGroupContent className="flex min-h-0 flex-1 flex-col pt-1">
               {/* Empty State */}
               {sessions.length === 0 ? (
                 <div className="mx-0.5 my-2 rounded-lg border border-dashed border-border/70 p-3 text-center">
@@ -255,7 +255,7 @@ export function NavCollapsible({
                 </div>
               ) : (
                 /* Direct List of Session Cards */
-                <div className="grid gap-2">
+                <div className="grid min-h-0 flex-1 grid-flow-row gap-2 overflow-y-auto pr-1">
                   {sessions.map((session) => {
                     const isActive = session.sessionId === activeSessionId;
                     const shortTime = formatShortTime(session.createdAt);
