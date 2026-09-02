@@ -21,7 +21,6 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@cartwright/config": "workspace:*",
     "typescript": "catalog:"
   }
 }

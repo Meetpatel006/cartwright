@@ -1,3 +1,4 @@
+export type { PurchasePlan, Recommendation, ShoppingIntent } from "@cartwright/agent";
 import type { PurchasePlan, Recommendation, ShoppingIntent } from "@cartwright/agent";
 
 import type { TransactionResult } from "../transactions/transaction.types";

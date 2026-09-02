@@ -4,6 +4,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@cartwright/ui/components/button";
+import type {
+  PurchasePlan,
+  Recommendation,
+  ShoppingIntent,
+  ShoppingSessionView,
+  SelectProductOutput,
+} from "@cartwright/api/shopping/shopping.types";
+import type { TransactionResult } from "@cartwright/api/transactions/transaction.types";
 import { trpc } from "@/utils/trpc";
 import { cn } from "@cartwright/ui/lib/utils";
 import { SessionWebPreview } from "@/components/session-web-preview";
@@ -30,10 +38,6 @@ import {
   Plus,
 } from "lucide-react";
 
-/* -------------------------------------------------------------------------- */
-/*  Local shapes (mirror the API + agent outputs)                             */
-/* -------------------------------------------------------------------------- */
-
 export type TransactionStatus =
   | "CREATED"
   | "POLICY_CHECKING"
@@ -46,89 +50,10 @@ export type TransactionStatus =
   | "PRICE_CHANGED"
   | "CANCELLED";
 
-export interface TransactionView {
-  transactionId: string;
-  status: TransactionStatus;
-  amountInMinor: number;
-  currency: string;
-  approvedAmountInMinor: number | null;
-  policyDecision: "auto_approve" | "user_approval" | "blocked";
-  policyReason: string;
-  autoApprovalLimitInMinor: number;
-  maxTotalSpending: number;
-  paymentSource: "agent_razorpay" | "merchant_ui" | "none";
-  failureReason?: string | null;
-  browserSessionId?: string | null;
-}
-
-interface RankingFactor {
-  name: string;
-  impact: number;
-  reason: string;
-}
-
-interface NormalizedProduct {
-  id: string;
-  merchant: string;
-  canonicalTitle: string;
-  amountInMinor: number;
-  currency: string;
-  productUrl: string | null;
-  availability: "in_stock" | "limited" | "out_of_stock" | "unknown";
-  rating: number | null;
-  reviewCount: number | null;
-  confidence: number;
-  attributes: Record<string, string>;
-  confidenceReasons: string[];
-}
-
-export interface Recommendation {
-  product: NormalizedProduct;
-  rankingScore: number;
-  rankingFactors: RankingFactor[];
-  explanation: string[];
-  isTopRecommendation: boolean;
-}
-
-interface ShoppingIntent {
-  rawQuery: string;
-  category: string | null;
-  budgetInMinor: number | null;
-  currency: string;
-  requestedQuantity: number;
-  preferredMerchants: string[];
-  excludedMerchants: string[];
-  constraints: string[];
-  store?: string;
-  clarifyingQuestions?: ApprovalQuestion[];
-}
-
-interface ShoppingRunResult {
-  sessionId: string;
-  status: string;
-  rawQuery: string;
-  intent: ShoppingIntent;
-  recommendations: Recommendation[];
-  createdAt: string;
-}
-
-interface PurchasePlan {
-  productId: string;
-  merchant: string;
-  productUrl: string | null;
-  expectedAmountInMinor: number;
-  currency: string;
-  rankingScore: number;
-  recommendationReasons: string[];
-  evidence: Record<string, unknown>;
-  constraintsApplied: string[];
-  selectedAt: string;
-}
-
-interface SelectResult {
-  plan: PurchasePlan;
-  purchase: TransactionView;
-}
+export type { PurchasePlan, Recommendation, ShoppingIntent } from "@cartwright/api/shopping/shopping.types";
+export type TransactionView = TransactionResult;
+type ShoppingRunResult = ShoppingSessionView;
+type SelectResult = SelectProductOutput;
 
 declare global {
   interface Window {
