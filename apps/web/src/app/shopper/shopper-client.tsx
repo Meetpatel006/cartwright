@@ -314,7 +314,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   const merchantResult = approve.data?.merchantResult;
   const intent = (runResult?.intent ?? loadedSession.data?.intent) as ShoppingIntent | undefined;
   const [payMethod, setPayMethod] = useState<"card" | "wallet">("card");
-  const [isBrowserSidebarOpen, setIsBrowserSidebarOpen] = useState(true);
+  const [isBrowserSidebarOpen, setIsBrowserSidebarOpen] = useState(false);
   const [dismissedClarifications, setDismissedClarifications] = useState<Record<string, boolean>>({});
 
   const createSession = useMutation(trpc.shopping.create.mutationOptions());
@@ -680,14 +680,14 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                     />
 
                     <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
-                      <div className="inline-flex rounded-lg border border-border bg-muted p-0.5">
+                      <div className="inline-flex rounded-lg border border-border bg-muted/50 p-0.5">
                         <button
                           type="button"
                           onClick={() => setBrowserMode("local")}
                           className={cn(
                             "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
                             browserMode === "local"
-                              ? "bg-primary text-primary-foreground"
+                              ? "bg-background text-foreground shadow-sm"
                               : "text-muted-foreground hover:text-foreground"
                           )}
                         >
@@ -699,7 +699,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                           className={cn(
                             "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
                             browserMode === "browserbase"
-                              ? "bg-primary text-primary-foreground"
+                              ? "bg-background text-foreground shadow-sm"
                               : "text-muted-foreground hover:text-foreground"
                           )}
                         >
@@ -942,14 +942,14 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                   />
 
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
-                    <div className="inline-flex rounded-lg border border-border bg-muted p-0.5">
+                    <div className="inline-flex rounded-lg border border-border bg-muted/50 p-0.5">
                       <button
                         type="button"
                         onClick={() => setBrowserMode("local")}
                         className={cn(
                           "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
                           browserMode === "local"
-                            ? "bg-muted text-foreground"
+                            ? "bg-background text-foreground shadow-sm"
                             : "text-muted-foreground hover:text-foreground"
                         )}
                       >
@@ -961,7 +961,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                         className={cn(
                           "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
                           browserMode === "browserbase"
-                            ? "bg-muted text-foreground"
+                            ? "bg-background text-foreground shadow-sm"
                             : "text-muted-foreground hover:text-foreground"
                         )}
                       >
