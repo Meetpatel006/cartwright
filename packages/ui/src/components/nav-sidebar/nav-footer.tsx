@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { Check, LogOut, Moon, Settings, Sun, Monitor, User } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@cartwright/ui/components/avatar';
+import { Button } from '@cartwright/ui/components/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,43 +43,47 @@ export function NavFooter({
         <SidebarMenuItem>
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  nativeButton={false}
-                  render={<Avatar className="h-8 w-8 rounded-full" />}
-                >
-                  <AvatarImage alt={user.name} src={user.avatar} />
-                  <AvatarFallback className="rounded-full">
-                    {user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'U'}
-                  </AvatarFallback>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="m-2">
-                  <DropdownMenuItem>
-                    <User aria-hidden="true" className="opacity-80" size={16} />
-                    Profile
-                  </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Settings aria-hidden="true" className="opacity-80" size={16} />
-                    Settings
-                  </DropdownMenuItem>
-                  {mounted && themeOptions.map(({ value, label, icon: Icon }) => (
-                    <DropdownMenuItem key={value} onClick={() => setTheme(value)}>
-                      <Icon aria-hidden="true" className="opacity-80" size={16} />
-                      {label}
-                      {theme === value && <Check className="ml-auto" size={14} />}
-                    </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuItem>
-                    <LogOut aria-hidden="true" className="opacity-80" size={16} />
-                    Logout
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Avatar className="h-8 w-8 rounded-full">
+                <AvatarImage alt={user.name} src={user.avatar} />
+                <AvatarFallback className="rounded-full">
+                  {user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'U'}
+                </AvatarFallback>
+              </Avatar>
               <div className="flex flex-col">
                 <span className="text-xs font-medium">{user.name}</span>
                 {user.email && <span className="text-[10px] text-muted-foreground">{user.email}</span>}
               </div>
             </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" />
+                }
+              >
+                <Settings className="h-3.5 w-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="end" className="m-2 w-48">
+                <DropdownMenuItem>
+                  <User aria-hidden="true" className="opacity-80" size={16} />
+                  Profile
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Settings aria-hidden="true" className="opacity-80" size={16} />
+                  Settings
+                </DropdownMenuItem>
+                {mounted && themeOptions.map(({ value, label, icon: Icon }) => (
+                  <DropdownMenuItem key={value} onClick={() => setTheme(value)}>
+                    <Icon aria-hidden="true" className="opacity-80" size={16} />
+                    {label}
+                    {theme === value && <Check className="ml-auto" size={14} />}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuItem>
+                  <LogOut aria-hidden="true" className="opacity-80" size={16} />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </SidebarMenuItem>
       </SidebarMenu>
