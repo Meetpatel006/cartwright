@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
             JSONExtractString(properties.order, 'items', 1, 'title'),
             properties.product_title,
             properties.title,
-            'boAt Audio Product'
+            'Unknown product'
           ) AS product_title,
           properties.order_status AS order_status
         FROM events
@@ -184,9 +184,9 @@ export async function GET(request: NextRequest) {
     // Site-scoped dynamic conversion funnel
     const fnRow = funnelRes?.results?.[0] || [0, 0, 0, 0, 0];
     const visits = Number(fnRow[0]) || totalViews || 0;
-    const prodViews = Number(fnRow[1]) || Math.round(visits * 0.65) || 0;
-    const cartAdds = Number(fnRow[2]) || Math.round(prodViews * 0.5) || 0;
-    const checkouts = Number(fnRow[3]) || Math.round(cartAdds * 0.6) || 0;
+    const prodViews = Number(fnRow[1]) || 0;
+    const cartAdds = Number(fnRow[2]) || 0;
+    const checkouts = Number(fnRow[3]) || 0;
     const purchases = Number(fnRow[4]) || totalOrders || 0;
 
     const funnel = [
@@ -220,8 +220,8 @@ export async function GET(request: NextRequest) {
     // Search queries for this site
     const searchQueries = (searchRes?.results || []).map((row: any[]) => ({
       query: String(row[0] || ""),
-      searches: Number(row[1]) || 1,
-      missedRevenue: (Number(row[1]) || 1) * (avgOrderValue || 1500),
+      searches: Number(row[1]) || 0,
+      missedRevenue: (Number(row[1]) || 0) * avgOrderValue,
       suggestion: "High intent keyword detected from visitor searches",
     }));
 
@@ -262,24 +262,25 @@ export async function GET(request: NextRequest) {
         orderStatus,
       ] = row;
 
-      const dateObj = timestamp ? new Date(timestamp) : new Date();
-      const formattedDate = dateObj.toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+      const formattedDate = timestamp
+        ? new Date(timestamp).toLocaleDateString("en-IN", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "—";
 
       return {
         id: orderId || `ORD-${String(idx + 1).padStart(4, "0")}`,
         date: formattedDate,
         customer: actorType === "agent" ? "Autonomous AI Agent" : `Shopper (${String(distinctId || "usr").slice(0, 10)})`,
-        city: city || (actorType === "agent" ? "Cloud / Automated" : "Mumbai"),
-        items: productTitle || "boAt Airdopes 141 ANC TWS Earbuds (42H Playtime)",
+         city: city || "—",
+        items: productTitle || "Unknown product",
         amount: Number(amount) || 0,
-        method: paymentMethod || "UPI",
-        status: orderStatus || "Confirmed",
+        method: paymentMethod || "—",
+        status: orderStatus || "—",
         actor: (actorType === "agent" ? "agent" : "shopper") as "agent" | "shopper",
         merchantId: merchantId || boundMerchantId,
         siteId: siteId || boundSiteId,
@@ -288,29 +289,26 @@ export async function GET(request: NextRequest) {
 
     // Dynamic Customer Analytics derived directly from telemetry orders & visitors
     const uniqueOrderBuyers = new Set(rawOrders.map((r: any) => String(r[1] || r[2]))).size;
-    const computedTotalCustomers = totalOrders > 0
-      ? (24892 + totalOrders * 3)
-      : 24892;
-
-    const computedActiveCustomers = Math.round(computedTotalCustomers * (0.74 + (fulfillmentRate > 90 ? (fulfillmentRate - 90) * 0.001 : 0)));
-    const computedNewCustomers = 1240 + (agentOrders * 4);
-    const computedChurn = Math.round(computedNewCustomers * 0.148);
+    const computedTotalCustomers = uniqueOrderBuyers;
+    const computedActiveCustomers = uniqueOrderBuyers;
+    const computedNewCustomers = 0;
+    const computedChurn = 0;
 
     // Dynamic CLV in INR: calculated from AOV and repeat frequency
     const computedClvInr = avgOrderValue > 0
       ? Math.round(avgOrderValue * 19)
-      : 28500;
+      : 0;
 
     // Dynamic growth percentages based on real agent share & conversion rate
-    const totalGrowthPct = Number((8.2 + (agentSharePct > 0 ? agentSharePct * 0.05 : 0)).toFixed(1));
-    const activeRetentionPct = Number((12.4 + (fulfillmentRate > 90 ? (fulfillmentRate - 90) * 0.2 : 0)).toFixed(1));
-    const clvGrowthPct = Number((5.4 + (avgOrderValue > 1500 ? 1.4 : 0)).toFixed(1));
-    const newAcquisitionPct = Number((18.5 + (agentOrders > 10 ? 2.3 : 0)).toFixed(1));
+    const totalGrowthPct = 0;
+    const activeRetentionPct = 0;
+    const clvGrowthPct = 0;
+    const newAcquisitionPct = 0;
 
     // Dynamic time-series distribution where sum(signups) === computedNewCustomers and sum(churn) === computedChurn
     const timeSeriesDays = timeSeries.length > 0
       ? Array.from(new Set(timeSeries.map((t) => t.day)))
-      : ["Aug 16", "Aug 18", "Aug 20", "Aug 22", "Aug 24", "Aug 26", "Aug 28", "Aug 31"];
+      : [];
 
     const customerGrowthTimeSeries: Array<{ day: string; series: "New Signups" | "Churned"; count: number }> = [];
     const numDays = timeSeriesDays.length;
@@ -330,34 +328,28 @@ export async function GET(request: NextRequest) {
     });
 
     // Geographic Distribution across Cities
-    const geoDistribution = [
-      { city: "Bengaluru, KA", state: "Karnataka", orders: Math.max(18, Math.round(totalOrders * 0.38)), share: 37.5, revenue: Math.round((grossRevenue || 73451) * 0.375) },
-      { city: "Delhi NCR, DL", state: "Delhi", orders: Math.max(11, Math.round(totalOrders * 0.24)), share: 24.2, revenue: Math.round((grossRevenue || 73451) * 0.242) },
-      { city: "Mumbai, MH", state: "Maharashtra", orders: Math.max(9, Math.round(totalOrders * 0.18)), share: 18.0, revenue: Math.round((grossRevenue || 73451) * 0.180) },
-      { city: "Hyderabad, TS", state: "Telangana", orders: Math.max(6, Math.round(totalOrders * 0.12)), share: 12.3, revenue: Math.round((grossRevenue || 73451) * 0.123) },
-      { city: "Chennai, TN", state: "Tamil Nadu", orders: Math.max(4, Math.round(totalOrders * 0.08)), share: 8.0, revenue: Math.round((grossRevenue || 73451) * 0.080) },
-    ];
+    const geoDistribution: Array<{ city: string; state: string; orders: number; share: number; revenue: number }> = [];
 
     // First-Time vs Repeat Buyer Cohort Analysis
-    const repeatBuyerCount = Math.round(computedTotalCustomers * 0.284);
+    const repeatBuyerCount = 0;
     const firstTimeBuyerCount = computedTotalCustomers - repeatBuyerCount;
-    const baseAov = avgOrderValue || 1499;
+    const baseAov = avgOrderValue;
     const firstTimeAov = baseAov;
     const repeatAov = Math.round(baseAov * 2.84);
 
     const cohortAnalysis = {
       firstTime: {
         count: firstTimeBuyerCount,
-        sharePct: 71.6,
+        sharePct: computedTotalCustomers > 0 ? Number(((firstTimeBuyerCount / computedTotalCustomers) * 100).toFixed(1)) : 0,
         avgSpend: firstTimeAov,
         totalRevenue: Math.round(firstTimeBuyerCount * firstTimeAov * 0.04),
       },
       repeat: {
         count: repeatBuyerCount,
-        sharePct: 28.4,
+        sharePct: computedTotalCustomers > 0 ? Number(((repeatBuyerCount / computedTotalCustomers) * 100).toFixed(1)) : 0,
         avgSpend: repeatAov,
         totalRevenue: Math.round(repeatBuyerCount * repeatAov * 0.04),
-        repeatCycleDays: 14,
+        repeatCycleDays: 0,
         retentionRate: activeRetentionPct,
       },
     };
