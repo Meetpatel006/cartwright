@@ -19,7 +19,6 @@
     "posthog-js": "^1.223.0"
   },
   "devDependencies": {
-    "@cartwright/config": "workspace:*",
     "@types/node": "^22.20.1",
     "happy-dom": "^17.4.8",
     "typescript": "catalog:"
