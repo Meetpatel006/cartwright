@@ -14,10 +14,16 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
 } from "lucide-react";
 
 import { trpc } from "@/utils/trpc";
+import AuditTrailPanel from "@/components/transactions/audit-trail-panel";
+import {
+  FormattedAmount,
+  formatDate,
+  getStatusDetails,
+  SegmentedProgressBar,
+} from "@/components/transactions/transaction-ui";
 import { cn } from "@cartwright/ui/lib/utils";
 import { Checkbox } from "@cartwright/ui/components/checkbox";
 import { Button } from "@cartwright/ui/components/button";
@@ -27,354 +33,16 @@ import {
   TooltipContent,
   TooltipProvider,
 } from "@cartwright/ui/components/tooltip";
+import { SelectMenu } from "@cartwright/ui/components/select-menu";
+import { Card } from "@cartwright/ui/components/card";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-} from "@cartwright/ui/components/dropdown-menu";
-
-function FormattedAmount({
-  minor,
-  currency,
-  className,
-}: {
-  minor: number;
-  currency: string;
-  className?: string;
-}) {
-  const parts = useMemo(() => {
-    try {
-      const activeCurrency = currency || "INR";
-      const formatter = new Intl.NumberFormat("en-IN", {
-        style: "currency",
-        currency: activeCurrency,
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
-      const formattedParts = formatter.formatToParts(minor / 100);
-      const currencySymbol =
-        formattedParts.find((p) => p.type === "currency")?.value ||
-        (activeCurrency === "INR" ? "₹" : "$");
-      const numberValue = formattedParts
-        .filter((p) => p.type !== "currency")
-        .map((p) => p.value)
-        .join("")
-        .trim();
-      return { symbol: currencySymbol, number: numberValue };
-    } catch {
-      return {
-        symbol: currency === "USD" ? "$" : "₹",
-        number: (minor / 100).toFixed(2),
-      };
-    }
-  }, [minor, currency]);
-
-  return (
-    <span className={cn("font-mono text-sm whitespace-nowrap", className)}>
-      <span className="font-normal text-muted-foreground mr-0.5">{parts.symbol}</span>
-      <span className="font-bold text-foreground">{parts.number}</span>
-    </span>
-  );
-}
-
-function CustomSelect({
-  value,
-  onChange,
-  options,
-  placeholder,
-  className,
-  size = "md",
-}: {
-  value: string | number;
-  onChange: (val: string) => void;
-  options: Array<{ value: string | number; label: string }>;
-  placeholder?: string;
-  className?: string;
-  size?: "sm" | "md";
-}) {
-  const selected = options.find((o) => String(o.value) === String(value));
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <button
-            type="button"
-            className={cn(
-              "inline-flex w-auto items-center justify-between gap-2 rounded-lg border border-border bg-muted text-xs font-medium text-foreground transition-colors hover:border-border hover:bg-accent focus:border-border focus:outline-none cursor-pointer whitespace-nowrap shrink-0",
-              size === "sm" ? "h-7 px-2.5" : "h-9 px-3",
-              className
-            )}
-          >
-            <span>{selected ? selected.label : placeholder}</span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          </button>
-        }
-      />
-      <DropdownMenuContent
-        align="start"
-        sideOffset={4}
-        className="z-50 w-max min-w-full rounded-xl border border-border bg-popover p-1 text-xs text-foreground backdrop-blur-md"
-      >
-        <DropdownMenuGroup>
-          {options.map((opt) => {
-            const isSelected = String(opt.value) === String(value);
-            return (
-              <DropdownMenuItem
-                key={String(opt.value)}
-                onClick={() => onChange(String(opt.value))}
-                className={cn(
-                  "flex items-center rounded-lg px-2.5 py-1.5 text-xs font-medium cursor-pointer transition-colors whitespace-nowrap",
-                  isSelected
-                    ? "bg-accent text-foreground font-semibold"
-                    : "text-foreground hover:bg-accent/60 hover:text-foreground"
-                )}
-              >
-                <span>{opt.label}</span>
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function formatDate(dateInput: string | Date): string {
-  try {
-    const d = new Date(dateInput);
-    const dd = String(d.getDate()).padStart(2, "0");
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  } catch {
-    return "";
-  }
-}
-
-function getStatusDetails(status: string) {
-  const norm = (status || "").toUpperCase();
-  switch (norm) {
-    case "PAYMENT_SUCCEEDED":
-    case "APPROVED":
-      return {
-        statusLabel: "Paid",
-        statusTone: "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/60 dark:border-emerald-500/40 dark:text-emerald-400",
-        dotColor: "bg-emerald-400",
-        fulfillmentLabel: "Delivered",
-        fulfillmentTone: "bg-muted border-border text-foreground",
-        progressPercent: 100,
-        boardColumn: "Delivered",
-      };
-    case "PAYMENT_PROCESSING":
-      return {
-        statusLabel: "Paid",
-        statusTone: "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/60 dark:border-emerald-500/40 dark:text-emerald-400",
-        dotColor: "bg-emerald-400",
-        fulfillmentLabel: "In Transit",
-        fulfillmentTone: "bg-muted border-border text-foreground",
-        progressPercent: 80,
-        boardColumn: "In Transit",
-      };
-    case "POLICY_CHECKING":
-    case "AWAITING_APPROVAL":
-    case "ACTIVE":
-    case "CREATED":
-      return {
-        statusLabel: "Pending",
-        statusTone: "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/60 dark:border-amber-500/40 dark:text-amber-400",
-        dotColor: "bg-amber-400",
-        fulfillmentLabel: norm === "AWAITING_APPROVAL" ? "Awaiting Approval" : "Processing",
-        fulfillmentTone: "bg-muted border-border text-foreground",
-        progressPercent: norm === "AWAITING_APPROVAL" ? 40 : 20,
-        boardColumn: "Pending",
-      };
-    case "PAYMENT_FAILED":
-    case "POLICY_BLOCKED":
-    case "PRICE_CHANGED":
-    case "CANCELLED":
-    default:
-      return {
-        statusLabel: "Failed",
-        statusTone: "bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/60 dark:border-rose-500/40 dark:text-rose-400",
-        dotColor: "bg-rose-400",
-        fulfillmentLabel: norm === "CANCELLED" ? "Cancelled" : norm === "PRICE_CHANGED" ? "Price Changed" : "Blocked",
-        fulfillmentTone: "bg-muted border-border text-foreground",
-        progressPercent: 0,
-        boardColumn: "Failed",
-      };
-  }
-}
-
-function SegmentedProgressBar({ percent }: { percent: number }) {
-  const totalBars = 5;
-  const filledBars = Math.round((percent / 100) * totalBars);
-
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex items-center gap-0.5">
-        {Array.from({ length: totalBars }).map((_, i) => (
-          <div
-            key={i}
-            className={cn(
-              "h-3.5 w-1 rounded-full transition-colors",
-              i < filledBars ? "bg-primary" : "bg-muted"
-            )}
-          />
-        ))}
-      </div>
-      <span className="font-mono text-xs font-semibold text-foreground">
-        {percent}%
-      </span>
-    </div>
-  );
-}
-
-function getEventBadge(eventType: string) {
-  const norm = (eventType || "").toUpperCase();
-  const isFailure =
-    norm.includes("FAIL") ||
-    norm.includes("BLOCK") ||
-    norm.includes("REJECT") ||
-    norm.includes("ERROR") ||
-    norm.includes("CANCEL");
-  const isSuccess = norm.includes("SUCCESS") || norm.includes("COMPLETE") || norm.includes("DONE");
-
-  if (isFailure) {
-    return {
-      dotClass: "bg-rose-500",
-      lineClass: "bg-rose-300 dark:bg-rose-800/60",
-      badgeBg: "bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/50 text-rose-700 dark:text-rose-300",
-    };
-  }
-
-  if (isSuccess) {
-    return {
-      dotClass: "bg-emerald-500",
-      lineClass: "bg-emerald-300 dark:bg-emerald-800/60",
-      badgeBg: "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-300",
-    };
-  }
-
-  return {
-    dotClass: "bg-slate-400 dark:bg-slate-500",
-    lineClass: "bg-slate-200 dark:bg-slate-700",
-    badgeBg: "bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300",
-  };
-}
-
-function AuditTrailPanel({
-  audit,
-}: {
-  transaction?: any;
-  audit: any;
-  onClose?: () => void;
-}) {
-  const [expandedPayloads, setExpandedPayloads] = useState<Record<string, boolean>>({});
-
-  const togglePayload = (id: string) => {
-    setExpandedPayloads((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const sortedEvents = useMemo(() => {
-    if (!audit.data || !Array.isArray(audit.data)) return [];
-    return [...audit.data].sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-  }, [audit.data]);
-
-  return (
-    <div className="text-xs">
-      {audit.isLoading ? (
-        <div className="flex items-center gap-2 py-4 text-muted-foreground pl-4">
-          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-border border-t-foreground" />
-          <span>Fetching event timeline…</span>
-        </div>
-      ) : sortedEvents.length === 0 ? (
-        <p className="py-4 text-muted-foreground pl-4">No audit events recorded for this transaction.</p>
-      ) : (
-        <div className="relative">
-          {sortedEvents.map((event: any, idx: number) => {
-            const eventId = String(event.id || idx);
-            const style = getEventBadge(event.eventType);
-            const hasMetadata =
-              event.metadata && Object.keys(event.metadata).length > 0;
-            const isPayloadOpen = Boolean(expandedPayloads[eventId]);
-            const isFirst = idx === 0;
-            const isLast = idx === sortedEvents.length - 1;
-
-            return (
-              <div key={eventId} className="relative flex gap-3">
-                {/* Dot column — fixed width, centered on the continuous line */}
-                <div className="relative flex flex-col items-center w-3 shrink-0">
-                  {/* Dot */}
-                  <div
-                    className={cn(
-                      "h-2.5 w-2.5 rounded-full z-10 bg-card border-2 shrink-0",
-                      style.dotClass
-                    )}
-                  />
-                  {/* Line segment below dot */}
-                  {!isLast && (
-                    <div className={cn("w-px grow -mt-px", style.lineClass)} />
-                  )}
-                </div>
-
-                {/* Event content */}
-                <div className="grow min-w-0 pb-5">
-                  <div
-                    onClick={() => hasMetadata && togglePayload(eventId)}
-                    className={cn(
-                      "flex flex-wrap items-center justify-between gap-2 p-1 -m-1 rounded transition-colors",
-                      hasMetadata ? "cursor-pointer hover:bg-muted/50" : "cursor-default"
-                    )}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className={cn(
-                          "font-mono font-semibold text-[11px] px-2 py-0.5 rounded border inline-flex items-center gap-1 transition-colors shrink-0",
-                          style.badgeBg
-                        )}
-                      >
-                        {event.eventType}
-                        {hasMetadata && (
-                          <ChevronDown
-                            className={cn(
-                              "h-3 w-3 text-muted-foreground transition-transform duration-200",
-                              isPayloadOpen ? "rotate-180" : "rotate-0"
-                            )}
-                          />
-                        )}
-                      </span>
-                      {event.reason && (
-                        <span className="text-foreground font-medium text-[11px] truncate">
-                          {event.reason}
-                        </span>
-                      )}
-                    </div>
-                    <span className="font-mono text-[10px] text-muted-foreground whitespace-nowrap">
-                      {new Date(event.createdAt).toLocaleString()}
-                    </span>
-                  </div>
-
-                  {hasMetadata && isPayloadOpen && (
-                    <div className="mt-1.5">
-                      <pre className="rounded border border-border p-2.5 font-mono text-[10px] text-foreground overflow-x-auto leading-relaxed bg-card animate-in fade-in-0 duration-150">
-                        {JSON.stringify(event.metadata, null, 2)}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@cartwright/ui/components/table";
 
 export default function TransactionsList() {
   const list = useQuery({
@@ -538,7 +206,7 @@ export default function TransactionsList() {
             </div>
 
             {/* Store / Merchant Filter */}
-            <CustomSelect
+            <SelectMenu
               value={merchantFilter}
               onChange={(val) => {
                 setMerchantFilter(val);
@@ -551,7 +219,7 @@ export default function TransactionsList() {
             />
 
             {/* Status Filter */}
-            <CustomSelect
+            <SelectMenu
               value={statusFilter}
               onChange={(val) => {
                 setStatusFilter(val);
@@ -636,24 +304,23 @@ export default function TransactionsList() {
         ) : viewMode === "list" ? (
           /* Table View */
           <TooltipProvider delay={100}>
-            <div className="overflow-hidden rounded-xl border border-border bg-card">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-border text-[11px] font-semibold tracking-wider text-muted-foreground">
-                      <th className="w-12 px-4 py-3.5 font-mono text-muted-foreground">#</th>
-                      <th className="px-4 py-3.5">Transaction ID</th>
-                      <th className="px-4 py-3.5">Merchant</th>
-                      <th className="px-4 py-3.5">Items / Query</th>
-                      <th className="px-4 py-3.5">Status</th>
-                      <th className="px-4 py-3.5">Fulfillment</th>
-                      <th className="px-4 py-3.5">Progress</th>
-                      <th className="px-4 py-3.5">Error / Details</th>
-                      <th className="px-4 py-3.5">Amount</th>
-                      <th className="px-4 py-3.5 text-right">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border font-medium">
+            <Card className="rounded-xl border border-border p-0">
+              <Table className="text-left text-xs">
+                  <TableHeader>
+                    <TableRow className="border-border text-[11px] font-semibold tracking-wider text-muted-foreground hover:bg-transparent">
+                      <TableHead className="w-12 px-4 py-3.5 font-mono text-muted-foreground">#</TableHead>
+                      <TableHead className="px-4 py-3.5">Transaction ID</TableHead>
+                      <TableHead className="px-4 py-3.5">Merchant</TableHead>
+                      <TableHead className="px-4 py-3.5">Items / Query</TableHead>
+                      <TableHead className="px-4 py-3.5">Status</TableHead>
+                      <TableHead className="px-4 py-3.5">Fulfillment</TableHead>
+                      <TableHead className="px-4 py-3.5">Progress</TableHead>
+                      <TableHead className="px-4 py-3.5">Error / Details</TableHead>
+                      <TableHead className="px-4 py-3.5">Amount</TableHead>
+                      <TableHead className="px-4 py-3.5 text-right">Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-border font-medium">
                     {paginatedTransactions.map((tx, index) => {
                       const rowNumber = (safeCurrentPage - 1) * pageSize + index + 1;
                       const isRowSelected = selectedRowIds.has(tx.transactionId);
@@ -666,7 +333,7 @@ export default function TransactionsList() {
 
                       return (
                         <Fragment key={tx.transactionId}>
-                          <tr
+                          <TableRow
                             onClick={() => setSelectedTxId(isDetailActive ? null : tx.transactionId)}
                             className={cn(
                               "cursor-pointer transition-colors hover:bg-accent/40",
@@ -674,20 +341,22 @@ export default function TransactionsList() {
                             )}
                           >
                             {/* Row Number */}
-                            <td className="px-4 py-4 font-mono text-xs text-muted-foreground font-medium">
+                            <TableCell className="px-4 py-4 font-mono text-xs text-muted-foreground font-medium">
                               {rowNumber}
-                            </td>
+                            </TableCell>
 
                             {/* Real Transaction ID */}
-                            <td className="px-4 py-4 whitespace-nowrap">
+                            <TableCell className="px-4 py-4 whitespace-nowrap">
                               <div className="flex items-center gap-1.5">
                                 <span className="font-mono font-bold text-foreground">
                                   {tx.transactionId.slice(0, 8)}…
                                 </span>
-                                <button
+                                <Button
                                   type="button"
                                   onClick={(e) => handleCopy(tx.transactionId, e)}
-                                  className="text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  className="text-muted-foreground hover:text-foreground"
                                   title="Copy Transaction UUID"
                                 >
                                   {isCopied ? (
@@ -695,12 +364,12 @@ export default function TransactionsList() {
                                   ) : (
                                     <Copy className="h-3 w-3" />
                                   )}
-                                </button>
+                                </Button>
                               </div>
-                            </td>
+                            </TableCell>
 
                             {/* Merchant */}
-                            <td className="px-4 py-4">
+                            <TableCell className="px-4 py-4">
                               <div className="flex flex-col">
                                 <span className="font-bold text-sm text-foreground whitespace-nowrap">
                                   {merchant}
@@ -711,10 +380,10 @@ export default function TransactionsList() {
                                   </span>
                                 )}
                               </div>
-                            </td>
+                            </TableCell>
 
                             {/* Real Items / Search Query */}
-                            <td className="px-4 py-4 text-foreground max-w-[260px]">
+                            <TableCell className="max-w-[260px] px-4 py-4 text-foreground">
                               <Tooltip>
                                 <TooltipTrigger
                                   render={
@@ -746,10 +415,10 @@ export default function TransactionsList() {
                                   )}
                                 </TooltipContent>
                               </Tooltip>
-                            </td>
+                            </TableCell>
 
                             {/* Status (e.g. Paid / Pending / Failed) */}
-                            <td className="px-4 py-4 whitespace-nowrap">
+                            <TableCell className="px-4 py-4 whitespace-nowrap">
                               <span
                                 className={cn(
                                   "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
@@ -758,10 +427,10 @@ export default function TransactionsList() {
                               >
                                 {details.statusLabel}
                               </span>
-                            </td>
+                            </TableCell>
 
                             {/* Fulfillment (e.g. Delivered / In Transit / Processing / Cancelled) */}
-                            <td className="px-4 py-4 whitespace-nowrap">
+                            <TableCell className="px-4 py-4 whitespace-nowrap">
                               <span
                                 className={cn(
                                   "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold",
@@ -770,15 +439,15 @@ export default function TransactionsList() {
                               >
                                 {details.fulfillmentLabel}
                               </span>
-                            </td>
+                            </TableCell>
 
                             {/* Progress Segments */}
-                            <td className="px-4 py-4 whitespace-nowrap">
+                            <TableCell className="px-4 py-4 whitespace-nowrap">
                               <SegmentedProgressBar percent={details.progressPercent} />
-                            </td>
+                            </TableCell>
 
                             {/* Error / Failure Details (Swapped with Payment) */}
-                            <td className="px-4 py-4 max-w-[240px]">
+                            <TableCell className="max-w-[240px] px-4 py-4">
                               {tx.failureReason ? (
                                 <Tooltip>
                                   <TooltipTrigger
@@ -805,34 +474,33 @@ export default function TransactionsList() {
                               ) : (
                                 <span className="text-muted-foreground text-xs">—</span>
                               )}
-                            </td>
+                            </TableCell>
 
                             {/* Amount */}
-                            <td className="px-4 py-4 whitespace-nowrap">
+                            <TableCell className="px-4 py-4 whitespace-nowrap">
                               <FormattedAmount minor={tx.amountInMinor} currency={tx.currency} />
-                            </td>
+                            </TableCell>
 
                             {/* Date */}
-                            <td className="px-4 py-4 text-right font-mono text-xs text-muted-foreground whitespace-nowrap">
+                            <TableCell className="px-4 py-4 text-right font-mono text-xs text-muted-foreground whitespace-nowrap">
                               {formatDate(tx.createdAt)}
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
 
                           {/* Inline Audit Trail Subrow */}
                           {isDetailActive && (
-                            <tr className="bg-accent/50 border-b border-border">
-                              <td colSpan={10} className="pl-16 pr-6 py-4">
+                            <TableRow className="bg-accent/50 border-b border-border hover:bg-accent/50">
+                              <TableCell colSpan={10} className="pl-16 pr-6 py-4">
                                 <AuditTrailPanel audit={audit} />
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           )}
                         </Fragment>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                  </TableBody>
+              </Table>
+            </Card>
           </TooltipProvider>
         ) : (
           /* Card Grid Board View */
@@ -1029,7 +697,7 @@ export default function TransactionsList() {
 
               <div className="flex items-center gap-1.5">
                 <span className="text-muted-foreground">Rows per page:</span>
-                <CustomSelect
+                <SelectMenu
                   value={pageSize}
                   onChange={(val) => {
                     setPageSize(Number(val));
