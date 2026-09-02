@@ -57,6 +57,14 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const siteParam = searchParams.get("site") || searchParams.get("siteId") || undefined;
+  const range = searchParams.get("range") || "15d";
+  const rangeIntervals: Record<string, string> = {
+    "24h": "24 hour",
+    "7d": "7 day",
+    "15d": "15 day",
+    "30d": "30 day",
+  };
+  const rangeInterval = rangeIntervals[range] ?? rangeIntervals["15d"];
 
   const boundMerchantId = merchantAccount.merchantId;
   const boundSiteId = siteParam && siteParam !== "site_all" && siteParam !== "all"
@@ -64,7 +72,7 @@ export async function GET(request: NextRequest) {
     : "all";
 
   // 3. Build filter clause scoped strictly to the authenticated merchant & optional site
-  const filterClauses: string[] = ["timestamp >= now() - interval 90 day"];
+  const filterClauses: string[] = [`timestamp >= now() - interval ${rangeInterval}`];
 
   const safeMerchant = boundMerchantId.replace(/'/g, "");
   filterClauses.push(`(properties.merchant_id = '${safeMerchant}' OR properties.merchant = '${safeMerchant}')`);

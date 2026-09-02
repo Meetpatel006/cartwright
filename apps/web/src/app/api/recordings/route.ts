@@ -1,9 +1,16 @@
+import { auth } from "@cartwright/auth";
 import { NextResponse } from "next/server";
+import { headers } from "next/headers";
 import fs from "fs";
 import path from "path";
 
 export async function GET() {
   try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const cwd = process.cwd();
     const candidateDirs = [
       path.resolve(cwd, "packages/agent/recordings"),
@@ -13,7 +20,7 @@ export async function GET() {
 
     let recordingsDir: string | null = null;
     for (const dir of candidateDirs) {
-      if (fs.existsSync(dir)) {
+      if (fs.existsSync(/*turbopackIgnore: true*/ dir)) {
         recordingsDir = dir;
         break;
       }
@@ -24,13 +31,14 @@ export async function GET() {
     }
 
     const files = fs
-      .readdirSync(recordingsDir)
+      .readdirSync(/*turbopackIgnore: true*/ recordingsDir)
       .filter((file) => file.endsWith(".mp4") || file.endsWith(".webm"))
       .sort()
       .reverse();
 
     return NextResponse.json({ recordings: files });
   } catch (error) {
-    return NextResponse.json({ recordings: [], error: String(error) });
+    console.error("Failed to list recordings:", error);
+    return NextResponse.json({ recordings: [], error: "Failed to list recordings" }, { status: 500 });
   }
 }

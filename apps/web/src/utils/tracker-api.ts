@@ -99,6 +99,8 @@ export interface TrackerStatsResponse {
   searchQueries: SearchQueryItem[];
 }
 
+export type StatsPreset = "24h" | "7d" | "15d" | "30d";
+
 export const DEFAULT_STATS: LiveStats = {
   totalOrders: 0,
   grossRevenue: 0,
@@ -110,10 +112,13 @@ export const DEFAULT_STATS: LiveStats = {
   humanOrders: 0,
 };
 
-export async function fetchTrackerStats(siteId: string): Promise<TrackerStatsResponse> {
+export async function fetchTrackerStats(
+  siteId: string,
+  preset: StatsPreset = "15d",
+): Promise<TrackerStatsResponse> {
   const url = siteId && siteId !== "site_all"
-    ? `/api/tracker/stats?site=${encodeURIComponent(siteId)}`
-    : "/api/tracker/stats?site=all";
+    ? `/api/tracker/stats?site=${encodeURIComponent(siteId)}&range=${preset}`
+    : `/api/tracker/stats?site=all&range=${preset}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Stats fetch failed: ${res.status}`);
   return res.json();

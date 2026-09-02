@@ -1836,7 +1836,7 @@ async function transcodeWebmToMp4(webmPath: string): Promise<string | null> {
   const mp4Path = webmPath.replace(/\.webm$/i, ".mp4");
   try {
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(ffmpeg, [
+      const proc = spawn(/*turbopackIgnore: true*/ ffmpeg, [
         "-y",
         "-i", webmPath,
         "-c:v", "libx264",

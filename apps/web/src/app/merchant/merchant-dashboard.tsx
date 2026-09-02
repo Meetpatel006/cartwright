@@ -32,6 +32,7 @@ import {
   type FunnelItem,
   type TimeSeriesItem,
   type SearchQueryItem,
+  type StatsPreset,
 } from "@/utils/tracker-api";
 import {
   computeOrderTrend,
@@ -40,7 +41,7 @@ import {
   type TrendResult,
 } from "@/utils/metrics";
 
-type Preset = "24h" | "7d" | "15d" | "30d";
+type Preset = StatsPreset;
 
 const PRESET_LABEL: Record<Preset, string> = {
   "24h": "24H",
@@ -50,7 +51,7 @@ const PRESET_LABEL: Record<Preset, string> = {
 };
 
 function formatPct(rate: number | null): string {
-  return rate === null ? "—" : `${(rate * 100).toFixed(1)}%`;
+  return rate === null ? "—" : `${rate.toFixed(1)}%`;
 }
 
 function TrendBadge({ trend }: { trend: TrendResult }) {
@@ -132,7 +133,7 @@ export default function MerchantDashboard() {
     setStatsLoading(true);
     setStatsError(null);
 
-    fetchTrackerStats(activeSiteId)
+    fetchTrackerStats(activeSiteId, preset)
       .then((data) => {
         if (cancelled) return;
         setStats(data.stats);
@@ -150,7 +151,7 @@ export default function MerchantDashboard() {
       });
 
     return () => { cancelled = true; };
-  }, [activeMerchantId, activeSiteId]);
+  }, [activeMerchantId, activeSiteId, preset]);
 
   const trends = useMemo(
     () => ({
