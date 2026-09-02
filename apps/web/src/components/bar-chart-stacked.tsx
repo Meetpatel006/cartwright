@@ -14,34 +14,15 @@ export type OrderSeriesDatum = {
   revenue?: number;
 };
 
-const DEFAULT_SERIES_DATA: OrderSeriesDatum[] = [
-  { day: "Aug 16", series: "Human", orders: 0, revenue: 0 },
-  { day: "Aug 16", series: "AI Agent", orders: 0, revenue: 0 },
-  { day: "Aug 18", series: "Human", orders: 0, revenue: 0 },
-  { day: "Aug 18", series: "AI Agent", orders: 0, revenue: 0 },
-  { day: "Aug 20", series: "Human", orders: 0, revenue: 0 },
-  { day: "Aug 20", series: "AI Agent", orders: 0, revenue: 0 },
-  { day: "Aug 22", series: "Human", orders: 0, revenue: 0 },
-  { day: "Aug 22", series: "AI Agent", orders: 0, revenue: 0 },
-  { day: "Aug 24", series: "Human", orders: 0, revenue: 0 },
-  { day: "Aug 24", series: "AI Agent", orders: 0, revenue: 0 },
-  { day: "Aug 26", series: "Human", orders: 0, revenue: 0 },
-  { day: "Aug 26", series: "AI Agent", orders: 0, revenue: 0 },
-  { day: "Aug 28", series: "Human", orders: 0, revenue: 0 },
-  { day: "Aug 28", series: "AI Agent", orders: 0, revenue: 0 },
-  { day: "Aug 31", series: "Human", orders: 0, revenue: 0 },
-  { day: "Aug 31", series: "AI Agent", orders: 0, revenue: 0 },
-];
-
 const chartRenderer = motion();
 
 export function BarChartStacked({
-  data = DEFAULT_SERIES_DATA,
+  data = [],
   totalOrders = 0,
   agentOrders = 0,
   humanOrders = 0,
   grossRevenue = 0,
-  avgOrderValue = 1500,
+  avgOrderValue = 0,
   valueType = "orders",
   title = "Channel Distribution",
 }: {
@@ -56,11 +37,11 @@ export function BarChartStacked({
 }) {
   const isRevenue = valueType === "revenue";
   const chartData = useMemo(() => {
-    const raw = data && data.length > 0 ? data : DEFAULT_SERIES_DATA;
+    const raw = data;
     if (!isRevenue) return raw;
     return raw.map((d) => ({
       ...d,
-      value: d.revenue ?? Math.round(d.orders * (avgOrderValue || 1500)),
+      value: d.revenue ?? Math.round(d.orders * avgOrderValue),
     }));
   }, [data, isRevenue, avgOrderValue]);
 
@@ -73,7 +54,7 @@ export function BarChartStacked({
     : chartData.reduce((acc, d) => acc + (isRevenue ? (d as any).value : d.orders), 0);
 
   const computedAgent = isRevenue
-    ? Math.round(agentOrders * (avgOrderValue || 1500))
+    ? Math.round(agentOrders * avgOrderValue)
     : agentOrders > 0
     ? agentOrders
     : chartData.filter((d) => d.series === "AI Agent").reduce((acc, d) => acc + (isRevenue ? (d as any).value : d.orders), 0);

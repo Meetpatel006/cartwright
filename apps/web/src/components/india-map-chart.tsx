@@ -20,54 +20,6 @@ export interface GeoCityDatum {
   coords: { x: number; y: number };
 }
 
-export const DEFAULT_INDIA_HUBS: GeoCityDatum[] = [
-  {
-    city: "Bengaluru",
-    state: "Karnataka",
-    stateId: "INKA",
-    orders: 18,
-    share: 37.5,
-    revenue: 27544,
-    coords: { x: 350, y: 785 },
-  },
-  {
-    city: "Delhi NCR",
-    state: "Delhi",
-    stateId: "INDL",
-    orders: 11,
-    share: 24.2,
-    revenue: 17775,
-    coords: { x: 344, y: 321 },
-  },
-  {
-    city: "Mumbai",
-    state: "Maharashtra",
-    stateId: "INMH",
-    orders: 9,
-    share: 18.0,
-    revenue: 13221,
-    coords: { x: 242, y: 605 },
-  },
-  {
-    city: "Hyderabad",
-    state: "Telangana",
-    stateId: "INTG",
-    orders: 6,
-    share: 12.3,
-    revenue: 9034,
-    coords: { x: 398, y: 648 },
-  },
-  {
-    city: "Chennai",
-    state: "Tamil Nadu",
-    stateId: "INTN",
-    orders: 4,
-    share: 8.0,
-    revenue: 5876,
-    coords: { x: 415, y: 795 },
-  },
-];
-
 function FormattedAmount({ amount }: { amount: number }) {
   const parts = new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -87,7 +39,7 @@ function FormattedAmount({ amount }: { amount: number }) {
 }
 
 export function IndiaMapChart({
-  hubs = DEFAULT_INDIA_HUBS,
+  hubs = [],
   title = "Geographic Distribution",
 }: {
   hubs?: GeoCityDatum[];

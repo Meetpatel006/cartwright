@@ -29,7 +29,10 @@ export default function SidebarWrapper({
     return match ? match[1] : null;
   }, [pathname]);
 
-  const sessionsList = useQuery(trpc.shopping.list.queryOptions());
+  const sessionsList = useQuery({
+    ...trpc.shopping.list.queryOptions(),
+    enabled: showSidebar && Boolean(session?.user),
+  });
 
   const sessions: ShoppingSession[] = (sessionsList.data ?? []).map((s) => ({
     sessionId: s.sessionId,

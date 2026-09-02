@@ -14,31 +14,12 @@ export type CustomerGrowthDatum = {
   count: number;
 };
 
-const DEFAULT_GROWTH_DATA: CustomerGrowthDatum[] = [
-  { day: "Aug 16", series: "New Signups", count: 82 },
-  { day: "Aug 16", series: "Churned", count: 12 },
-  { day: "Aug 18", series: "New Signups", count: 95 },
-  { day: "Aug 18", series: "Churned", count: 14 },
-  { day: "Aug 20", series: "New Signups", count: 110 },
-  { day: "Aug 20", series: "Churned", count: 16 },
-  { day: "Aug 22", series: "New Signups", count: 124 },
-  { day: "Aug 22", series: "Churned", count: 15 },
-  { day: "Aug 24", series: "New Signups", count: 142 },
-  { day: "Aug 24", series: "Churned", count: 19 },
-  { day: "Aug 26", series: "New Signups", count: 168 },
-  { day: "Aug 26", series: "Churned", count: 21 },
-  { day: "Aug 28", series: "New Signups", count: 185 },
-  { day: "Aug 28", series: "Churned", count: 24 },
-  { day: "Aug 31", series: "New Signups", count: 214 },
-  { day: "Aug 31", series: "Churned", count: 28 },
-];
-
 const chartRenderer = motion();
 
 export function CustomerGrowthChart({
   data,
-  totalNew = 1240,
-  totalChurn = 184,
+  totalNew = 0,
+  totalChurn = 0,
   title = "Customer Growth",
   description = "View new customer signups and churn over time",
 }: {
@@ -50,7 +31,7 @@ export function CustomerGrowthChart({
 }) {
   const chartData = useMemo(() => {
     if (data && data.length > 0) return data;
-    return DEFAULT_GROWTH_DATA;
+    return [];
   }, [data]);
 
   const daysList = useMemo(() => {
