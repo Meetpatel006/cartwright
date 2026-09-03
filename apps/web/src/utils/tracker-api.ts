@@ -21,10 +21,13 @@ export interface OrderItem {
   customer: string;
   city: string;
   items: string;
+  category: string;
   amount: number;
   method: string;
   status: string;
   actor: "agent" | "shopper";
+  email?: string;
+  buyerKey?: string;
   merchantId: string;
   siteId: string;
 }
@@ -85,6 +88,22 @@ export interface CohortAnalysisData {
   };
 }
 
+export interface AgentComparisonDim {
+  key: string;
+  label: string;
+  ai: number;
+  hu: number;
+}
+
+export interface ChannelEfficiencyDim {
+  key: string;
+  label: string;
+  ai: number;
+  hu: number;
+  orders: number;
+  revenue: number;
+}
+
 export interface TrackerStatsResponse {
   boundMerchantId?: string;
   boundSiteId?: string;
@@ -93,6 +112,8 @@ export interface TrackerStatsResponse {
   customerGrowthTimeSeries?: CustomerGrowthItem[];
   geoDistribution?: GeoDistributionItem[];
   cohortAnalysis?: CohortAnalysisData;
+  agentComparison?: AgentComparisonDim[];
+  channelEfficiency?: ChannelEfficiencyDim[];
   timeSeries: TimeSeriesItem[];
   orders: OrderItem[];
   funnel: FunnelItem[];
