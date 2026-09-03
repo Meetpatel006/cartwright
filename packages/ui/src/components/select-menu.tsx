@@ -37,7 +37,7 @@ export function SelectMenu({
           <button
             type="button"
             className={cn(
-              "inline-flex w-auto shrink-0 cursor-pointer items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-border bg-card text-xs font-medium text-foreground shadow-xs transition-colors hover:bg-muted/80 focus:border-ring focus:outline-none",
+              "inline-flex w-auto shrink-0 cursor-pointer items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-border bg-card text-xs font-medium text-foreground shadow-none transition-colors hover:bg-muted/80 focus:border-ring focus:outline-none",
               size === "sm" ? "h-7 px-2.5" : "h-9 px-3",
               className,
             )}
@@ -50,7 +50,7 @@ export function SelectMenu({
       <DropdownMenuContent
         align="start"
         sideOffset={4}
-        className="z-50 w-max min-w-full rounded-xl border border-border bg-popover p-1 text-xs text-popover-foreground shadow-2xl backdrop-blur-md"
+        className="z-50 w-max min-w-full rounded-xl border border-border bg-popover p-1 text-xs text-popover-foreground shadow-none backdrop-blur-md"
       >
         <DropdownMenuGroup>
           {options.map((option) => {
