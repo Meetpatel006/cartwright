@@ -5,7 +5,6 @@ import {
   ShoppingCart,
   Shield,
   CreditCard,
-  Store,
   BarChart3,
   ShoppingBag,
   TrendingUp,
@@ -16,6 +15,7 @@ import { NavCollapsible } from '@cartwright/ui/components/nav-sidebar/nav-collap
 import { NavFooter } from '@cartwright/ui/components/nav-sidebar/nav-footer';
 import { NavHeader } from '@cartwright/ui/components/nav-sidebar/nav-header';
 import { NavMain } from '@cartwright/ui/components/nav-sidebar/nav-main';
+import { RoleSwitcher, detectRole } from '@cartwright/ui/components/nav-sidebar/role-switcher';
 import type { SidebarData, ShoppingSession, User } from '@cartwright/ui/components/nav-sidebar/types';
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
@@ -35,83 +35,90 @@ export function AppSidebar({
   ...props
 }: AppSidebarProps) {
   const pathname = usePathname();
+  const role = detectRole(pathname);
+
+  const shopperNav = [
+    {
+      id: 'dashboard',
+      title: 'Dashboard',
+      url: '/dashboard',
+      icon: BarChart3,
+      isActive: pathname.startsWith('/dashboard'),
+    },
+    {
+      id: 'shopper',
+      title: 'Shopper',
+      url: '/shopper',
+      icon: ShoppingCart,
+      isActive: pathname.startsWith('/shopper'),
+    },
+    {
+      id: 'policy',
+      title: 'Spending Policy & Guardrails',
+      url: '/policy',
+      icon: Shield,
+      isActive: pathname.startsWith('/policy'),
+    },
+    {
+      id: 'transactions',
+      title: 'Transactions',
+      url: '/transactions',
+      icon: CreditCard,
+      isActive: pathname.startsWith('/transactions'),
+    },
+  ];
+
+  const merchantNav = [
+    {
+      id: 'dashboard',
+      title: 'Dashboard',
+      url: '/dashboard',
+      icon: BarChart3,
+      isActive: pathname.startsWith('/dashboard'),
+    },
+    {
+      id: 'merchant-orders',
+      title: 'Orders',
+      url: '/merchant/orders',
+      icon: ShoppingBag,
+      isActive: pathname === '/merchant' || pathname.startsWith('/merchant/orders'),
+    },
+    {
+      id: 'merchant-sales',
+      title: 'Sales & Revenue',
+      url: '/merchant/sales',
+      icon: TrendingUp,
+      isActive: pathname.startsWith('/merchant/sales'),
+    },
+    {
+      id: 'merchant-customers',
+      title: 'Customers',
+      url: '/merchant/customers',
+      icon: Users,
+      isActive: pathname.startsWith('/merchant/customers'),
+    },
+  ];
 
   const data: SidebarData = {
     user,
-    navMain: [
-      {
-        id: 'dashboard',
-        title: 'Dashboard',
-        url: '/dashboard',
-        icon: BarChart3,
-        isActive: pathname.startsWith('/dashboard'),
-      },
-      {
-        id: 'shopper',
-        title: 'Shopper',
-        url: '/shopper',
-        icon: ShoppingCart,
-        isActive: pathname.startsWith('/shopper'),
-      },
-      {
-        id: 'policy',
-        title: 'Spending Policy & Guardrails',
-        url: '/policy',
-        icon: Shield,
-        isActive: pathname.startsWith('/policy'),
-      },
-      {
-        id: 'transactions',
-        title: 'Transactions',
-        url: '/transactions',
-        icon: CreditCard,
-        isActive: pathname.startsWith('/transactions'),
-      },
-      {
-        id: 'merchant',
-        title: 'Merchant Intelligence',
-        url: '/merchant/orders',
-        icon: Store,
-        isActive: pathname.startsWith('/merchant'),
-        items: [
-          {
-            id: 'merchant-orders',
-            title: 'Orders',
-            url: '/merchant/orders',
-            icon: ShoppingBag,
-            isActive: pathname === '/merchant' || pathname.startsWith('/merchant/orders'),
-          },
-          {
-            id: 'merchant-sales',
-            title: 'Sales & Revenue',
-            url: '/merchant/sales',
-            icon: TrendingUp,
-            isActive: pathname.startsWith('/merchant/sales'),
-          },
-          {
-            id: 'merchant-customers',
-            title: 'Customers',
-            url: '/merchant/customers',
-            icon: Users,
-            isActive: pathname.startsWith('/merchant/customers'),
-          },
-        ],
-      },
-    ],
+    navMain: role === 'merchant' ? merchantNav : shopperNav,
     shoppingSessions,
   };
 
   return (
     <Sidebar {...props}>
+      <RoleSwitcher />
       <NavHeader data={data} />
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavCollapsible
-          sessions={shoppingSessions}
-          activeSessionId={activeSessionId}
-          onSelectSession={onSelectSession}
-          onNewSession={onNewSession}
-        />
+        {role === 'shopper' && (
+          <NavCollapsible
+            sessions={shoppingSessions}
+            activeSessionId={activeSessionId}
+            onSelectSession={onSelectSession}
+            onNewSession={onNewSession}
+          />
+        )}
       </SidebarContent>
       <NavFooter user={data.user} />
     </Sidebar>
