@@ -1,40 +1,8 @@
 import { auth } from "@cartwright/auth";
 import { getOrCreateMerchantAccount } from "@cartwright/api/merchant-intelligence/merchant-account.service";
+import { queryHogQL, buildFilterClause } from "@cartwright/api/posthog/client";
 import { headers } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
-
-const POSTHOG_HOST = process.env.POSTHOG_HOST || "https://us.posthog.com";
-const PERSONAL_API_KEY =
-  process.env.POSTHOG_PERSONAL_API_KEY ;
-const PROJECT_ID = process.env.POSTHOG_PROJECT_ID || "362639";
-
-async function queryHogQL(sql: string) {
-  try {
-    const res = await fetch(`${POSTHOG_HOST}/api/projects/${PROJECT_ID}/query/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${PERSONAL_API_KEY}`,
-      },
-      body: JSON.stringify({
-        query: {
-          kind: "HogQLQuery",
-          query: sql,
-        },
-      }),
-      next: { revalidate: 10 },
-    });
-
-    if (!res.ok) {
-      console.error("HogQL query failed:", await res.text());
-      return null;
-    }
-    return await res.json();
-  } catch (err) {
-    console.error("Error executing HogQL query:", err);
-    return null;
-  }
-}
 
 export async function GET(request: NextRequest) {
   // 1. Enforce Protected Route: Verify User Session
@@ -58,13 +26,6 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const siteParam = searchParams.get("site") || searchParams.get("siteId") || undefined;
   const range = searchParams.get("range") || "15d";
-  const rangeIntervals: Record<string, string> = {
-    "24h": "24 hour",
-    "7d": "7 day",
-    "15d": "15 day",
-    "30d": "30 day",
-  };
-  const rangeInterval = rangeIntervals[range] ?? rangeIntervals["15d"];
 
   const boundMerchantId = merchantAccount.merchantId;
   const boundSiteId = siteParam && siteParam !== "site_all" && siteParam !== "all"
@@ -72,17 +33,7 @@ export async function GET(request: NextRequest) {
     : "all";
 
   // 3. Build filter clause scoped strictly to the authenticated merchant & optional site
-  const filterClauses: string[] = [`timestamp >= now() - interval ${rangeInterval}`];
-
-  const safeMerchant = boundMerchantId.replace(/'/g, "");
-  filterClauses.push(`(properties.merchant_id = '${safeMerchant}' OR properties.merchant = '${safeMerchant}')`);
-
-  if (siteParam && siteParam !== "site_all" && siteParam !== "all") {
-    const safeSite = siteParam.replace(/'/g, "");
-    filterClauses.push(`(properties.site_id = '${safeSite}' OR properties.site = '${safeSite}')`);
-  }
-
-  const baseFilter = filterClauses.join(" AND ");
+  const baseFilter = buildFilterClause(boundMerchantId, { siteId: siteParam, range });
 
   try {
     // 4. Fetch live metrics, funnel, daily time-series, and orders from PostHog strictly for this site/merchant
@@ -168,13 +119,13 @@ export async function GET(request: NextRequest) {
       `),
     ]);
 
-    const kpiRow = kpiRes?.results?.[0];
+    const kpiRow = kpiRes?.[0];
     const totalOrders = kpiRow ? Number(kpiRow[0]) || 0 : 0;
     const grossRevenue = kpiRow ? Math.round(Number(kpiRow[1]) || 0) : 0;
     const avgOrderValue = kpiRow ? Math.round(Number(kpiRow[2]) || 0) : 0;
     const agentOrders = kpiRow ? Number(kpiRow[3]) || 0 : 0;
-    const failedOrders = Number(failedRes?.results?.[0]?.[0]) || 0;
-    const totalViews = Number(pageViewsRes?.results?.[0]?.[0]) || 0;
+    const failedOrders = Number(failedRes?.[0]?.[0]) || 0;
+    const totalViews = Number(pageViewsRes?.[0]?.[0]) || 0;
     const humanOrders = Math.max(0, totalOrders - agentOrders);
 
     const fulfillmentRate = totalOrders + failedOrders > 0
@@ -190,7 +141,7 @@ export async function GET(request: NextRequest) {
       : 0;
 
     // Site-scoped dynamic conversion funnel
-    const fnRow = funnelRes?.results?.[0] || [0, 0, 0, 0, 0];
+    const fnRow = funnelRes?.[0] || [0, 0, 0, 0, 0];
     const visits = Number(fnRow[0]) || totalViews || 0;
     const prodViews = Number(fnRow[1]) || 0;
     const cartAdds = Number(fnRow[2]) || 0;
@@ -226,7 +177,7 @@ export async function GET(request: NextRequest) {
     ];
 
     // Search queries for this site
-    const searchQueries = (searchRes?.results || []).map((row: any[]) => ({
+    const searchQueries = (searchRes || []).map((row: any[]) => ({
       query: String(row[0] || ""),
       searches: Number(row[1]) || 0,
       missedRevenue: (Number(row[1]) || 0) * avgOrderValue,
@@ -234,7 +185,7 @@ export async function GET(request: NextRequest) {
     }));
 
     // Dynamic Daily Time Series for Stacked Bar Chart
-    const rawTimeSeries = timeSeriesRes?.results || [];
+    const rawTimeSeries = timeSeriesRes || [];
     const timeSeries: Array<{ day: string; series: "Human" | "AI Agent"; orders: number }> = [];
 
     rawTimeSeries.forEach((row: any[]) => {
@@ -254,7 +205,7 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    const rawOrders = ordersRes?.results || [];
+    const rawOrders = ordersRes || [];
     const orders = rawOrders.map((row: any[], idx: number) => {
       const [
         timestamp,

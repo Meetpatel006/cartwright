@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { env } from "@cartwright/env/server";
 
 /**
  * Public Client-Safe Tracker Configuration Endpoint
@@ -25,13 +26,25 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Client-safe configuration
+  // Client-safe configuration — only the public PostHog project write key
+  // (NEXT_PUBLIC_POSTHOG_KEY, starts with "phc_") is exposed here.
+  // The POSTHOG_PERSONAL_API_KEY (starts with "phx_") is NEVER sent to the client.
+  const posthogApiKey = env.POSTHOG_PROJECT_WRITE_KEY;
+  const posthogHost = env.POSTHOG_INGESTION_HOST;
+
+  if (!posthogApiKey || !posthogHost) {
+    return NextResponse.json(
+      { error: "Tracker not configured" },
+      { status: 500 },
+    );
+  }
+
   const config = {
     siteId,
     ...(merchantId ? { merchantId } : {}),
     enabled: true,
-    posthogApiKey: process.env.NEXT_PUBLIC_POSTHOG_KEY || "phc_fIKSiffTRgwauMers7ntbnaJR3TsOw3xmnxvE26ZTYH",
-    posthogHost: process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com",
+    posthogApiKey,
+    posthogHost,
     autocapture: true,
     respectDnt: true,
   };
