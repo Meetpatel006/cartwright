@@ -304,7 +304,7 @@ export default function TransactionsList() {
         ) : viewMode === "list" ? (
           /* Table View */
           <TooltipProvider delay={100}>
-            <Card className="rounded-xl border border-border p-0">
+            <Card className="rounded-xl border border-border p-0 shadow-none ring-0">
               <Table className="text-left text-xs">
                   <TableHeader>
                     <TableRow className="border-border text-[11px] font-semibold tracking-wider text-muted-foreground hover:bg-transparent">
@@ -722,13 +722,13 @@ export default function TransactionsList() {
                 size="sm"
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={safeCurrentPage <= 1}
-                className="h-9 px-3 rounded-lg border border-border bg-muted text-xs text-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+                className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <ChevronLeft className="h-3.5 w-3.5 mr-1" />
                 <span>Previous</span>
               </Button>
 
-              <div className="inline-flex rounded-lg border border-border bg-muted p-0.5">
+              <div className="inline-flex rounded-lg border border-border bg-background p-0.5">
                 {Array.from({ length: totalPages }).map((_, i) => {
                   const pageNum = i + 1;
                   return (
@@ -737,9 +737,9 @@ export default function TransactionsList() {
                       type="button"
                       onClick={() => setCurrentPage(pageNum)}
                       className={cn(
-                        "h-8 min-w-8 rounded-md px-2.5 text-xs font-semibold transition-colors",
+                        "h-7 min-w-7 rounded-md px-2 text-xs font-semibold transition-colors cursor-pointer",
                         safeCurrentPage === pageNum
-                          ? "bg-accent text-foreground"
+                          ? "bg-muted text-foreground shadow-none"
                           : "text-muted-foreground hover:text-foreground"
                       )}
                     >
@@ -754,7 +754,7 @@ export default function TransactionsList() {
                 size="sm"
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={safeCurrentPage >= totalPages}
-                className="h-9 px-3 rounded-lg border border-border bg-muted text-xs text-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+                className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <span>Next</span>
                 <ChevronRight className="h-3.5 w-3.5 ml-1" />
