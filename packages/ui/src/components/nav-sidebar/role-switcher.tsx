@@ -51,7 +51,7 @@ export function RoleSwitcher() {
 
   const handleSwitch = (option: RoleOption) => {
     if (option.value !== currentRole) {
-      router.push(option.defaultPath);
+      router.push(option.defaultPath as any);
     }
   };
 

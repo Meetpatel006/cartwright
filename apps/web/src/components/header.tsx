@@ -10,7 +10,7 @@ export default function Header() {
     { to: "/shopper", label: "Shopper" },
     { to: "/policy", label: "Policy" },
     { to: "/transactions", label: "Transactions" },
-    { to: "/merchant", label: "Merchant Intelligence" },
+    { to: "/merchant/dashboard", label: "Merchant Intelligence" },
     { to: "/dashboard", label: "Dashboard" },
   ] as const;
 
