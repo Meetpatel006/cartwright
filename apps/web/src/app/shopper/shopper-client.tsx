@@ -482,7 +482,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
       ? "converted"
       : selectData
       ? "selected"
-      : runResult && runResult.recommendations.length > 0
+      : runResult && (runResult.recommendations?.length ?? 0) > 0
       ? "recommended"
       : run.isPending
       ? "created"
@@ -722,11 +722,11 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
               )}
 
               {/* Discovered Product Recommendations */}
-              {runResult && runResult.recommendations.length > 0 && (
+              {runResult && (runResult.recommendations?.length ?? 0) > 0 && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h2 className="text-base font-bold text-foreground tracking-tight">
-                      Discovered Products ({runResult.recommendations.length})
+                      Discovered Products ({runResult.recommendations?.length ?? 0})
                     </h2>
                     <span className="text-xs text-muted-foreground">
                       Ranked by price match & merchant policy
@@ -734,7 +734,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {runResult.recommendations.map((rec, index) => {
+                    {(runResult.recommendations ?? []).map((rec, index) => {
                       const isSelected = selectData?.plan.productId === rec.product.id;
                       const isSelectingThis = select.isPending && select.variables?.productId === rec.product.id;
                       return (
@@ -791,7 +791,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
               )}
 
               {/* Live Navigation Feedback when waiting for recommendations */}
-              {run.isPending && (!runResult || runResult.recommendations.length === 0) && (
+              {run.isPending && (!runResult || (runResult.recommendations?.length ?? 0) === 0) && (
                 <div className="rounded-2xl border border-border bg-muted p-8 text-center space-y-3">
                   <div className="h-6 w-6 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin mx-auto" />
                   <p className="text-sm font-semibold text-foreground">Agent Navigating Stores</p>
@@ -883,14 +883,19 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="text-muted-foreground font-medium">Parsed Constraints:</span>
                   <span className="inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 font-mono text-[11px] text-foreground">
-                    Budget: {intent.budgetInMinor ? formatCurrency(intent.budgetInMinor, intent.currency) : "No limit"}
+                    Budget: {intent.budgetInMinor ? formatCurrency(intent.budgetInMinor, intent.currency || "INR") : "No limit"}
                   </span>
                   {intent.category && (
                     <span className="inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 text-[11px] text-foreground">
                       {intent.category}
                     </span>
                   )}
-                  {intent.preferredMerchants.map((m) => (
+                  {(intent as any).brand && (
+                    <span className="inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 text-[11px] text-foreground">
+                      Brand: {(intent as any).brand}
+                    </span>
+                  )}
+                  {Array.isArray(intent.preferredMerchants) && intent.preferredMerchants.map((m) => (
                     <span key={m} className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
                       Store: {m}
                     </span>
@@ -914,11 +919,13 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
         <SessionWebPreview
           url={
             runResult?.recommendations?.[0]?.product?.productUrl ||
-            (targetStoreDisplay.startsWith("http")
+            (typeof targetStoreDisplay === "string" && targetStoreDisplay.startsWith("http")
               ? targetStoreDisplay
               : targetStoreDisplay.toLowerCase() === "raven"
               ? "https://ravenscents.com"
-              : `https://${targetStoreDisplay.toLowerCase()}.in`)
+              : targetStoreDisplay.toLowerCase().includes("boat")
+              ? "https://www.boat-lifestyle.com"
+              : "https://www.boat-lifestyle.com")
           }
           liveFrame={liveFeed.data?.frame ?? null}
           videoUrl={videoUrl}
