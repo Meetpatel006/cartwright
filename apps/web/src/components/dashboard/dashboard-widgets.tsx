@@ -80,9 +80,17 @@ export function SearchQueriesPanel({ data }: { data: { query: string; searches: 
 }
 
 // ─── Agent Radar ─────────────────────────────────────────────────────────────
-export function AgentRadarChart({ agentSharePct = 0 }: { agentSharePct?: number }) {
+export function AgentRadarChart({ agentSharePct = 0, data }: { agentSharePct?: number; data?: Array<{ key: string; label: string; ai: number; hu: number }> }) {
   const [hIdx, setHIdx] = useState<number | null>(null);
-  const dims: Array<{ key: string; label: string; ai: number; hu: number }> = [];
+  const dims: Array<{ key: string; label: string; ai: number; hu: number }> =
+    data && data.length > 0
+      ? data
+      : agentSharePct > 0
+        ? [
+            { key: "volume", label: "Volume", ai: agentSharePct, hu: 100 - agentSharePct },
+            { key: "conversion", label: "Conversion", ai: agentSharePct, hu: 100 - agentSharePct },
+          ]
+        : [];
   if (dims.length === 0) {
     return (
       <div className="rounded-xl border border-border bg-card p-5">

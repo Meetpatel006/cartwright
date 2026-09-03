@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ConversionFunnel, InsightCard, SearchQueriesPanel, AgentRadarChart } from "@/components/dashboard/dashboard-widgets";
 import { StatusBadge } from "./status-badge";
 import { KPICard } from "./kpi-card";
-import { fetchTrackerStats, DEFAULT_STATS, type LiveStats, type TimeSeriesItem, type OrderItem, type FunnelItem, type SearchQueryItem } from "@/utils/tracker-api";
+import { fetchTrackerStats, DEFAULT_STATS, type LiveStats, type TimeSeriesItem, type OrderItem, type FunnelItem, type SearchQueryItem, type AgentComparisonDim } from "@/utils/tracker-api";
 import { computeOrderTrend, computeAOVTrend, computeAgentShareTrend, computeAgentRevenue, computePriorAOV } from "@/utils/metrics";
 
 export function MerchantTab() {
@@ -21,6 +21,7 @@ export function MerchantTab() {
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [funnel, setFunnel] = useState<FunnelItem[]>([]);
   const [searchQueries, setSearchQueries] = useState<SearchQueryItem[]>([]);
+  const [agentComparison, setAgentComparison] = useState<AgentComparisonDim[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
   const [statsError, setStatsError] = useState(false);
 
@@ -57,6 +58,7 @@ export function MerchantTab() {
         setOrders(data.orders);
         setFunnel(data.funnel);
         setSearchQueries(data.searchQueries);
+        setAgentComparison(data.agentComparison || []);
       } else {
         setStatsError(true);
       }
@@ -67,6 +69,49 @@ export function MerchantTab() {
   }, [activeMerchantId, selectedSiteId, activeSiteId]);
 
   const recentOrders = useMemo(() => orders.slice(0, 8), [orders]);
+
+  // Fallback insights derived from live telemetry when the DB-backed
+  // merchant-intelligence overview has no data yet.
+  const displayInsights = useMemo(() => {
+    if (insights.length > 0) return insights;
+    const fallback: any[] = [];
+    if (funnel.length >= 5) {
+      const visits = funnel[0]?.count || 0;
+      const purchases = funnel[4]?.count || 0;
+      if (visits > 0 && purchases / visits < 0.05) {
+        fallback.push({
+          id: "telemetry-funnel",
+          type: "selection_purchase_dropoff",
+          severity: "warning",
+          title: "Store visits rarely convert to purchases",
+          summary: `${visits.toLocaleString()} visits produced ${purchases.toLocaleString()} purchases (${funnel[4]?.rate || "0%"} conversion) in this window.`,
+          confidence: "medium",
+        });
+      }
+    }
+    if (stats.agentSharePct > 0 && stats.agentSharePct < 20) {
+      fallback.push({
+        id: "telemetry-agent",
+        type: "underperforming_recommendation",
+        severity: "opportunity",
+        title: "AI agent drives a small share of orders",
+        summary: `Only ${stats.agentSharePct}% of orders (${stats.agentOrders} of ${stats.totalOrders}) came from the AI agent. Promote agent checkout to lift autonomous volume.`,
+        confidence: "medium",
+      });
+    }
+    if (searchQueries.length > 0) {
+      const top = searchQueries[0];
+      fallback.push({
+        id: "telemetry-search",
+        type: "rank_position_selection_gap",
+        severity: "info",
+        title: `Top search: "${top.query}" (${top.searches} searches)`,
+        summary: top.suggestion || "High intent keyword detected from visitor searches.",
+        confidence: "low",
+      });
+    }
+    return fallback;
+  }, [insights, funnel, stats, searchQueries]);
 
   if (accountQuery.isLoading) {
     return (
@@ -192,10 +237,10 @@ export function MerchantTab() {
       {/* Intelligence */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <SearchQueriesPanel data={searchQueries} />
-        <AgentRadarChart agentSharePct={stats.agentSharePct} />
+        <AgentRadarChart agentSharePct={stats.agentSharePct} data={agentComparison} />
       </div>
 
-      {/* Products + Insights */}
+      {/* Products + Insights (with telemetry fallback when DB insights are empty) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="rounded-xl border border-border bg-card p-5 space-y-3">
           <div className="flex items-center justify-between pb-3">
@@ -225,10 +270,10 @@ export function MerchantTab() {
         <div className="rounded-xl border border-border bg-card p-5 space-y-3">
           <div className="flex items-center justify-between pb-3">
             <h2 className="text-sm font-semibold text-foreground">Merchant Insights</h2>
-            <span className="text-[11px] text-muted-foreground">{insights.length} insights</span>
+            <span className="text-[11px] text-muted-foreground">{displayInsights.length} insights</span>
           </div>
-          {insights.length === 0 ? <div className="flex items-center justify-center h-32 text-xs text-muted-foreground">No insights available</div> : (
-            <div className="space-y-2">{insights.slice(0, 4).map((ins: any) => <InsightCard key={ins.id} insight={ins} />)}</div>
+          {displayInsights.length === 0 ? <div className="flex items-center justify-center h-32 text-xs text-muted-foreground">No insights available</div> : (
+            <div className="space-y-2">{displayInsights.slice(0, 4).map((ins: any) => <InsightCard key={ins.id} insight={ins} />)}</div>
           )}
         </div>
       </div>

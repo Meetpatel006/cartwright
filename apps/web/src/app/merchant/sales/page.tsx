@@ -53,14 +53,11 @@ interface ChannelDimension {
 }
 
 function PaymentChannelRadar({
-  agentSharePct = 0,
+  dimensions = [],
 }: {
-  agentSharePct?: number;
+  dimensions?: ChannelDimension[];
 }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-
-  // Channel-level scores are not part of the telemetry API response yet.
-  const dimensions: ChannelDimension[] = [];
 
   const cx = 190;
   const cy = 125;
@@ -305,6 +302,7 @@ interface ProductSalesItem {
 
 interface TelemetryOrder {
   items?: string;
+  category?: string;
   amount?: number;
   actor?: "agent" | "shopper";
 }
@@ -329,6 +327,7 @@ export default function MerchantSalesPage() {
   const [stats, setStats] = useState<LiveStats>(DEFAULT_STATS);
   const [timeSeries, setTimeSeries] = useState<Array<{ day: string; series: "Human" | "AI Agent"; orders: number }>>([]);
   const [orders, setOrders] = useState<TelemetryOrder[]>([]);
+  const [channelDimensions, setChannelDimensions] = useState<ChannelDimension[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Merchant Account & Multi-Site Binding
@@ -347,6 +346,14 @@ export default function MerchantSalesPage() {
           setTimeSeries(data.timeSeries);
         }
         setOrders(data.orders ?? []);
+        setChannelDimensions(
+          (data.channelEfficiency || []).map((d: any) => ({
+            key: String(d.key || d.label),
+            label: String(d.label),
+            aiShare: Number(d.ai) || 0,
+            humanShare: Number(d.hu) || 0,
+          })),
+        );
       } catch (err) {
         console.error("Failed to load sales data:", err);
       } finally {
@@ -363,7 +370,7 @@ export default function MerchantSalesPage() {
       const title = order.items || "Unknown product";
       const current = products.get(title) ?? {
         title,
-        category: "Uncategorized",
+        category: order.category || "Uncategorized",
         units: 0,
         agentUnits: 0,
         humanUnits: 0,
@@ -387,6 +394,18 @@ export default function MerchantSalesPage() {
   }, [orders]);
 
   // Filtering
+  const categoryOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const p of catalogProducts) {
+      const key = p.category.toUpperCase();
+      if (!seen.has(key)) seen.set(key, p.category);
+    }
+    return [
+      { value: "ALL", label: "All Categories" },
+      ...Array.from(seen.entries()).map(([value, label]) => ({ value, label })),
+    ];
+  }, [catalogProducts]);
+
   const filteredProducts = useMemo(() => {
     return catalogProducts.filter((p) => {
       const matchSearch =
@@ -540,7 +559,7 @@ export default function MerchantSalesPage() {
           avgOrderValue={stats.avgOrderValue}
           valueType="revenue"
         />
-        <PaymentChannelRadar agentSharePct={stats.agentSharePct} />
+        <PaymentChannelRadar dimensions={channelDimensions} />
       </div>
 
       {/* Big Unified Card for Catalog Sales & Performance Table */}
@@ -581,11 +600,7 @@ export default function MerchantSalesPage() {
                 setCategoryFilter(val);
                 setCurrentPage(1);
               }}
-              options={[
-                { value: "ALL", label: "All Categories" },
-                { value: "AUDIO", label: "Audio" },
-                { value: "WEARABLES", label: "Wearables" },
-              ]}
+              options={categoryOptions}
             />
 
             {(categoryFilter !== "ALL" || searchQuery) && (

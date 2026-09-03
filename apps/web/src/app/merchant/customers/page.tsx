@@ -98,15 +98,25 @@ export default function MerchantCustomersPage() {
         if (data.geoDistribution && Array.isArray(data.geoDistribution) && data.geoDistribution.length > 0) {
           const coordsMap: Record<string, { x: number; y: number; stateId: string }> = {
             "Bengaluru": { x: 360, y: 792, stateId: "INKA" },
-            "Bengaluru, KA": { x: 360, y: 792, stateId: "INKA" },
             "Delhi NCR": { x: 344, y: 321, stateId: "INDL" },
-            "Delhi NCR, DL": { x: 344, y: 321, stateId: "INDL" },
             "Mumbai": { x: 236, y: 602, stateId: "INMH" },
-            "Mumbai, MH": { x: 236, y: 602, stateId: "INMH" },
             "Hyderabad": { x: 398, y: 648, stateId: "INTG" },
-            "Hyderabad, TS": { x: 398, y: 648, stateId: "INTG" },
+            "Pune": { x: 260, y: 625, stateId: "INMH" },
             "Chennai": { x: 418, y: 778, stateId: "INTN" },
-            "Chennai, TN": { x: 418, y: 778, stateId: "INTN" },
+            "Ahmedabad": { x: 220, y: 485, stateId: "INGJ" },
+            "Jaipur": { x: 295, y: 375, stateId: "INRJ" },
+            "Kolkata": { x: 605, y: 530, stateId: "INWB" },
+            "Chandigarh": { x: 328, y: 250, stateId: "INCH" },
+            "Kochi": { x: 340, y: 880, stateId: "INKL" },
+            "Indore": { x: 310, y: 520, stateId: "INMP" },
+            "Lucknow": { x: 435, y: 385, stateId: "INUP" },
+            "Surat": { x: 225, y: 535, stateId: "INGJ" },
+            "Nagpur": { x: 385, y: 550, stateId: "INMH" },
+            "Coimbatore": { x: 345, y: 835, stateId: "INTN" },
+            "Bhopal": { x: 350, y: 495, stateId: "INMP" },
+            "Visakhapatnam": { x: 485, y: 650, stateId: "INAP" },
+            "Vadodara": { x: 240, y: 505, stateId: "INGJ" },
+            "Ludhiana": { x: 310, y: 235, stateId: "INPB" },
           };
 
           const mappedHubs: GeoCityDatum[] = data.geoDistribution.map((g: any) => {
@@ -132,14 +142,18 @@ export default function MerchantCustomersPage() {
         if (data.orders && Array.isArray(data.orders) && data.orders.length > 0) {
           const custMap = new Map<string, CustomerRecord>();
           data.orders.forEach((o: any, idx: number) => {
-            const name = o.customer || (o.isAgent ? "Autonomous AI Agent" : `Customer #${idx + 1}`);
+            // Group by stable buyer key (distinct_id) so each buyer — including
+            // every AI agent — gets its own row instead of collapsing by name.
+            const isAgent = o.actor === "agent";
+            const key = String(o.buyerKey || o.customer || `row-${idx}`);
+            const baseName = o.customer || (isAgent ? "Autonomous AI Agent" : `Customer #${idx + 1}`);
+            const name = isAgent && o.buyerKey ? `${baseName} ·${String(o.buyerKey).slice(-6)}` : baseName;
             const email = o.email || "—";
-            const id = `USR-${String(idx + 1).padStart(4, "0")}`;
-            const isAgent = Boolean(o.isAgent || (o.method || "").toLowerCase().includes("agent"));
+            const id = `USR-${String(custMap.size + 1).padStart(4, "0")}`;
             const location = o.city ? `${o.city}, IN` : "—";
 
-            if (!custMap.has(name)) {
-              custMap.set(name, {
+            if (!custMap.has(key)) {
+              custMap.set(key, {
                 id,
                 name,
                 email,
@@ -151,7 +165,7 @@ export default function MerchantCustomersPage() {
                 status: isAgent ? "Active Agent" : "Verified Buyer",
               });
             } else {
-              const existing = custMap.get(name)!;
+              const existing = custMap.get(key)!;
               existing.orders += 1;
               existing.spend += Number(o.amount) || 0;
             }

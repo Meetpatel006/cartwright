@@ -134,21 +134,30 @@ interface DimensionComparison {
   humanScore: number;
 }
 
-function getComparisonDimensions(agentSharePct: number): DimensionComparison[] {
-  // These dimensions are not currently returned by the telemetry API.
+function getComparisonDimensions(agentSharePct: number, apiDims?: DimensionComparison[]): DimensionComparison[] {
+  if (apiDims && apiDims.length > 0) return apiDims;
+  if (agentSharePct > 0) {
+    return [
+      { key: "volume", label: "Volume", desc: "Share of orders", aiScore: agentSharePct, humanScore: 100 - agentSharePct },
+      { key: "conversion", label: "Conversion", desc: "Share of orders", aiScore: agentSharePct, humanScore: 100 - agentSharePct },
+    ];
+  }
+  // No telemetry yet — the API reported no agent comparison data.
   return [];
 }
 
 function AgentRadarChart({
   agentOrders = 0,
   agentSharePct = 0,
+  dimensions,
 }: {
   agentOrders?: number;
   humanOrders?: number;
   agentSharePct?: number;
+  dimensions?: DimensionComparison[];
 }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
-  const comparisonDimensions = getComparisonDimensions(agentSharePct);
+  const comparisonDimensions = getComparisonDimensions(agentSharePct, dimensions);
 
   if (comparisonDimensions.length === 0) {
     return (
@@ -381,6 +390,7 @@ export default function MerchantOrdersPage() {
   const [stats, setStats] = useState<LiveStats>(DEFAULT_STATS);
   const [timeSeries, setTimeSeries] = useState<TimeSeriesItem[]>([]);
   const [orders, setOrders] = useState<OrderItem[]>([]);
+  const [agentComparison, setAgentComparison] = useState<DimensionComparison[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Merchant Account & Data-Site Binding
@@ -401,6 +411,15 @@ export default function MerchantOrdersPage() {
         if (data.orders) {
           setOrders(data.orders);
         }
+        setAgentComparison(
+          (data.agentComparison || []).map((d: any) => ({
+            key: d.key,
+            label: d.label,
+            desc: d.label,
+            aiScore: d.ai,
+            humanScore: d.hu,
+          })),
+        );
       } catch (err) {
         console.error("Failed to fetch live PostHog stats:", err);
       } finally {
@@ -582,6 +601,7 @@ export default function MerchantOrdersPage() {
           agentOrders={stats.agentOrders}
           humanOrders={stats.humanOrders}
           agentSharePct={stats.agentSharePct}
+          dimensions={agentComparison}
         />
       </div>
 
