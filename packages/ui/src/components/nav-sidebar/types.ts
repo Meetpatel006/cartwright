@@ -31,8 +31,17 @@ export interface ShoppingSession {
   store?: string;
 }
 
+export interface MerchantChat {
+  chatId: string;
+  title: string;
+  lastMessage: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SidebarData {
   user: User;
   navMain: NavItem[];
   shoppingSessions: ShoppingSession[];
+  merchantChats: MerchantChat[];
 }
