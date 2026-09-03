@@ -85,7 +85,7 @@ export function IndiaMapChart({
             {({ zoomIn, zoomOut, resetTransform }) => (
               <>
                 {/* Floating Map Controls - Visible on Hover Only */}
-                <div className="absolute right-3 bottom-3 z-30 flex flex-col gap-1.5 bg-background/90 backdrop-blur-md border border-border rounded-lg p-1 shadow-md opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none group-hover:pointer-events-auto">
+                <div className="absolute right-3 bottom-3 z-30 flex flex-col gap-1.5 bg-background/90 backdrop-blur-md border border-border rounded-lg p-1 shadow-none opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none group-hover:pointer-events-auto">
                   <button
                     type="button"
                     onClick={() => zoomIn(0.3)}
@@ -119,7 +119,7 @@ export function IndiaMapChart({
                 >
                   <svg
                     viewBox="90 40 790 890"
-                    className="w-full max-w-[500px] h-[340px] overflow-visible select-none drop-shadow-xs"
+                    className="w-full max-w-[500px] h-[340px] overflow-visible select-none"
                   >
                     {/* Render Authentic India State Boundaries */}
                     <g id="india-states">
@@ -193,7 +193,7 @@ export function IndiaMapChart({
                               fill={isHovered ? "#10b981" : "#3b82f6"}
                               stroke="#ffffff"
                               strokeWidth="2"
-                              className="transition-all duration-200 drop-shadow-sm"
+                              className="transition-all duration-200"
                             />
 
                             {/* City Name Label */}
@@ -218,7 +218,7 @@ export function IndiaMapChart({
                               className={cn(
                                 "text-[16px] font-semibold tracking-tight transition-all pointer-events-none select-none",
                                 isHovered
-                                  ? "fill-emerald-400 font-bold drop-shadow-md"
+                                  ? "fill-emerald-400 font-bold"
                                   : "fill-foreground/90 font-medium"
                               )}
                             >
@@ -244,7 +244,7 @@ export function IndiaMapChart({
 
           {/* Hover Tooltip Overlay */}
           {hoveredCity && (
-            <div className="absolute pointer-events-none z-30 bottom-3 left-3 rounded-lg border border-border bg-popover/95 px-3 py-1.5 text-xs text-popover-foreground shadow-xl backdrop-blur-md min-w-[150px] animate-in fade-in zoom-in-95">
+            <div className="absolute pointer-events-none z-30 bottom-3 left-3 rounded-lg border border-border bg-popover/95 px-3 py-1.5 text-xs text-popover-foreground shadow-none backdrop-blur-md min-w-[150px] animate-in fade-in zoom-in-95">
               <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-1">
                 <span className="font-semibold text-foreground text-xs">
                   {hoveredCity.city}

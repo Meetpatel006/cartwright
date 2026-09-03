@@ -110,7 +110,7 @@ export function CustomerGrowthChart({
         use: tooltip,
         anchor: "group-center",
         placement: "auto",
-        className: "font-sans rounded-lg bg-popover border border-border p-2.5 text-xs shadow-xl text-popover-foreground backdrop-blur-md",
+        className: "font-sans rounded-lg bg-popover border border-border p-2.5 text-xs text-popover-foreground backdrop-blur-md shadow-none",
         content: (points: any[]) => {
           if (!points || !points.length) return { rows: [] };
           const dayLabel = String(points[0].xValue ?? "");
