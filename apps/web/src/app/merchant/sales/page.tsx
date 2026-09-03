@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, Fragment } from "react";
 import {
   Search,
   DollarSign,
@@ -44,6 +44,12 @@ import {
   TableHeader,
   TableRow,
 } from "@cartwright/ui/components/table";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "@cartwright/ui/components/tooltip";
 // Payment Channel Radar / Distribution
 interface ChannelDimension {
   key: string;
@@ -246,7 +252,7 @@ function PaymentChannelRadar({
           {hoveredDim && hoveredIdx !== null && (
             <div
               className={cn(
-                "absolute pointer-events-none z-30 rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md transition-all duration-150 animate-in fade-in zoom-in-95 min-w-[150px]",
+                "absolute pointer-events-none z-30 rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-none transition-all duration-150 animate-in fade-in zoom-in-95 min-w-[150px]",
                 hoveredIdx === 0 && "top-2 left-1/2 -translate-x-1/2",
                 (hoveredIdx === 1 || hoveredIdx === 2) && "top-1/4 right-3",
                 hoveredIdx === 3 && "bottom-2 left-1/2 -translate-x-1/2",
@@ -323,6 +329,7 @@ export default function MerchantSalesPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
 
   const [stats, setStats] = useState<LiveStats>(DEFAULT_STATS);
   const [timeSeries, setTimeSeries] = useState<Array<{ day: string; series: "Human" | "AI Agent"; orders: number }>>([]);
@@ -562,208 +569,312 @@ export default function MerchantSalesPage() {
         <PaymentChannelRadar dimensions={channelDimensions} />
       </div>
 
-      {/* Big Unified Card for Catalog Sales & Performance Table */}
-      <Card className="rounded-xl border border-border bg-card p-5 space-y-4">
-        {/* Card Header with Integrated Search & Category Controls */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-muted/60 text-foreground">
-              <TrendingUp className="h-4 w-4" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold tracking-tight text-foreground">
-                Catalog Sales & Performance
-              </h2>
-            </div>
+      {/* Catalog Sales & Performance Header & Controls */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-2">
+        {/* Left: Icon Box + Title */}
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
+            <TrendingUp className="h-4 w-4" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold tracking-tight text-foreground">
+              Catalog Sales & Performance
+            </h2>
+          </div>
+        </div>
+
+        {/* Right: Search + Category Filter + Reset + View Toggle (List / Board) */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Search Input */}
+          <div className="relative w-60 max-sm:w-full" suppressHydrationWarning>
+            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              placeholder="Search products..."
+              suppressHydrationWarning
+              spellCheck={false}
+              autoComplete="off"
+              className="h-9 w-full rounded-lg border border-border bg-muted pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-1 focus:ring-ring"
+            />
           </div>
 
-          {/* Search & Category Filter Controls */}
-          <div className="flex flex-wrap items-center gap-2 max-sm:w-full">
-            {/* Search */}
-            <div className="relative w-64 max-sm:w-full">
-              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground z-10 pointer-events-none" />
-              <Input
-                placeholder="Search products or categories..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
+          {/* Category Filter */}
+          <SelectMenu
+            value={categoryFilter}
+            onChange={(val) => {
+              setCategoryFilter(val);
+              setCurrentPage(1);
+            }}
+            options={categoryOptions}
+          />
+
+          {/* Reset Filters button if any active */}
+          {(categoryFilter !== "ALL" || searchQuery) && (
+            <button
+              type="button"
+              onClick={() => {
+                setCategoryFilter("ALL");
+                setSearchQuery("");
+                setCurrentPage(1);
+              }}
+              className="h-9 rounded-lg border border-border bg-muted px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+              title="Reset filters"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Content Section */}
+      {loading ? (
+        <div className="flex h-64 items-center justify-center rounded-xl border border-border bg-muted/40 text-sm text-muted-foreground">
+          <div className="flex flex-col items-center justify-center gap-2">
+            <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <span>Loading real-time catalog sales...</span>
+          </div>
+        </div>
+      ) : filteredProducts.length === 0 ? (
+        <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-border bg-muted/40 text-center">
+          <Package className="mb-2 h-8 w-8 text-muted-foreground" />
+          <p className="text-sm font-medium text-foreground">
+            {searchQuery ? `No products matching "${searchQuery}"` : "No matching products found"}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Try adjusting your search query or category filters.
+          </p>
+        </div>
+      ) : (
+        /* Table View */
+        <TooltipProvider delay={100}>
+          <Card className="rounded-xl border border-border p-0 overflow-hidden shadow-none ring-0">
+            <Table className="text-left text-xs">
+              <TableHeader>
+                <TableRow className="border-border text-[11px] font-semibold tracking-wider text-muted-foreground hover:bg-transparent">
+                  <TableHead className="w-12 px-4 py-3.5 font-mono text-muted-foreground">#</TableHead>
+                  <TableHead className="px-4 py-3.5">Product Name</TableHead>
+                  <TableHead className="px-4 py-3.5">Category</TableHead>
+                  <TableHead className="px-4 py-3.5 text-right">Units Sold</TableHead>
+                  <TableHead className="px-4 py-3.5 text-right">Gross Sales</TableHead>
+                  <TableHead className="px-4 py-3.5">Revenue Share</TableHead>
+                  <TableHead className="px-4 py-3.5 text-right">Avg Price (ASP)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-border font-medium">
+                {paginatedProducts.map((p, idx) => {
+                  const rowNumber = (currentPage - 1) * pageSize + idx + 1;
+                  const isDetailActive = selectedProductId === p.title;
+
+                  return (
+                    <Fragment key={p.title || idx}>
+                      <TableRow
+                        onClick={() => setSelectedProductId(isDetailActive ? null : p.title)}
+                        className={cn(
+                          "cursor-pointer transition-colors hover:bg-accent/40",
+                          isDetailActive ? "bg-accent/50" : ""
+                        )}
+                      >
+                        <TableCell className="px-4 py-4 font-mono text-xs text-muted-foreground font-medium">
+                          {String(rowNumber).padStart(2, "0")}
+                        </TableCell>
+
+                        <TableCell className="px-4 py-4">
+                          <div className="font-bold text-sm text-foreground whitespace-nowrap">
+                            {p.title}
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="px-4 py-4 whitespace-nowrap">
+                          <span className="inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground">
+                            {p.category}
+                          </span>
+                        </TableCell>
+
+                        <TableCell className="px-4 py-4 font-mono text-right whitespace-nowrap">
+                          <span className="font-bold text-foreground">{p.units.toLocaleString()}</span>
+                          <span className="text-[11px] text-muted-foreground font-normal block">
+                            {p.agentUnits} AI · {p.humanUnits} Hum
+                          </span>
+                        </TableCell>
+
+                        <TableCell className="px-4 py-4 font-mono font-semibold text-right text-emerald-400 whitespace-nowrap">
+                          <FormattedAmount amount={p.revenue} />
+                        </TableCell>
+
+                        <TableCell className="px-4 py-4 whitespace-nowrap">
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-1.5 w-24 rounded-full bg-muted overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-purple-500 transition-all duration-300"
+                                style={{ width: `${Math.min(100, p.share * 2)}%` }}
+                              />
+                            </div>
+                            <span className="font-mono text-xs text-muted-foreground font-medium">
+                              {p.share}%
+                            </span>
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="px-4 py-4 font-mono text-right text-muted-foreground whitespace-nowrap">
+                          <FormattedAmount amount={p.asp} />
+                        </TableCell>
+                      </TableRow>
+
+                      {/* Inline Product Detail Subrow */}
+                      {isDetailActive && (
+                        <TableRow className="bg-accent/40 border-b border-border hover:bg-accent/40">
+                          <TableCell colSpan={7} className="px-6 py-4">
+                            <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-muted border border-border">
+                                    <Package className="h-4 w-4 text-muted-foreground" />
+                                  </div>
+                                  <div>
+                                    <span className="font-semibold text-sm text-foreground">{p.title}</span>
+                                    <span className="ml-2 inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                                      {p.category}
+                                    </span>
+                                  </div>
+                                </div>
+                                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">
+                                  <ArrowUpRight className="h-3 w-3" />
+                                  {p.trend} Growth
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-border text-xs">
+                                <div>
+                                  <span className="text-muted-foreground block text-[11px]">Total Units Sold</span>
+                                  <span className="font-mono font-semibold text-foreground">{p.units.toLocaleString()} units</span>
+                                  <span className="text-[10px] text-muted-foreground block font-mono mt-0.5">
+                                    {p.agentUnits} AI Agent / {p.humanUnits} Shopper
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground block text-[11px]">Gross Revenue</span>
+                                  <span className="font-mono font-semibold text-emerald-400">
+                                    <FormattedAmount amount={p.revenue} />
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground block text-[11px]">Average Selling Price</span>
+                                  <span className="font-mono font-medium text-foreground">
+                                    <FormattedAmount amount={p.asp} />
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground block text-[11px]">Catalog Revenue Share</span>
+                                  <span className="font-mono font-semibold text-foreground">{p.share}%</span>
+                                </div>
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </Card>
+        </TooltipProvider>
+      )}
+
+      {/* Separate Bottom Pagination Bar matching TransactionsList */}
+      {filteredProducts.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-1">
+          {/* Left: Count & Page Size Selector */}
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <div>
+              Showing{" "}
+              <span className="font-semibold text-foreground">
+                {(currentPage - 1) * pageSize + 1}
+              </span>{" "}
+              to{" "}
+              <span className="font-semibold text-foreground">
+                {Math.min(currentPage * pageSize, filteredProducts.length)}
+              </span>{" "}
+              of{" "}
+              <span className="font-semibold text-foreground">
+                {filteredProducts.length}
+              </span>{" "}
+              products
+            </div>
+
+            <div className="h-3.5 w-px bg-accent hidden sm:block" />
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-muted-foreground">Rows per page:</span>
+              <SelectMenu
+                value={pageSize}
+                onChange={(val) => {
+                  setPageSize(Number(val));
                   setCurrentPage(1);
                 }}
-                className="w-full rounded-lg bg-background pl-9 pr-4 py-2 text-xs text-foreground placeholder:text-muted-foreground"
+                size="sm"
+                options={[
+                  { value: 5, label: "5" },
+                  { value: 10, label: "10" },
+                  { value: 20, label: "20" },
+                  { value: 50, label: "50" },
+                  { value: 100, label: "100" },
+                ]}
               />
             </div>
-
-            {/* Category Filter */}
-            <SelectMenu
-              value={categoryFilter}
-              onChange={(val) => {
-                setCategoryFilter(val);
-                setCurrentPage(1);
-              }}
-              options={categoryOptions}
-            />
-
-            {(categoryFilter !== "ALL" || searchQuery) && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setCategoryFilter("ALL");
-                  setSearchQuery("");
-                  setCurrentPage(1);
-                }}
-                className="h-9 rounded-lg border-border bg-muted/60 px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-              >
-                Reset
-              </Button>
-            )}
           </div>
-        </div>
 
-        {/* Catalog Sales Table */}
-        <div className="overflow-x-auto rounded-lg border border-border/80">
-          <Table className="w-full text-xs text-left">
-            <TableHeader className="border-b border-border bg-muted/40 text-muted-foreground font-medium text-[11px]">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="px-4 py-3">Product Name</TableHead>
-                <TableHead className="px-3 py-3">Category</TableHead>
-                <TableHead className="px-3 py-3 text-right">Units Sold</TableHead>
-                <TableHead className="px-3 py-3 text-right">Gross Sales</TableHead>
-                <TableHead className="px-4 py-3">Revenue Share</TableHead>
-                <TableHead className="px-3 py-3 text-right">Avg Price (ASP)</TableHead>
-                <TableHead className="px-4 py-3 text-right">Trend</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody className="divide-y divide-border font-normal">
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                      <span>Loading real-time catalog sales...</span>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : paginatedProducts.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="p-0">
-                    <Empty className="py-12">
-                      <EmptyHeader>
-                        <EmptyMedia variant="default">
-                          <Package className="h-6 w-6 text-muted-foreground/60" />
-                        </EmptyMedia>
-                        <EmptyTitle className="text-xs font-medium text-foreground">
-                          No matching products found
-                        </EmptyTitle>
-                        <EmptyDescription className="text-[11px] text-muted-foreground">
-                          Try adjusting your search query or category filters.
-                        </EmptyDescription>
-                      </EmptyHeader>
-                    </Empty>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                paginatedProducts.map((p, idx) => (
-                  <TableRow key={idx} className="hover:bg-muted/40 transition-colors">
-                    <TableCell className="px-4 py-3 font-medium text-foreground max-w-[280px] truncate">
-                      {p.title}
-                    </TableCell>
-                    <TableCell className="px-3 py-3 text-muted-foreground">
-                      <Badge variant="outline" className="rounded-md border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                        {p.category}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="px-3 py-3 font-mono text-right text-foreground">
-                      <span>{p.units.toLocaleString()}</span>
-                      <span className="text-[10px] text-muted-foreground block">
-                        {p.agentUnits} AI · {p.humanUnits} Hum
-                      </span>
-                    </TableCell>
-                    <TableCell className="px-3 py-3 font-mono text-right font-semibold text-foreground">
-                      <FormattedAmount amount={p.revenue} />
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-24 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-purple-500 transition-all duration-300"
-                            style={{ width: `${Math.min(100, p.share * 2)}%` }}
-                          />
-                        </div>
-                        <span className="font-mono text-[11px] text-muted-foreground">{p.share}%</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="px-3 py-3 font-mono text-right text-muted-foreground">
-                      <FormattedAmount amount={p.asp} />
-                    </TableCell>
-                    <TableCell className="px-4 py-3 text-right">
-                      <Badge variant="outline" className="gap-0.5 rounded-full border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
-                        <ArrowUpRight className="h-3 w-3 inline" />
-                        {p.trend}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        {/* Pagination & Controls Bar */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-xs text-muted-foreground">
+          {/* Right: Pagination Navigation */}
           <div className="flex items-center gap-2">
-            <span>Rows per page:</span>
-            <SelectMenu
-              value={pageSize}
-              onChange={(val) => {
-                setPageSize(Number(val));
-                setCurrentPage(1);
-              }}
-              options={[
-                { value: 5, label: "5" },
-                { value: 10, label: "10" },
-                { value: 20, label: "20" },
-              ]}
-              size="sm"
-            />
-            <span className="text-muted-foreground/80 pl-2">
-              Showing{" "}
-              <strong className="text-foreground">
-                {filteredProducts.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}-
-                {Math.min(currentPage * pageSize, filteredProducts.length)}
-              </strong>{" "}
-              of <strong className="text-foreground">{filteredProducts.length}</strong> products
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5">
             <Button
-              type="button"
               variant="outline"
               size="sm"
-              disabled={currentPage <= 1}
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              className="h-7 w-7 p-0 rounded-md border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              disabled={currentPage <= 1}
+              className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
-              <ChevronLeft className="h-3.5 w-3.5" />
+              <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+              <span>Previous</span>
             </Button>
-            <span className="px-2 font-mono text-xs text-foreground">
-              {currentPage} / {totalPages}
-            </span>
+
+            <div className="inline-flex rounded-lg border border-border bg-background p-0.5">
+              {Array.from({ length: totalPages }).map((_, i) => {
+                const pageNum = i + 1;
+                return (
+                  <button
+                    key={pageNum}
+                    type="button"
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={cn(
+                      "h-7 min-w-7 rounded-md px-2 text-xs font-semibold transition-colors cursor-pointer",
+                      currentPage === pageNum
+                        ? "bg-muted text-foreground shadow-none"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
             <Button
-              type="button"
               variant="outline"
               size="sm"
-              disabled={currentPage >= totalPages}
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              className="h-7 w-7 p-0 rounded-md border-border bg-card text-foreground transition-colors hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              disabled={currentPage >= totalPages}
+              className="h-8 px-2.5 rounded-lg border border-border bg-background text-xs text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
-              <ChevronRight className="h-3.5 w-3.5" />
+              <span>Next</span>
+              <ChevronRight className="h-3.5 w-3.5 ml-1" />
             </Button>
           </div>
         </div>
-      </Card>
+      )}
     </div>
   );
 }
