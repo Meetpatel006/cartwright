@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="24px" height="24px" viewBox="0 0 24 24"><path d="M7 3H13" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"></path>
+<path d="M13 3V5H15V7H17" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"></path>
+<path d="M17 7V19" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"></path>
+<path d="M7 21H17" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"></path>
+<path d="M5 5V19" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"></path>
+<path d="M9 11H13" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"></path>
+<path d="M9 14H13" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"></path>
+<path d="M9 17H11" stroke="currentColor" stroke-width="2" stroke-linecap="square" fill="none"></path></svg>

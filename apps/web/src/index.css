@@ -1,1 +1,69 @@
 @import "@cartwright/ui/globals.css";
+
+@theme inline {
+  --color-ink-950: #191919;
+  --color-ink-800: #262626;
+  --color-faint: #8f8f8f;
+  --color-panel: #232323;
+  --color-cream: #f1eee7;
+  --color-cream-line: #d9d3c4;
+  --color-cream-ink: #17150f;
+  --color-cream-muted: #6a6459;
+}
+
+@font-face {
+  font-family: "ItoRepro";
+  src: url("/logos/fonts/ABCRepro-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "ItoReproMono";
+  src: url("/logos/fonts/ABCReproMono-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.ito-page {
+  --ito-primary-dark: #141414;
+  --ito-secondary-dark: #1a1a1a;
+  --ito-white: #ffffff;
+  --ito-black: #000000;
+  --ito-primary-blue: #007aff;
+  --ito-secondary-blue: #6798ff;
+  --ito-third-blue: #a6d4ff;
+  --ito-light-blue: #ddefff;
+  --ito-dark-blue: #40404d;
+  --ito-neutral-lightest: #fcfcfc;
+  --ito-neutral-lighter: #f8f8f8;
+  --ito-neutral-light: #eaeaea;
+  --ito-neutral: #666666;
+  --ito-neutral-dark: #444444;
+  --ito-neutral-darker: #242424;
+  --ito-primary-gray: #888888;
+  --ito-secondary-gray: #727272;
+  --ito-footer-muted: #a0a0a0;
+  --ito-off-white: #f5f5f5;
+  font-family: "ItoRepro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--ito-primary-dark);
+  background-color: var(--ito-neutral-lightest);
+}
+
+.font-ito-mono {
+  font-family: "ItoReproMono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.font-ito-sans {
+  font-family: "ItoRepro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.ito-bracket-corners {
+  background:
+    conic-gradient(from 90deg at top 1px left 1px, #0000 90deg, var(--ito-primary-dark, #141414) 0) 0 0 / 0.5rem 0.5rem border-box no-repeat,
+    conic-gradient(from 180deg at top 1px right 1px, #0000 90deg, var(--ito-primary-dark, #141414) 0) 100% 0 / 0.5rem 0.5rem border-box no-repeat,
+    conic-gradient(from 0deg at bottom 1px left 1px, #0000 90deg, var(--ito-primary-dark, #141414) 0) 0 100% / 0.5rem 0.5rem border-box no-repeat,
+    conic-gradient(from -90deg at bottom 1px right 1px, #0000 90deg, var(--ito-primary-dark, #141414) 0) 100% 100% / 0.5rem 0.5rem border-box no-repeat;
+}

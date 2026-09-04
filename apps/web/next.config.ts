@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  typedRoutes: true,
+  typedRoutes: false,
   reactCompiler: true,
   output: "standalone",
   serverExternalPackages: ["@browserbasehq/stagehand"],
