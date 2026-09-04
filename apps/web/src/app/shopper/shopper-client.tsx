@@ -221,6 +221,33 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
     parsedIntent?: ShoppingIntent;
   } | null>(null);
 
+  // Selecting a product is the user's explicit purchase action. When the
+  // server policy has already approved that transaction and the retained
+  // merchant checkout is available, finish the merchant's Razorpay Test Mode
+  // checkout automatically. Transactions requiring user approval stay on the
+  // approval button, and server-side guards remain authoritative.
+  const autoMerchantPaymentRef = useRef<string | null>(null);
+  const selectedPurchase =
+    (select.data?.purchase as TransactionView | undefined) ??
+    (loadedPurchase.data as unknown as TransactionView | undefined);
+  useEffect(() => {
+    const purchase = selectedPurchase;
+    if (
+      !purchase ||
+      purchase.status !== "APPROVED" ||
+      purchase.paymentSource !== "merchant_ui" ||
+      approve.isPending ||
+      approve.error ||
+      approve.data?.result.transactionId === purchase.transactionId ||
+      autoMerchantPaymentRef.current === purchase.transactionId
+    ) {
+      return;
+    }
+
+    autoMerchantPaymentRef.current = purchase.transactionId;
+    approve.mutate({ transactionId: purchase.transactionId, method: payMethod });
+  }, [selectedPurchase, approve.isPending, approve.error, approve.data, payMethod]);
+
   const startedSessionRef = useRef<string | null>(null);
   useEffect(() => {
     const session = loadedSession.data;
@@ -469,6 +496,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
 
   const onSelect = (productId: string) => {
     if (!runResult) return;
+    approve.reset();
     select.mutate({
       sessionId: runResult.sessionId,
       productId,

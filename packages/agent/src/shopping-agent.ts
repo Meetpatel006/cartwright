@@ -1548,7 +1548,30 @@ async function clickPaymentGate(page: AgentPage): Promise<PaymentGate | undefine
   const pattern = gate.provider === "razorpay"
     ? /(razorpay|pay now|pay securely|place order|proceed to payment|complete order|confirm order|checkout)/i
     : /(pay now|pay securely|place order|proceed to payment|complete order|confirm order|checkout)/i;
-  return (await clickVisibleText(page, pattern).catch(() => false)) ? gate : undefined;
+  // Merchant controls often expose their label through aria-label/title/value
+  // rather than innerText (common in marketplace checkout UIs). Use the same
+  // rendered-DOM gate decision, then click the matching visible control.
+  const clickedFromDom = await page.evaluate(`
+    (() => {
+      const re = new RegExp(${JSON.stringify(pattern.source)}, ${JSON.stringify(pattern.flags)});
+      const candidates = Array.from(document.querySelectorAll(
+        'button, [role="button"], a, input[type="submit"], input[type="button"]'
+      ));
+      for (const element of candidates) {
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        if (style.display === 'none' || style.visibility === 'hidden' || rect.width === 0 || rect.height === 0) continue;
+        const label = [element.innerText, element.getAttribute('aria-label'), element.getAttribute('title'), element.getAttribute('value')]
+          .filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim();
+        if (re.test(label)) {
+          element.click();
+          return true;
+        }
+      }
+      return false;
+    })()
+  `).catch(() => false);
+  return clickedFromDom || (await clickVisibleText(page, pattern).catch(() => false)) ? gate : undefined;
 }
 
 export interface MerchantPaymentDriveOptions {
@@ -1594,9 +1617,24 @@ export async function approveMerchantPayment(
     return { status: "expired", message: "Merchant checkout session expired; run the agent again." };
   }
   try {
+    if (options.completeTestPayment) {
+      const razorpayMode = (process.env.RAZORPAY_MODE ?? "").toLowerCase();
+      const razorpayKeyId = process.env.RAZORPAY_KEY_ID ?? "";
+      if (razorpayMode !== "test" || !razorpayKeyId.startsWith("rzp_test_")) {
+        return {
+          status: "failed",
+          message: "Automatic merchant payment is available only for Razorpay Test Mode with an rzp_test_ key.",
+        };
+      }
+    }
     await session.browser.context.setActivePage(session.page).catch(() => {});
     const gate = await clickPaymentGate(session.page);
-    if (!gate) return { status: "failed", message: "The merchant payment control is no longer available." };
+    if (!gate) {
+      return {
+        status: "failed",
+        message: "The merchant checkout has no visible Razorpay payment control. Automatic Test Mode payment is unavailable for this shop.",
+      };
+    }
     if (options.completeTestPayment && gate.provider === "razorpay") {
       const paymentPage = await paymentPageAfterGate(session.browser.context, session.page);
       await session.browser.context.setActivePage(paymentPage).catch(() => {});
