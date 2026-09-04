@@ -197,6 +197,22 @@ describe("parseShoppingRequestWithLLM — conversational & generalized prompt ex
     expect(intent.constraints).toContain("cushion");
   });
 
+  test("keeps a useful store search when the LLM is unavailable", async () => {
+    const intent = await parseShoppingRequestWithLLM(
+      {
+        query: "wired earbuds with low latency under 2k on Flipkart, and also any rating will be fine",
+        defaultCurrency: "INR",
+      },
+      { extractWithLlm: async () => null },
+    );
+
+    expect(intent.budgetInMinor).toBe(200_000);
+    expect(intent.preferredMerchants).toContain("flipkart");
+    expect(intent.constraints).toContain("wired");
+    expect(intent.constraints).toContain("low_latency");
+    expect(intent.cleanSearchQuery).toBe("wired earbuds with low latency");
+  });
+
   test("rejects empty / whitespace-only query with typed error before calling LLM", async () => {
     let called = false;
     const mockLlm = async () => {

@@ -401,6 +401,8 @@ export async function runShoppingSession(
           stores,
           budgetInMinor: it.budgetInMinor,
           currency: it.currency,
+          constraints: it.constraints,
+          minRating: it.minRating,
           mode,
           browserbaseApiKey:
             mode === "browserbase" ? env.BROWSERBASE_API_KEY : undefined,

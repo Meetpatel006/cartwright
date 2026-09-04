@@ -10,7 +10,7 @@
  * the two layers agree on minor-unit math.
  */
 
-import { parseBudget } from "./budget";
+import { parseBudget, stripBudgetClause } from "./budget";
 import type { ShoppingIntent } from "../commerce/types";
 import { ShoppingRequestValidationError } from "../errors";
 
@@ -65,6 +65,8 @@ const CATEGORY_HINTS: Array<{ re: RegExp; category: string }> = [
 ];
 
 const CONSTRAINT_PATTERNS: Array<{ re: RegExp; token: string }> = [
+  { re: /\b(low[\s-]?latency|gaming mode|game mode)\b/i, token: "low_latency" },
+  { re: /\b(wired|wire)\b/i, token: "wired" },
   { re: /\b(refurbished|renewed|pre-owned|secondhand|used)\b/i, token: "refurbished" },
   { re: /\b(brand new|new only|factory new)\b/i, token: "new" },
   { re: /\b(with warranty|warranty|guarantee)\b/i, token: "warranty" },
@@ -135,6 +137,19 @@ export function extractMerchantPreferences(query: string): {
       if (token && !excluded.includes(token)) excluded.push(token);
     }
   }
+
+  // Conversational shoppers often put the store after the price clause
+  // ("under 2k on Flipkart"). Keep that store signal even without a tidy
+  // prepositional phrase terminator.
+  for (const merchant of [...MERCHANT_TOKENS].sort((a, b) => b.length - a.length)) {
+    if (
+      !excluded.includes(merchant) &&
+      new RegExp(`\\b(?:from|on|at|via)\\s+${merchant}\\b`, "i").test(query)
+    ) {
+      if (!preferred.includes(merchant)) preferred.push(merchant);
+      break;
+    }
+  }
   return { preferred, excluded };
 }
 
@@ -153,6 +168,21 @@ export function extractCategory(query: string): string | null {
     if (re.test(query)) return category;
   }
   return null;
+}
+
+/** Preserve product terms when the LLM intent parser must fall back locally. */
+export function cleanFallbackSearchQuery(query: string): string {
+  let clean = stripBudgetClause(query);
+  for (const merchant of [...MERCHANT_TOKENS].sort((a, b) => b.length - a.length)) {
+    clean = clean.replace(new RegExp(`\\b(?:on|from|at|via)\\s+${merchant}\\b`, "gi"), " ");
+  }
+  clean = clean
+    .replace(/\b(?:and\s+)?(?:also\s+)?any\s+rating\s+(?:will\s+be\s+)?fine\b/gi, " ")
+    .replace(/\b(?:with\s+)?(?:any|no)\s+(?:minimum\s+)?rating\b/gi, " ")
+    .replace(/\s*[,;]\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clean || query.trim();
 }
 
 /**
