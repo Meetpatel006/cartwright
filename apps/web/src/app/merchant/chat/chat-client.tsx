@@ -24,6 +24,12 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 
+type DisplayMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
+
 interface ChatClientProps {
   initialChatId?: string;
 }
@@ -34,6 +40,7 @@ export default function ChatClient({ initialChatId }: ChatClientProps) {
   const qc = useQueryClient();
 
   const [selectedChatId, setSelectedChatId] = useState<string | null>(initialChatId ?? null);
+  const [pendingUserMessage, setPendingUserMessage] = useState<DisplayMessage | null>(null);
 
   const loadedChat = useQuery({
     ...trpc.merchantChat.get.queryOptions({ chatId: selectedChatId ?? "" }),
@@ -42,24 +49,57 @@ export default function ChatClient({ initialChatId }: ChatClientProps) {
 
   const create = useMutation({
     ...trpc.merchantChat.create.mutationOptions(),
-    onSuccess: (data: any) => {
+    onSuccess: (data) => {
+      qc.setQueryData(trpc.merchantChat.get.queryKey({ chatId: data.chat.id }), {
+        chat: data.chat,
+        messages: data.messages.map((message) => ({
+          ...message,
+          chatId: data.chat.id,
+        })),
+      });
+      setPendingUserMessage(null);
       setSelectedChatId(data.chat.id);
       const target = `/merchant/chat/${data.chat.id}`;
       if (pathname !== target) router.push(target as any, { scroll: false });
       qc.invalidateQueries({ queryKey: trpc.merchantChat.list.queryKey() });
     },
+    onError: () => setPendingUserMessage(null),
   });
 
   const send = useMutation({
     ...trpc.merchantChat.send.mutationOptions(),
-    onSuccess: () => {
-      if (selectedChatId) qc.invalidateQueries({ queryKey: trpc.merchantChat.get.queryKey({ chatId: selectedChatId }) });
+    onSuccess: (data) => {
+      if (selectedChatId) {
+        qc.setQueryData(
+          trpc.merchantChat.get.queryKey({ chatId: selectedChatId }),
+          (current) => {
+            if (!current) return current;
+            const existingIds = new Set(current.messages.map((message) => message.id));
+            return {
+              ...current,
+              messages: [
+                ...current.messages,
+                ...data
+                  .filter((message) => !existingIds.has(message.id))
+                  .map((message) => ({ ...message, chatId: selectedChatId })),
+              ],
+            };
+          },
+        );
+        qc.invalidateQueries({ queryKey: trpc.merchantChat.get.queryKey({ chatId: selectedChatId }) });
+      }
+      setPendingUserMessage(null);
       qc.invalidateQueries({ queryKey: trpc.merchantChat.list.queryKey() });
     },
+    onError: () => setPendingUserMessage(null),
   });
 
-  const messages: { id: string; role: string; content: string }[] =
-    (loadedChat.data?.messages as any) ?? (create.data?.messages as any) ?? [];
+  const messages: DisplayMessage[] = [
+    ...((loadedChat.data?.messages as DisplayMessage[] | undefined) ??
+      (create.data?.messages as DisplayMessage[] | undefined) ??
+      []),
+    ...(pendingUserMessage ? [pendingUserMessage] : []),
+  ];
 
   const isPending = create.isPending || send.isPending;
   const status: "submitted" | "streaming" | "ready" | "error" = isPending ? "streaming" : "ready";
@@ -67,6 +107,7 @@ export default function ChatClient({ initialChatId }: ChatClientProps) {
   // Mirror shopper-client.tsx:507 sync from initialChatId
   useEffect(() => {
     setSelectedChatId(initialChatId ?? null);
+    setPendingUserMessage(null);
     if (!initialChatId) {
       create.reset();
       send.reset();
@@ -76,6 +117,11 @@ export default function ChatClient({ initialChatId }: ChatClientProps) {
   const handleSubmit = (msg: PromptInputMessage) => {
     const q = msg.text.trim();
     if (!q || isPending) return;
+    setPendingUserMessage({
+      id: `pending-${Date.now()}`,
+      role: "user",
+      content: q,
+    });
     if (!selectedChatId) create.mutate({ message: q });
     else send.mutate({ chatId: selectedChatId, message: q });
   };
@@ -94,6 +140,7 @@ export default function ChatClient({ initialChatId }: ChatClientProps) {
             type="button"
             onClick={() => {
               setSelectedChatId(null);
+              setPendingUserMessage(null);
               create.reset();
               send.reset();
               if (pathname !== "/merchant/chat") router.push("/merchant/chat" as any, { scroll: false });
@@ -121,7 +168,7 @@ export default function ChatClient({ initialChatId }: ChatClientProps) {
                   </div>
                 )}
                 {messages.map((m) => (
-                  <Message key={m.id} from={m.role as "user" | "assistant"}>
+                  <Message key={m.id} from={m.role}>
                     <MessageContent>
                       <MessageResponse>{m.content}</MessageResponse>
                     </MessageContent>
@@ -181,7 +228,10 @@ export default function ChatClient({ initialChatId }: ChatClientProps) {
           <div className="mx-auto w-full max-w-4xl px-4 py-2">
             <PromptInput onSubmit={handleSubmit}>
               <PromptInputBody>
-                <PromptInputTextarea placeholder="Ask about your store, funnel, or products..." />
+                <PromptInputTextarea
+                  className="text-base md:text-base"
+                  placeholder="Ask about your store, funnel, or products..."
+                />
               </PromptInputBody>
               <PromptInputFooter>
                 <div />
