@@ -49,12 +49,12 @@ import {
   TooltipProvider,
 } from "@cartwright/ui/components/tooltip";
 import {
-  fetchTrackerStats,
   DEFAULT_STATS,
   type LiveStats,
   type OrderItem,
   type TimeSeriesItem,
 } from "@/utils/tracker-api";
+import { useTrackerStats } from "@/utils/use-tracker-stats";
 function getStatusDetails(status: string) {
   const norm = (status || "").toUpperCase();
   switch (norm) {
@@ -391,43 +391,36 @@ export default function MerchantOrdersPage() {
   const [timeSeries, setTimeSeries] = useState<TimeSeriesItem[]>([]);
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [agentComparison, setAgentComparison] = useState<DimensionComparison[]>([]);
-  const [loading, setLoading] = useState(true);
 
   // Merchant Account & Data-Site Binding
   const { accountQuery, activeMerchantId, activeSiteId, selectedSiteId, setSelectedSiteId, siteIds: userSiteIds } = useMerchantContext();
 
+  // Live PostHog telemetry: shared, cached query (see @/utils/use-tracker-stats)
+  // so switching between merchant pages reuses the cache instead of re-fetching.
+  const statsQuery = useTrackerStats(activeSiteId, Boolean(activeMerchantId));
+
   useEffect(() => {
-    async function loadPostHogData() {
-      if (!activeMerchantId) return;
-      setLoading(true);
-      try {
-        const data = await fetchTrackerStats(activeSiteId);
-        if (data.stats) {
-          setStats(data.stats);
-        }
-        if (data.timeSeries) {
-          setTimeSeries(data.timeSeries);
-        }
-        if (data.orders) {
-          setOrders(data.orders);
-        }
-        setAgentComparison(
-          (data.agentComparison || []).map((d: any) => ({
-            key: d.key,
-            label: d.label,
-            desc: d.label,
-            aiScore: d.ai,
-            humanScore: d.hu,
-          })),
-        );
-      } catch (err) {
-        console.error("Failed to fetch live PostHog stats:", err);
-      } finally {
-        setLoading(false);
-      }
+    const data = statsQuery.data;
+    if (!data) return;
+    if (data.stats) {
+      setStats(data.stats);
     }
-    loadPostHogData();
-  }, [activeMerchantId, selectedSiteId, activeSiteId]);
+    if (data.timeSeries) {
+      setTimeSeries(data.timeSeries);
+    }
+    if (data.orders) {
+      setOrders(data.orders);
+    }
+    setAgentComparison(
+      (data.agentComparison || []).map((d: any) => ({
+        key: d.key,
+        label: d.label,
+        desc: d.label,
+        aiScore: d.ai,
+        humanScore: d.hu,
+      })),
+    );
+  }, [statsQuery.data]);
 
   const handleCopy = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();

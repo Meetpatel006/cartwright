@@ -13,7 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ConversionFunnel, InsightCard, SearchQueriesPanel, AgentRadarChart } from "@/components/dashboard/dashboard-widgets";
 import { StatusBadge } from "./status-badge";
 import { KPICard } from "./kpi-card";
-import { fetchTrackerStats, DEFAULT_STATS, type LiveStats, type TimeSeriesItem, type OrderItem, type FunnelItem, type SearchQueryItem, type AgentComparisonDim } from "@/utils/tracker-api";
+import { DEFAULT_STATS, type LiveStats, type TimeSeriesItem, type OrderItem, type FunnelItem, type SearchQueryItem, type AgentComparisonDim } from "@/utils/tracker-api";
+import { useTrackerStats } from "@/utils/use-tracker-stats";
 import { computeOrderTrend, computeAOVTrend, computeAgentShareTrend, computeAgentRevenue, computePriorAOV } from "@/utils/metrics";
 
 export function MerchantTab() {
@@ -23,8 +24,6 @@ export function MerchantTab() {
   const [funnel, setFunnel] = useState<FunnelItem[]>([]);
   const [searchQueries, setSearchQueries] = useState<SearchQueryItem[]>([]);
   const [agentComparison, setAgentComparison] = useState<AgentComparisonDim[]>([]);
-  const [isLoadingStats, setIsLoadingStats] = useState(true);
-  const [statsError, setStatsError] = useState(false);
 
   const accountQuery = useQuery({ ...trpc.merchantIntelligence.getAccount.queryOptions() });
   const activeMerchantId = accountQuery.data?.merchantId || "";
@@ -34,6 +33,12 @@ export function MerchantTab() {
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
   useEffect(() => { if (accountQuery.data?.primarySiteId && !selectedSiteId) setSelectedSiteId(accountQuery.data.primarySiteId); }, [accountQuery.data, selectedSiteId]);
   const activeSiteId = selectedSiteId || accountQuery.data?.primarySiteId || userSiteIds[0] || "";
+
+  // Live PostHog telemetry: fetched through a shared, cached query so every
+  // merchant page (dashboard / orders / customers / sales) reuses one cache
+  // entry per site instead of re-fetching on each page mount.
+  const statsQuery = useTrackerStats(activeSiteId, Boolean(activeMerchantId));
+  const statsError = statsQuery.isError;
 
   const overviewQuery = useQuery({ ...trpc.merchantIntelligence.overview.queryOptions() });
   const topProducts = overviewQuery.data?.topProducts || [];
@@ -45,29 +50,19 @@ export function MerchantTab() {
   const agentRevenue = useMemo(() => computeAgentRevenue(stats), [stats]);
   const priorAOV = useMemo(() => computePriorAOV(stats.avgOrderValue, aovTrend.value), [stats.avgOrderValue, aovTrend.value]);
 
+  // Sync the shared tracker-stats query into local state used by the widgets.
+  // Site switches change the query key, so statsQuery.data is a fresh object
+  // per site and this effect re-runs with the new values.
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (!activeMerchantId) return;
-      setIsLoadingStats(true);
-      setStatsError(false);
-      const data = await fetchTrackerStats(activeSiteId);
-      if (cancelled) return;
-      if (data) {
-        setStats(data.stats);
-        setTimeSeries(data.timeSeries);
-        setOrders(data.orders);
-        setFunnel(data.funnel);
-        setSearchQueries(data.searchQueries);
-        setAgentComparison(data.agentComparison || []);
-      } else {
-        setStatsError(true);
-      }
-      setIsLoadingStats(false);
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [activeMerchantId, selectedSiteId, activeSiteId]);
+    const data = statsQuery.data;
+    if (!data) return;
+    setStats(data.stats);
+    setTimeSeries(data.timeSeries);
+    setOrders(data.orders);
+    setFunnel(data.funnel);
+    setSearchQueries(data.searchQueries);
+    setAgentComparison(data.agentComparison || []);
+  }, [statsQuery.data]);
 
   const recentOrders = useMemo(() => orders.slice(0, 8), [orders]);
 

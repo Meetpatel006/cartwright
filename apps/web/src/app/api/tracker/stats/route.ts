@@ -1,10 +1,15 @@
 import { auth } from "@cartwright/auth";
 import { getOrCreateMerchantAccount } from "@cartwright/api/merchant-intelligence/merchant-account.service";
-import { queryHogQL, buildFilterClause } from "@cartwright/api/posthog/client";
 import { headers } from "next/headers";
-import { type NextRequest, NextResponse } from "next/server";
+import { connection, type NextRequest, NextResponse } from "next/server";
+
+import { getCachedTrackerQueries } from "@/lib/tracker-stats-queries";
 
 export async function GET(request: NextRequest) {
+  // Session-gated handler: defer to request time (Cache Components would
+  // otherwise attempt to prerender this GET route).
+  await connection();
+
   // 1. Enforce Protected Route: Verify User Session
   const session = await auth.api.getSession({
     headers: await headers(),
@@ -32,126 +37,24 @@ export async function GET(request: NextRequest) {
     ? siteParam
     : "all";
 
-  // 3. Build filter clause scoped strictly to the authenticated merchant & optional site
-  const baseFilter = buildFilterClause(boundMerchantId, { siteId: siteParam, range });
-
   try {
-    // 4. Fetch live metrics, funnel, daily time-series, and orders from PostHog strictly for this site/merchant
-    const [kpiRes, failedRes, pageViewsRes, funnelRes, searchRes, timeSeriesRes, ordersRes, actorFunnelRes, channelRes] = await Promise.all([
-      queryHogQL(`
-        SELECT 
-          count() AS total_orders,
-          sum(toFloat(properties.order_total_amount)) AS total_revenue,
-          avg(toFloat(properties.order_total_amount)) AS avg_order_value,
-          countIf(properties.actor_type = 'agent') AS agent_orders,
-          avgIf(toFloat(properties.order_total_amount), properties.actor_type = 'agent') AS agent_aov,
-          avgIf(toFloat(properties.order_total_amount), properties.actor_type != 'agent') AS human_aov,
-          sumIf(toFloat(properties.order_total_amount), properties.actor_type = 'agent') AS agent_revenue
-        FROM events
-        WHERE event = 'cartwright_purchase_completed'
-          AND ${baseFilter}
-      `),
-      queryHogQL(`
-        SELECT count() AS failed_orders
-        FROM events
-        WHERE event = 'cartwright_purchase_failed'
-          AND ${baseFilter}
-      `),
-      queryHogQL(`
-        SELECT count() AS total_views
-        FROM events
-        WHERE event = 'cartwright_page_viewed'
-          AND ${baseFilter}
-      `),
-      queryHogQL(`
-        SELECT 
-          countIf(event = 'cartwright_page_viewed') AS visits,
-          countIf(event = 'cartwright_product_viewed') AS product_views,
-          countIf(event = 'cartwright_add_to_cart') AS cart_adds,
-          countIf(event = 'cartwright_checkout_started') AS checkouts,
-          countIf(event = 'cartwright_purchase_completed') AS purchases
-        FROM events
-        WHERE ${baseFilter}
-      `),
-      queryHogQL(`
-        SELECT 
-          properties.search_query AS query,
-          count() AS searches
-        FROM events
-        WHERE event = 'cartwright_search_performed'
-          AND properties.search_query IS NOT NULL
-          AND ${baseFilter}
-        GROUP BY query
-        ORDER BY searches DESC
-        LIMIT 4
-      `),
-      queryHogQL(`
-        SELECT 
-          formatDateTime(timestamp, '%b %d') AS day_label,
-          countIf(properties.actor_type = 'agent') AS agent_orders,
-          countIf(properties.actor_type != 'agent') AS human_orders
-        FROM events
-        WHERE event = 'cartwright_purchase_completed'
-          AND ${baseFilter}
-        GROUP BY day_label
-        ORDER BY min(timestamp) ASC
-      `),
-      queryHogQL(`
-        SELECT 
-          timestamp,
-          distinct_id,
-          properties.order_id AS order_id,
-          toFloat(properties.order_total_amount) AS amount,
-          properties.merchant_id AS merchant_id,
-          properties.site_id AS site_id,
-          properties.city AS city,
-          properties.payment_method AS payment_method,
-          properties.actor_type AS actor_type,
-          coalesce(
-            JSONExtractString(properties.order, 'items', 1, 'title'),
-            properties.product_title,
-            properties.title,
-            'Unknown product'
-          ) AS product_title,
-          properties.order_status AS order_status,
-          coalesce(
-            properties.product_category,
-            JSONExtractString(properties.product, 'category'),
-            'Uncategorized'
-          ) AS product_category,
-          coalesce(properties.shopper_email, properties.email, '—') AS shopper_email,
-          coalesce(properties.shopper_name, properties.name, '') AS shopper_name,
-          coalesce(properties.state, '—') AS state
-        FROM events
-        WHERE event = 'cartwright_purchase_completed'
-          AND ${baseFilter}
-        ORDER BY timestamp DESC
-        LIMIT 2000
-      `),
-      queryHogQL(`
-        SELECT
-          if(properties.actor_type = 'agent', 'agent', 'human') AS actor,
-          countIf(event = 'cartwright_page_viewed') AS visits,
-          countIf(event = 'cartwright_product_viewed') AS product_views,
-          countIf(event = 'cartwright_add_to_cart') AS cart_adds,
-          countIf(event = 'cartwright_checkout_started') AS checkouts,
-          countIf(event = 'cartwright_purchase_completed') AS purchases
-        FROM events
-        WHERE ${baseFilter}
-        GROUP BY actor
-      `),
-      queryHogQL(`
-        SELECT
-          properties.payment_method AS method,
-          countIf(properties.actor_type = 'agent') AS agent_orders,
-          countIf(properties.actor_type != 'agent') AS human_orders,
-          sum(toFloat(properties.order_total_amount)) AS revenue
-        FROM events
-        WHERE event = 'cartwright_purchase_completed'
-          AND ${baseFilter}
-        GROUP BY method
-      `),
-    ]);
+    // 3. Fetch live metrics, funnel, daily time-series, and orders from PostHog
+    // strictly for this site/merchant. The heavy 9-query batch is computed
+    // server-side and cached with unstable_cache (see
+    // lib/tracker-stats-queries.ts), keyed by (merchantId, site, range) and
+    // revalidated every TRACKER_STATS_REVALIDATE_SECONDS, so repeated
+    // dashboard loads hit the Next.js data cache instead of PostHog.
+    const [
+      kpiRes,
+      failedRes,
+      pageViewsRes,
+      funnelRes,
+      searchRes,
+      timeSeriesRes,
+      ordersRes,
+      actorFunnelRes,
+      channelRes,
+    ] = await getCachedTrackerQueries(boundMerchantId, siteParam ?? "all", range);
 
     const kpiRow = kpiRes?.[0];
     const totalOrders = kpiRow ? Number(kpiRow[0]) || 0 : 0;

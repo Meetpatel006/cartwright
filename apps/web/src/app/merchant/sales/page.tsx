@@ -24,7 +24,7 @@ import { useMerchantContext } from "@/components/merchant/use-merchant-context";
 import { FormattedAmount } from "@/components/merchant/formatted-amount";
 import { SelectMenu } from "@cartwright/ui/components/select-menu";
 import { BarChartStacked } from "@/components/bar-chart-stacked";
-import { fetchTrackerStats } from "@/utils/tracker-api";
+import { useTrackerStats } from "@/utils/use-tracker-stats";
 import { Button } from "@cartwright/ui/components/button";
 import { Card } from "@cartwright/ui/components/card";
 import { Badge } from "@cartwright/ui/components/badge";
@@ -335,40 +335,33 @@ export default function MerchantSalesPage() {
   const [timeSeries, setTimeSeries] = useState<Array<{ day: string; series: "Human" | "AI Agent"; orders: number }>>([]);
   const [orders, setOrders] = useState<TelemetryOrder[]>([]);
   const [channelDimensions, setChannelDimensions] = useState<ChannelDimension[]>([]);
-  const [loading, setLoading] = useState(true);
 
   // Merchant Account & Multi-Site Binding
   const { accountQuery, activeMerchantId, activeSiteId, selectedSiteId, setSelectedSiteId, siteIds: userSiteIds } = useMerchantContext();
 
+  // Live PostHog telemetry: shared, cached query (see @/utils/use-tracker-stats)
+  // so switching between merchant pages reuses the cache instead of re-fetching.
+  const statsQuery = useTrackerStats(activeSiteId, Boolean(activeMerchantId));
+
   useEffect(() => {
-    async function loadPostHogSales() {
-      if (!activeMerchantId) return;
-      setLoading(true);
-      try {
-        const data = await fetchTrackerStats(activeSiteId);
-        if (data.stats) {
-          setStats(data.stats);
-        }
-        if (data.timeSeries) {
-          setTimeSeries(data.timeSeries);
-        }
-        setOrders(data.orders ?? []);
-        setChannelDimensions(
-          (data.channelEfficiency || []).map((d: any) => ({
-            key: String(d.key || d.label),
-            label: String(d.label),
-            aiShare: Number(d.ai) || 0,
-            humanShare: Number(d.hu) || 0,
-          })),
-        );
-      } catch (err) {
-        console.error("Failed to load sales data:", err);
-      } finally {
-        setLoading(false);
-      }
+    const data = statsQuery.data;
+    if (!data) return;
+    if (data.stats) {
+      setStats(data.stats);
     }
-    loadPostHogSales();
-  }, [activeMerchantId, activeSiteId]);
+    if (data.timeSeries) {
+      setTimeSeries(data.timeSeries);
+    }
+    setOrders(data.orders ?? []);
+    setChannelDimensions(
+      (data.channelEfficiency || []).map((d: any) => ({
+        key: String(d.key || d.label),
+        label: String(d.label),
+        aiShare: Number(d.ai) || 0,
+        humanShare: Number(d.hu) || 0,
+      })),
+    );
+  }, [statsQuery.data]);
 
   // Derive product sales only from orders returned by the telemetry API.
   const catalogProducts: ProductSalesItem[] = useMemo(() => {
@@ -632,7 +625,7 @@ export default function MerchantSalesPage() {
       </div>
 
       {/* Content Section */}
-      {loading ? (
+      {(!activeMerchantId || statsQuery.isLoading) ? (
         <div className="flex h-64 items-center justify-center rounded-xl border border-border bg-muted/40 text-sm text-muted-foreground">
           <div className="flex flex-col items-center justify-center gap-2">
             <span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />

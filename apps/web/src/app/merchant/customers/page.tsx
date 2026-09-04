@@ -49,10 +49,10 @@ import {
   TooltipProvider,
 } from "@cartwright/ui/components/tooltip";
 import {
-  fetchTrackerStats,
   type CustomerStats,
   type CohortAnalysisData,
 } from "@/utils/tracker-api";
+import { useTrackerStats } from "@/utils/use-tracker-stats";
 
 interface CustomerRecord {
   id: string;
@@ -85,103 +85,100 @@ export default function MerchantCustomersPage() {
   const [cohortData, setCohortData] = useState<CohortAnalysisData | null>(null);
   const [telemetryCustomers, setTelemetryCustomers] = useState<CustomerRecord[]>([]);
 
+  // Live PostHog telemetry: shared, cached query (see @/utils/use-tracker-stats)
+  // so switching between merchant pages reuses the cache instead of re-fetching.
+  const statsQuery = useTrackerStats(activeSiteId, Boolean(activeMerchantId));
+
   useEffect(() => {
-    async function loadCustomersTelemetry() {
-      if (!activeMerchantId) return;
-      try {
-        const data = await fetchTrackerStats(activeSiteId);
-        if (data.customerStats) {
-          setCustomerStats(data.customerStats);
-        }
-        if (data.customerGrowthTimeSeries && data.customerGrowthTimeSeries.length > 0) {
-          setGrowthData(data.customerGrowthTimeSeries);
-        }
-        if (data.geoDistribution && Array.isArray(data.geoDistribution) && data.geoDistribution.length > 0) {
-          const coordsMap: Record<string, { x: number; y: number; stateId: string }> = {
-            "Bengaluru": { x: 360, y: 792, stateId: "INKA" },
-            "Delhi NCR": { x: 344, y: 321, stateId: "INDL" },
-            "Mumbai": { x: 236, y: 602, stateId: "INMH" },
-            "Hyderabad": { x: 398, y: 648, stateId: "INTG" },
-            "Pune": { x: 260, y: 625, stateId: "INMH" },
-            "Chennai": { x: 418, y: 778, stateId: "INTN" },
-            "Ahmedabad": { x: 220, y: 485, stateId: "INGJ" },
-            "Jaipur": { x: 295, y: 375, stateId: "INRJ" },
-            "Kolkata": { x: 605, y: 530, stateId: "INWB" },
-            "Chandigarh": { x: 328, y: 250, stateId: "INCH" },
-            "Kochi": { x: 340, y: 880, stateId: "INKL" },
-            "Indore": { x: 310, y: 520, stateId: "INMP" },
-            "Lucknow": { x: 435, y: 385, stateId: "INUP" },
-            "Surat": { x: 225, y: 535, stateId: "INGJ" },
-            "Nagpur": { x: 385, y: 550, stateId: "INMH" },
-            "Coimbatore": { x: 345, y: 835, stateId: "INTN" },
-            "Bhopal": { x: 350, y: 495, stateId: "INMP" },
-            "Visakhapatnam": { x: 485, y: 650, stateId: "INAP" },
-            "Vadodara": { x: 240, y: 505, stateId: "INGJ" },
-            "Ludhiana": { x: 310, y: 235, stateId: "INPB" },
-          };
+    const data = statsQuery.data;
+    if (!data) return;
+    if (data.customerStats) {
+      setCustomerStats(data.customerStats);
+    }
+    if (data.customerGrowthTimeSeries && data.customerGrowthTimeSeries.length > 0) {
+      setGrowthData(data.customerGrowthTimeSeries);
+    }
+    if (data.geoDistribution && Array.isArray(data.geoDistribution) && data.geoDistribution.length > 0) {
+      const coordsMap: Record<string, { x: number; y: number; stateId: string }> = {
+        Bengaluru: { x: 360, y: 792, stateId: "INKA" },
+        "Delhi NCR": { x: 344, y: 321, stateId: "INDL" },
+        Mumbai: { x: 236, y: 602, stateId: "INMH" },
+        Hyderabad: { x: 398, y: 648, stateId: "INTG" },
+        Pune: { x: 260, y: 625, stateId: "INMH" },
+        Chennai: { x: 418, y: 778, stateId: "INTN" },
+        Ahmedabad: { x: 220, y: 485, stateId: "INGJ" },
+        Jaipur: { x: 295, y: 375, stateId: "INRJ" },
+        Kolkata: { x: 605, y: 530, stateId: "INWB" },
+        Chandigarh: { x: 328, y: 250, stateId: "INCH" },
+        Kochi: { x: 340, y: 880, stateId: "INKL" },
+        Indore: { x: 310, y: 520, stateId: "INMP" },
+        Lucknow: { x: 435, y: 385, stateId: "INUP" },
+        Surat: { x: 225, y: 535, stateId: "INGJ" },
+        Nagpur: { x: 385, y: 550, stateId: "INMH" },
+        Coimbatore: { x: 345, y: 835, stateId: "INTN" },
+        Bhopal: { x: 350, y: 495, stateId: "INMP" },
+        Visakhapatnam: { x: 485, y: 650, stateId: "INAP" },
+        Vadodara: { x: 240, y: 505, stateId: "INGJ" },
+        Ludhiana: { x: 310, y: 235, stateId: "INPB" },
+      };
 
-          const mappedHubs: GeoCityDatum[] = data.geoDistribution.map((g: any) => {
-            const matched = coordsMap[g.city] || coordsMap[g.city.split(",")[0].trim()] || { x: 350, y: 500, stateId: "IN" };
-            return {
-              city: g.city.split(",")[0].trim(),
-              state: g.state || "India",
-              stateId: matched.stateId,
-              orders: g.orders,
-              share: g.share,
-              revenue: g.revenue,
-              coords: { x: matched.x, y: matched.y },
-            };
-          });
+      const mappedHubs: GeoCityDatum[] = data.geoDistribution.map((g: any) => {
+        const matched = coordsMap[g.city] || coordsMap[g.city.split(",")[0].trim()] || { x: 350, y: 500, stateId: "IN" };
+        return {
+          city: g.city.split(",")[0].trim(),
+          state: g.state || "India",
+          stateId: matched.stateId,
+          orders: g.orders,
+          share: g.share,
+          revenue: g.revenue,
+          coords: { x: matched.x, y: matched.y },
+        };
+      });
 
-          if (mappedHubs.length > 0) {
-            setGeoHubs(mappedHubs);
-          }
-        }
-        if (data.cohortAnalysis) {
-          setCohortData(data.cohortAnalysis);
-        }
-        if (data.orders && Array.isArray(data.orders) && data.orders.length > 0) {
-          const custMap = new Map<string, CustomerRecord>();
-          data.orders.forEach((o: any, idx: number) => {
-            // Group by stable buyer key (distinct_id) so each buyer — including
-            // every AI agent — gets its own row instead of collapsing by name.
-            const isAgent = o.actor === "agent";
-            const key = String(o.buyerKey || o.customer || `row-${idx}`);
-            const baseName = o.customer || (isAgent ? "Autonomous AI Agent" : `Customer #${idx + 1}`);
-            const name = isAgent && o.buyerKey ? `${baseName} ·${String(o.buyerKey).slice(-6)}` : baseName;
-            const email = o.email || "—";
-            const id = `USR-${String(custMap.size + 1).padStart(4, "0")}`;
-            const location = o.city ? `${o.city}, IN` : "—";
-
-            if (!custMap.has(key)) {
-              custMap.set(key, {
-                id,
-                name,
-                email,
-                location,
-                orders: 1,
-                spend: Number(o.amount) || 0,
-                isAgent,
-                lastActive: o.date ? o.date.split("T")[0] : "Recently",
-                status: isAgent ? "Active Agent" : "Verified Buyer",
-              });
-            } else {
-              const existing = custMap.get(key)!;
-              existing.orders += 1;
-              existing.spend += Number(o.amount) || 0;
-            }
-          });
-          const derived = Array.from(custMap.values());
-          if (derived.length > 0) {
-            setTelemetryCustomers(derived);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load customer telemetry:", err);
+      if (mappedHubs.length > 0) {
+        setGeoHubs(mappedHubs);
       }
     }
-    loadCustomersTelemetry();
-  }, [activeMerchantId, activeSiteId]);
+    if (data.cohortAnalysis) {
+      setCohortData(data.cohortAnalysis);
+    }
+    if (data.orders && Array.isArray(data.orders) && data.orders.length > 0) {
+      const custMap = new Map<string, CustomerRecord>();
+      data.orders.forEach((o: any, idx: number) => {
+        // Group by stable buyer key (distinct_id) so each buyer — including
+        // every AI agent — gets its own row instead of collapsing by name.
+        const isAgent = o.actor === "agent";
+        const key = String(o.buyerKey || o.customer || `row-${idx}`);
+        const baseName = o.customer || (isAgent ? "Autonomous AI Agent" : `Customer #${idx + 1}`);
+        const name = isAgent && o.buyerKey ? `${baseName} ·${String(o.buyerKey).slice(-6)}` : baseName;
+        const email = o.email || "—";
+        const id = `USR-${String(custMap.size + 1).padStart(4, "0")}`;
+        const location = o.city ? `${o.city}, IN` : "—";
+
+        if (!custMap.has(key)) {
+          custMap.set(key, {
+            id,
+            name,
+            email,
+            location,
+            orders: 1,
+            spend: Number(o.amount) || 0,
+            isAgent,
+            lastActive: o.date ? o.date.split("T")[0] : "Recently",
+            status: isAgent ? "Active Agent" : "Verified Buyer",
+          });
+        } else {
+          const existing = custMap.get(key)!;
+          existing.orders += 1;
+          existing.spend += Number(o.amount) || 0;
+        }
+      });
+      const derived = Array.from(custMap.values());
+      if (derived.length > 0) {
+        setTelemetryCustomers(derived);
+      }
+    }
+  }, [statsQuery.data]);
 
   // Customer rows come exclusively from telemetry returned by the API.
   const allCustomers = useMemo(() => {
