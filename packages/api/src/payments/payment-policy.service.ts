@@ -30,6 +30,19 @@ function normalizeMerchant(name: string | undefined): string | undefined {
 }
 
 /**
+ * Convert an integer minor-unit amount (paise, cents, …) to a human-readable
+ * currency string, e.g. 649500 INR → "₹6,495.00".
+ */
+function formatMinor(amountInMinor: number, currency: string): string {
+  const major = amountInMinor / 100;
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: currency.toUpperCase(),
+    minimumFractionDigits: 2,
+  }).format(major);
+}
+
+/**
  * Evaluate the user's payment policy for a proposed amount.
  *
  * The AI may propose merchant/amount/currency, but this function is the only
@@ -64,7 +77,7 @@ export async function evaluateUserPaymentPolicy(
   if (input.amountInMinor > policy.maxTransactionAmount) {
     return blocked(
       policy,
-      `Amount exceeds the per-transaction limit of ${policy.maxTransactionAmount} ${policy.currency}.`,
+      `Amount of ${formatMinor(input.amountInMinor, policy.currency)} exceeds the per-transaction limit of ${formatMinor(policy.maxTransactionAmount, policy.currency)}.`,
     );
   }
 
@@ -88,9 +101,9 @@ export async function evaluateUserPaymentPolicy(
     reason = "Live payments always require explicit user approval.";
   } else if (input.amountInMinor > env.PAYMENT_AUTO_APPROVAL_LIMIT_PAISE) {
     decision = "user_approval";
-    reason = `Payment exceeds the automatic approval limit of ${env.PAYMENT_AUTO_APPROVAL_LIMIT_PAISE} ${policy.currency}.`;
+    reason = `Payment of ${formatMinor(input.amountInMinor, policy.currency)} exceeds the automatic approval limit of ${formatMinor(env.PAYMENT_AUTO_APPROVAL_LIMIT_PAISE, policy.currency)}.`;
   } else {
-    reason = `Test Mode payment is within the automatic approval limit of ${env.PAYMENT_AUTO_APPROVAL_LIMIT_PAISE} ${policy.currency}.`;
+    reason = `Test Mode payment of ${formatMinor(input.amountInMinor, policy.currency)} is within the automatic approval limit of ${formatMinor(env.PAYMENT_AUTO_APPROVAL_LIMIT_PAISE, policy.currency)}.`;
   }
 
   if (policy.requireUserApproval && decision === "auto_approve") {
