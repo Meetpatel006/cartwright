@@ -53,4 +53,6 @@ export interface TransactionListView {
   paymentSource: PaymentSource;
   failureReason: string | null;
   createdAt: Date;
+  items?: string | null;
+  rawQuery?: string | null;
 }

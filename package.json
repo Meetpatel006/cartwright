@@ -8,7 +8,7 @@
     ],
     "catalog": {
       "dotenv": "^17.4.2",
-      "zod": "^4.4.3",
+      "zod": "4.4.3",
       "typescript": "^6.0.3",
       "lucide-react": "^1.27.0",
       "next": "^16.3.0",
@@ -38,15 +38,27 @@
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f"
+    "docker:logs": "docker compose logs -f",
+    "seed:posthog": "bun run scripts/seed-posthog.ts",
+    "clear:posthog": "bun run scripts/clear-posthog.ts",
+    "inspect:posthog": "bun run scripts/inspect-posthog.ts",
+    "create:dashboard": "bun run scripts/create-posthog-dashboard.ts",
+    "seed:15days": "bun run scripts/seed-15days-simulation.ts",
+    "seed:boat-30days": "bun run scripts/seed-boat-30days.ts",
+    "preview:boat-30days": "bun run scripts/seed-boat-30days.ts --dry-run",
+    "seed:boat-db": "bun run scripts/seed-boat-db.ts",
+    "preview:boat-db": "bun run scripts/seed-boat-db.ts --dry-run",
+    "preview:15days": "bun run scripts/preview-15days-data.ts",
+    "create:15days-dashboard": "bun run scripts/create-15days-dashboard.ts"
   },
   "dependencies": {
+    "@cartwright/db": "workspace:*",
     "@cartwright/env": "workspace:*",
     "dotenv": "catalog:",
+    "drizzle-orm": "^0.45.2",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@cartwright/config": "workspace:*",
     "@types/node": "^22.20.1",
     "turbo": "^2.10.7",
     "typescript": "catalog:"

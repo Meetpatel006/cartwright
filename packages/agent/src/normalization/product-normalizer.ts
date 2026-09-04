@@ -95,7 +95,12 @@ export function parsePriceToMinor(
   const currency = detected ?? (hintCurrency && isSupported(hintCurrency) ? hintCurrency : null);
   if (!currency) return null;
 
-  let cleaned = raw.replace(/[^0-9.,]/g, "").trim();
+  // Listings sometimes include both the current price and MRP, e.g.
+  // "₹2,799 M.R.P: ₹7,990". Select the first currency amount instead of
+  // concatenating both values into one fabricated price.
+  const currencyAmounts = [...raw.matchAll(/(?:₹|rs\.?|inr|\$|€|£|¥)\s*([0-9][0-9,]*(?:\.[0-9]+)?)/gi)];
+  const priceText = currencyAmounts.length > 1 ? currencyAmounts[0]![1]! : raw;
+  let cleaned = priceText.replace(/[^0-9.,]/g, "").trim();
   if (!cleaned) return null;
 
   // EU format: "1.299,00" → comma is decimal, dot is thousands.
@@ -207,6 +212,16 @@ export function normalizeProduct(
   const attributes: Record<string, string> = {};
   if (candidate.availabilityText) attributes.availability_text = candidate.availabilityText.toLowerCase();
   if (typeof candidate.evidence.rating === "number") attributes.rating = String(candidate.evidence.rating);
+  if (typeof candidate.evidence.reviewCount === "number") attributes.review_count = String(candidate.evidence.reviewCount);
+
+  const rating =
+    typeof candidate.evidence.rating === "number" && candidate.evidence.rating >= 0 && candidate.evidence.rating <= 5
+      ? candidate.evidence.rating
+      : null;
+  const reviewCount =
+    typeof candidate.evidence.reviewCount === "number" && Number.isInteger(candidate.evidence.reviewCount) && candidate.evidence.reviewCount >= 0
+      ? candidate.evidence.reviewCount
+      : null;
 
   return {
     id: stableId(candidate.merchant, canonicalTitle, candidate.productUrl),
@@ -215,6 +230,8 @@ export function normalizeProduct(
     amountInMinor,
     currency: resolvedCurrency,
     productUrl: candidate.productUrl,
+    rating,
+    reviewCount,
     availability,
     confidence,
     attributes,

@@ -81,6 +81,7 @@ const ProductListSchema = z.object({
         .describe("the numeric price in MAJOR units of the store currency, without symbols or separators (e.g. 49.99 or 7995)"),
       currency: Scalar.describe("ISO 4217 currency code if visible, e.g. USD, EUR, INR, GBP"),
       rating: Scalar.describe("average star rating 0-5 if visible"),
+      reviewCount: Scalar.describe("number of customer reviews if visible"),
       availability: Scalar.describe("stock status if visible, e.g. 'In Stock', 'Only 3 left'"),
       url: Scalar.describe("the absolute product page URL if visible"),
     }),
@@ -93,6 +94,7 @@ export type Product = {
   priceValue: number;
   currency?: string;
   rating?: number;
+  reviewCount?: number;
   availability?: string;
   url?: string;
 };
@@ -112,6 +114,7 @@ function normalizeExtractedProducts(
     priceValue: string | number | null;
     currency?: string | number | null;
     rating?: string | number | null;
+    reviewCount?: string | number | null;
     availability?: string | number | null;
     url?: string | number | null;
   }>,
@@ -134,12 +137,19 @@ function normalizeExtractedProducts(
         : typeof p.rating === "number"
           ? p.rating
           : Number.parseFloat(String(p.rating));
+    const reviewCount =
+      p.reviewCount == null
+        ? undefined
+        : typeof p.reviewCount === "number"
+          ? p.reviewCount
+          : Number.parseInt(String(p.reviewCount).replace(/[^0-9]/g, ""), 10);
     out.push({
       name,
       price: String(p.price ?? ""),
       priceValue: Number.isFinite(priceValue) ? priceValue : 0,
       currency: scalarToString(p.currency),
       rating: rating != null && Number.isFinite(rating) ? rating : undefined,
+      reviewCount: reviewCount != null && Number.isFinite(reviewCount) ? reviewCount : undefined,
       availability: scalarToString(p.availability),
       url: scalarToString(p.url),
     });
@@ -1826,7 +1836,7 @@ async function transcodeWebmToMp4(webmPath: string): Promise<string | null> {
   const mp4Path = webmPath.replace(/\.webm$/i, ".mp4");
   try {
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn(ffmpeg, [
+      const proc = spawn(/*turbopackIgnore: true*/ ffmpeg, [
         "-y",
         "-i", webmPath,
         "-c:v", "libx264",
@@ -2207,7 +2217,7 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
           "typically shows 15-30 products, include them ALL, not just the first one. " +
           "For each product, include: the product name/title, the displayed price with its currency symbol, " +
           "the numeric price value in major units without symbols or separators, the currency code if visible, " +
-          "the star rating and stock status if visible, and the product page URL if visible. " +
+          "the average star rating, total customer review count, stock status if visible, and the product page URL if visible. " +
           "Skip any non-product items (banners, navigation, ads, etc.)",
         ProductListSchema,
       );

@@ -4,7 +4,7 @@ import {
   SidebarTrigger,
 } from '@cartwright/ui/components/sidebar';
 import { AppSidebar } from '@cartwright/ui/components/nav-sidebar/app-sidebar';
-import type { ShoppingSession, User } from '@cartwright/ui/components/nav-sidebar/types';
+import type { ShoppingSession, MerchantChat, User } from '@cartwright/ui/components/nav-sidebar/types';
 
 interface NavSidebarProps {
   children: React.ReactNode;
@@ -13,6 +13,10 @@ interface NavSidebarProps {
   activeSessionId?: string | null;
   onSelectSession?: (sessionId: string) => void;
   onNewSession?: () => void;
+  merchantChats?: MerchantChat[];
+  activeChatId?: string | null;
+  onSelectChat?: (chatId: string) => void;
+  onNewChat?: () => void;
 }
 
 export default function NavSidebar({
@@ -22,6 +26,10 @@ export default function NavSidebar({
   activeSessionId,
   onSelectSession,
   onNewSession,
+  merchantChats = [],
+  activeChatId,
+  onSelectChat,
+  onNewChat,
 }: NavSidebarProps) {
   return (
     <SidebarProvider>
@@ -31,14 +39,18 @@ export default function NavSidebar({
         activeSessionId={activeSessionId}
         onSelectSession={onSelectSession}
         onNewSession={onNewSession}
+        merchantChats={merchantChats}
+        activeChatId={activeChatId}
+        onSelectChat={onSelectChat}
+        onNewChat={onNewChat}
       />
-      <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+      <SidebarInset className="overflow-hidden h-screen max-h-screen flex flex-col">
+        <header className="flex h-12 shrink-0 items-center gap-2 sm:hidden">
           <div className="flex items-center gap-2 px-4">
-            <SidebarTrigger className="sm:hidden" />
+            <SidebarTrigger />
           </div>
         </header>
-        <main className="flex-1 overflow-auto p-4">{children}</main>
+        <div className="flex-1 min-w-0 h-full overflow-y-auto flex flex-col">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );

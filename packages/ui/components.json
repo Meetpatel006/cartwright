@@ -21,6 +21,7 @@
   "menuColor": "default",
   "menuAccent": "subtle",
   "registries": {
-    "@blocks-so": "https://blocks.so/r/{name}.json"
+    "@blocks-so": "https://blocks.so/r/{name}.json",
+    "@paceui": "https://paceui.com/r/{name}.json"
   }
 }

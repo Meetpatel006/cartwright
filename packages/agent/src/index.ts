@@ -16,6 +16,7 @@ export * from "./live-feed";
 export * from "./errors";
 // parseBudget / ParsedBudget are re-exported via ./shopping-agent.
 export * from "./request/parse-shopping-request";
+export * from "./request/llm-shopping-parser";
 export * from "./normalization/product-normalizer";
 export * from "./filtering/product-filter";
 export * from "./ranking/product-ranker";

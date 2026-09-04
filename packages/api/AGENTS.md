@@ -124,7 +124,6 @@ HTTP codes (`NOT_FOUND`, `FORBIDDEN`, `PRECONDITION_FAILED`, `CONFLICT`,
 | `src/transactions/transaction.errors.ts` | Domain error classes + `DOMAIN_ERROR_CODES`. |
 | `src/payments/payment-policy.service.ts` | `evaluateUserPaymentPolicy` (the policy authority). |
 | `src/payments/payment-approval.service.ts` | `approveTransaction` (approve + merchant-UI drive). |
-| `src/payments/payment-idempotency.service.ts` | Idempotency lookups. |
 | `src/payments/razorpay-webhook.service.ts` | Webhook signature verify + settle. |
 | `src/payments/merchant-payment-outcome.ts` | Pure decision: may a merchant-UI drive settle/fail/stay pending? |
 | `src/payments/amount-authority.ts` | Pure decision: verified checkout total vs provisional discovery price at selection. |

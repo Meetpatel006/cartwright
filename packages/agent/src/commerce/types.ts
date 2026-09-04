@@ -20,6 +20,12 @@ export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
 /** Typed availability so ranking/filtering never compare free-text strings. */
 export type Availability = "in_stock" | "limited" | "out_of_stock" | "unknown";
 
+export interface ClarifyingQuestion {
+  q: string;
+  type: "radio" | "check";
+  options: string[];
+}
+
 /**
  * The parsed natural-language shopping request (Part B's view of user intent).
  * Produced by the request parser; never trusted to carry a final amount.
@@ -49,8 +55,16 @@ export interface ShoppingIntent {
    * attributes where possible and surfaces them in explanations.
    */
   constraints: string[];
+  /** Cleaned keywords stripped of instructions for search bars/engines. */
+  cleanSearchQuery?: string;
+  /** Explicit brand preferences extracted from the prompt. */
+  brands?: string[];
+  /** Minimum customer review rating (e.g. 3.5 or 4.0). */
+  minRating?: number | null;
   /** Target store preset key or URL, if the user named one. */
   store?: string;
+  /** Human-in-the-loop clarifying questions when parameters or preferences are unspecified. */
+  clarifyingQuestions?: ClarifyingQuestion[];
 }
 
 /**
@@ -91,6 +105,10 @@ export interface NormalizedProduct {
   amountInMinor: number;
   currency: SupportedCurrency;
   productUrl: string | null;
+  /** Average rating observed on the source page, on a 0..5 scale. */
+  rating?: number | null;
+  /** Number of reviews observed on the source page, when available. */
+  reviewCount?: number | null;
   availability: Availability;
   /** 0..1 — how complete/trustworthy the source data was. */
   confidence: number;

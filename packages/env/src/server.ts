@@ -49,6 +49,13 @@ export const env = createEnv({
     AGENT_RAZORPAY_ORDER_FALLBACK: z.union([z.literal("true"), z.literal("false")]).default("false"),
     /** Razorpay webhook secret — a SEPARATE credential from the API secret. */
     RAZORPAY_WEBHOOK_SECRET: z.string().min(1).optional(),
+    /** PostHog analytics — used for live merchant store telemetry. */
+    POSTHOG_HOST: z.string().url().optional(),
+    POSTHOG_PERSONAL_API_KEY: z.string().min(1).optional(),
+    POSTHOG_PROJECT_ID: z.string().min(1).optional(),
+    /** PostHog public browser-side keys (safe to expose to client). */
+    POSTHOG_PROJECT_WRITE_KEY: z.string().min(1).optional(),
+    POSTHOG_INGESTION_HOST: z.string().url().optional(),
   },
   runtimeEnv: process.env,
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,

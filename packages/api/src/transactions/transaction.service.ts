@@ -28,7 +28,7 @@ import {
   evaluateUserPaymentPolicy,
   type PolicyEvaluationResult,
 } from "../payments/payment-policy.service";
-import { findExistingTransaction } from "../payments/payment-idempotency.service";
+import { findTransactionByIdempotency } from "@cartwright/db/repositories/transaction.repository";
 import { reconcilePayment } from "../payments/payment-reconciliation";
 import {
   InvalidTransactionStateError,
@@ -47,6 +47,23 @@ import type {
 } from "./transaction.types";
 
 const APPROVAL_TTL_MINUTES = 15;
+
+/**
+ * Transition a transaction to PRICE_CHANGED, release its reservation, and throw.
+ * Centralises the 3-step rejection that was duplicated across transaction and
+ * payment-approval services.
+ */
+export async function rejectTransactionPriceChanged(
+  transaction: TransactionRow,
+  reason: string,
+): Promise<never> {
+  await applyTransition(transaction, "PRICE_CHANGED", {
+    reason,
+    audit: { eventType: "PRICE_CHANGED", reason },
+  });
+  await releaseReservation(transaction.id);
+  throw new PriceChangedError(reason);
+}
 
 function getRazorpayConfig(): RazorpayConfig | null {
   if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) return null;
@@ -196,7 +213,7 @@ export async function failTransaction(
 export async function createPurchaseTransaction(
   proposal: PurchaseProposal,
 ): Promise<TransactionResult> {
-  const existing = await findExistingTransaction(proposal.userId, proposal.idempotencyKey);
+  const existing = await findTransactionByIdempotency(proposal.userId, proposal.idempotencyKey);
   if (existing) return mapToResult(existing);
 
   // Normalize + validate the amount is server-derived (never trusted from AI as final).
@@ -384,12 +401,7 @@ export async function initiatePayment(
     merchantName: transaction.merchantName ?? undefined,
   });
   if (recheck.decision === "blocked") {
-    await applyTransition(transaction, "PRICE_CHANGED", {
-      reason: recheck.reason,
-      audit: { eventType: "PRICE_CHANGED", reason: recheck.reason },
-    });
-    await releaseReservation(transaction.id);
-    throw new PriceChangedError(recheck.reason);
+    await rejectTransactionPriceChanged(transaction, recheck.reason);
   }
 
   const order = await createOrder(config, {

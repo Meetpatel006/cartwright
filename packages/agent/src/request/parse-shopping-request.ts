@@ -114,11 +114,11 @@ export function extractMerchantPreferences(query: string): {
 
   const preferredPatterns = [
     // Negative lookbehind keeps "not from <m>" / "no from <m>" out of preferences.
-    /(?<!not\s)(?<!no\s)\b(?:from|on|at|via|only on|only from|only at|shop\s+at|shop\s+on)\s+([a-z][a-z0-9 ]{1,24}?)(?=\s+(?:under|below|less than|max|upto|up to|with|in stock|and|,|\.|$))/i,
-    /\bonly\s+([a-z][a-z0-9 ]{1,24}?)(?=\s+(?:under|below|less than|max|upto|up to|with|in stock|and|,|\.|$))/i,
+    /(?<!not\s)(?<!no\s)\b(?:from|on|at|via|only on|only from|only at|shop\s+at|shop\s+on)\s+([a-z][a-z0-9 ]{1,24}?)(?=(?:\s+(?:under|below|less than|max|upto|up to|with|in stock|and|,|\.))|\s*$)/i,
+    /\bonly\s+([a-z][a-z0-9 ]{1,24}?)(?=(?:\s+(?:under|below|less than|max|upto|up to|with|in stock|and|,|\.))|\s*$)/i,
   ];
   const excludedPatterns = [
-    /\b(?:not from|avoid|excluding|exclude|no[n]?\s+from|not on|stay away from|never\s+from)\s+([a-z][a-z0-9 ]{1,24}?)(?=\s+(?:under|below|less than|max|upto|up to|with|in stock|and|,|\.|$))/i,
+    /\b(?:not from|avoid|excluding|exclude|no[n]?\s+from|not on|stay away from|never\s+from)\s+([a-z][a-z0-9 ]{1,24}?)(?=(?:\s+(?:under|below|less than|max|upto|up to|with|in stock|and|,|\.))|\s*$)/i,
   ];
 
   for (const pattern of preferredPatterns) {

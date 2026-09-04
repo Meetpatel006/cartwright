@@ -27,7 +27,6 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@cartwright/config": "workspace:*",
     "drizzle-kit": "^0.31.10",
     "typescript": "catalog:"
   }

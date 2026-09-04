@@ -21,13 +21,14 @@ import {
 
 /** Zod guard for the agent's extracted `Product` shape at the boundary. */
 export const AgentProductSchema = z.object({
-  name: z.string().min(1),
-  price: z.string().min(1),
-  priceValue: z.number().optional(),
-  currency: z.string().optional(),
-  rating: z.number().optional(),
-  availability: z.string().optional(),
-  url: z.string().optional(),
+  name: z.union([z.string(), z.number()]),
+  price: z.union([z.string(), z.number()]).nullable(),
+  priceValue: z.union([z.string(), z.number()]).nullable().optional(),
+  currency: z.union([z.string(), z.number(), z.null()]).optional(),
+  rating: z.union([z.string(), z.number(), z.null()]).optional(),
+  reviewCount: z.union([z.string(), z.number(), z.null()]).optional(),
+  availability: z.union([z.string(), z.number(), z.null()]).optional(),
+  url: z.union([z.string(), z.number(), z.null()]).optional(),
 });
 
 export interface DiscoverProductsParams {
@@ -56,19 +57,28 @@ export interface DiscoverResult {
   raw: ShoppingResult;
 }
 
+function firstNumber(value: unknown): number | undefined {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  const match = String(value ?? "").match(/[0-9][0-9,]*(?:\.[0-9]+)?/);
+  if (!match) return undefined;
+  const parsed = Number.parseFloat(match[0].replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function toCandidate(product: z.infer<typeof AgentProductSchema>, source: string): ProductCandidate {
   return {
     source,
     merchant: source,
-    title: product.name,
-    rawPrice: product.price,
-    currency: product.currency ?? null,
-    productUrl: product.url ?? null,
-    availabilityText: product.availability ?? null,
+    title: String(product.name),
+    rawPrice: String(product.price ?? ""),
+    currency: product.currency == null ? null : String(product.currency),
+    productUrl: product.url == null ? null : String(product.url),
+    availabilityText: product.availability == null ? null : String(product.availability),
     evidence: {
-      priceValue: product.priceValue,
-      rating: product.rating,
-      currency: product.currency,
+      priceValue: firstNumber(product.priceValue),
+      rating: firstNumber(product.rating),
+      reviewCount: firstNumber(product.reviewCount),
+      currency: product.currency == null ? undefined : String(product.currency),
     },
   };
 }
@@ -148,6 +158,8 @@ export async function discoverProducts(params: DiscoverProductsParams): Promise<
       rawMatches.length > 0 ? rawMatches.map((m) => ({ name: m.name, price: m.price })) : [],
     );
 
+    let validatedCount = 0;
+
     for (const raw of rawMatches) {
       sawMatches = true;
       const parsed = AgentProductSchema.safeParse(raw);
@@ -160,7 +172,9 @@ export async function discoverProducts(params: DiscoverProductsParams): Promise<
         continue; // skip malformed; surface below if all fail
       }
       allCandidates.push(toCandidate(parsed.data, result.store));
+      validatedCount++;
     }
+    console.log(`[discovery] store "${result.store}" validated ${validatedCount}/${rawMatches.length} match(es)`);
   }
 
   console.log("[discovery] done:", {

@@ -1,5 +1,6 @@
 import { protectedProcedure, publicProcedure, router } from "../index";
 
+import { merchantChatRouter } from "./merchant-chat";
 import { merchantIntelligenceRouter } from "./merchant-intelligence";
 import { policiesRouter } from "./policies";
 import { shoppingRouter } from "./shopping";
@@ -10,6 +11,7 @@ export const appRouter = router({
   shopping: shoppingRouter,
   transactions: transactionsRouter,
   merchantIntelligence: merchantIntelligenceRouter,
+  merchantChat: merchantChatRouter,
   healthCheck: publicProcedure.query(() => {
     return "OK";
   }),

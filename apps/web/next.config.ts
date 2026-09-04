@@ -1,13 +1,33 @@
-import "@cartwright/env/web";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   typedRoutes: false,
   reactCompiler: true,
   output: "standalone",
-  // Stagehand resolves extension assets via `new URL("../", import.meta.url)`,
-  // which can't be bundled — load it from node_modules at runtime instead.
   serverExternalPackages: ["@browserbasehq/stagehand"],
+  experimental: {
+    serverActions: {
+      allowedOrigins: [
+        "localhost:3000",
+        "localhost:3001",
+        "localhost:3002",
+        "localhost:3003",
+        "127.0.0.1:3000",
+        "127.0.0.1:3001",
+        "127.0.0.1:3002",
+        "127.0.0.1:3003",
+      ],
+    },
+  },
+  async redirects() {
+    return [
+      {
+        source: "/signin",
+        destination: "/login",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -61,10 +61,6 @@ export async function evaluateUserPaymentPolicy(
   if (merchant && policy.blockedMerchants.includes(merchant)) {
     return blocked(policy, `Merchant "${input.merchantName}" is blocked by policy.`);
   }
-  if (merchant && policy.allowedMerchants.length > 0 && !policy.allowedMerchants.includes(merchant)) {
-    return blocked(policy, `Merchant "${input.merchantName}" is not in the allow list.`);
-  }
-
   if (input.amountInMinor > policy.maxTransactionAmount) {
     return blocked(
       policy,

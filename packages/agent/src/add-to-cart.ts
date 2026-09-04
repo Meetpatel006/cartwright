@@ -67,6 +67,21 @@ export async function actWithFallback(
   return false;
 }
 
+async function getAuthenticationRequirement(
+  stagehand: Stagehand,
+): Promise<{ required: boolean; reason?: string }> {
+  try {
+    const result = await stagehand.extract(
+      "Is sign-in or account creation required before this shopper can add the product to the cart or continue? Answer true only when the page is blocked by a login/register screen, modal, or required account action. A normal sign-in link that is not blocking the current action is false.",
+      z.object({ required: z.boolean(), reason: z.string().optional() }),
+    );
+    return result.data;
+  } catch (err) {
+    console.warn(`[agent] authentication check skipped: ${(err as Error).message}`);
+    return { required: false };
+  }
+}
+
 /**
  * LLM-driven "add this product to the cart" routine shared by EVERY provider
  * path. It uses the model for all navigation/decisions (no regex / hardcoded
@@ -97,7 +112,19 @@ export async function llmAddToCart(
   await context.setActivePage(page).catch(() => {});
   void options; // reserved for future retry budgeting
 
-  // 1) Dismiss any blocking overlay via the LLM. Previously this was a hard-coded
+  // 1) Stop at a required login. Authentication is a hard boundary: do not
+  // dismiss the prompt, invent credentials, or continue into checkout.
+  const authentication = await getAuthenticationRequirement(stagehand);
+  if (authentication.required) {
+    log("authentication_required", "failed", authentication.reason);
+    return {
+      status: "failed",
+      steps,
+      error: authentication.reason || "Merchant requires sign-in before this product can be added to the cart.",
+    };
+  }
+
+  // 2) Dismiss non-auth blocking overlays via the LLM. Previously this was a hard-coded
   //    regex over button text; the model now decides what counts as an overlay
   //    and closes it, which works across the wildly different markup every
   //    merchant ships.
@@ -105,8 +132,8 @@ export async function llmAddToCart(
     page,
     context,
     stagehand,
-    "If any modal overlay is blocking the page — cookie consent, newsletter signup, login prompt, or a dismissible banner — close or dismiss it (click Accept, Allow, Close, the X, or 'No thanks'). Do not navigate away from this product page.",
-    "Close any visible popup or modal overlay on the page.",
+    "If a cookie consent, newsletter signup, or other dismissible banner is blocking the page, close it (click Accept, Allow, Close, the X, or 'No thanks'). Do not interact with a login or registration prompt, and do not navigate away from this product page.",
+    "Close any visible cookie, newsletter, or dismissible popup. Leave sign-in and registration prompts untouched.",
   );
   log("dismiss_overlays", dismissed ? "done" : "skipped");
 
@@ -149,6 +176,17 @@ export async function llmAddToCart(
   log("add_to_cart", added ? "done" : "failed");
   if (!added) {
     return { status: "failed", steps, error: "Could not add the product to the cart." };
+  }
+
+  // Some merchants reveal the account gate only after Add to Cart.
+  const postAddAuthentication = await getAuthenticationRequirement(stagehand);
+  if (postAddAuthentication.required) {
+    log("authentication_required", "failed", postAddAuthentication.reason);
+    return {
+      status: "failed",
+      steps,
+      error: postAddAuthentication.reason || "Merchant requires sign-in to complete the cart action.",
+    };
   }
 
   // 4) Verify the item is now in the cart (LLM reads the cart count / success

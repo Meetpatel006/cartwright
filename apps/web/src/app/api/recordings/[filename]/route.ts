@@ -1,4 +1,6 @@
+import { auth } from "@cartwright/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
 import fs from "fs";
 import path from "path";
 
@@ -7,8 +9,16 @@ export async function GET(
   context: { params: Promise<{ filename: string }> }
 ) {
   try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    if (!session?.user?.id) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
     const { filename } = await context.params;
     const safeFilename = path.basename(filename);
+    if (!/\.(?:mp4|webm)$/i.test(safeFilename)) {
+      return new NextResponse("File not found", { status: 404 });
+    }
 
     const cwd = process.cwd();
     const candidateDirs = [
@@ -19,8 +29,8 @@ export async function GET(
 
     let filePath: string | null = null;
     for (const dir of candidateDirs) {
-      const candidatePath = path.join(dir, safeFilename);
-      if (fs.existsSync(candidatePath)) {
+      const candidatePath = path.join(/*turbopackIgnore: true*/ dir, safeFilename);
+      if (fs.existsSync(/*turbopackIgnore: true*/ candidatePath)) {
         filePath = candidatePath;
         break;
       }
@@ -30,7 +40,7 @@ export async function GET(
       return new NextResponse("File not found", { status: 404 });
     }
 
-    const fileBuffer = fs.readFileSync(filePath);
+    const fileBuffer = fs.readFileSync(/*turbopackIgnore: true*/ filePath);
     const contentType = safeFilename.endsWith(".webm") ? "video/webm" : "video/mp4";
 
     return new NextResponse(fileBuffer, {
@@ -42,6 +52,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    return new NextResponse(String(error), { status: 500 });
+    console.error("Failed to read recording:", error);
+    return new NextResponse("Failed to read recording", { status: 500 });
   }
 }

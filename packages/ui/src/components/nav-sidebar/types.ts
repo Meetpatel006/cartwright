@@ -1,11 +1,20 @@
 import type { ElementType } from 'react';
+ 
+export interface NavSubItem {
+  id: string;
+  title: string;
+  url: string;
+  icon?: ElementType;
+  isActive?: boolean;
+}
 
 export interface NavItem {
   id: string;
   title: string;
   icon: ElementType;
-  url?: string;
+  url: string;
   isActive?: boolean;
+  items?: NavSubItem[];
 }
 
 export interface User {
@@ -19,10 +28,20 @@ export interface ShoppingSession {
   rawQuery: string;
   status: string;
   createdAt: string;
+  store?: string;
+}
+
+export interface MerchantChat {
+  chatId: string;
+  title: string;
+  lastMessage: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SidebarData {
   user: User;
   navMain: NavItem[];
   shoppingSessions: ShoppingSession[];
+  merchantChats: MerchantChat[];
 }
