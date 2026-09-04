@@ -68,7 +68,9 @@ export async function applyOnSiteSearchFilters(
         console.info("[agent] on-site filter control not found; preserving current results");
         continue;
       }
-      const result = await stagehand.act(instruction, { page });
+      // `observe()` returns a validated action. Reusing it avoids a second LLM
+      // inference, which is both slower and prone to malformed action payloads.
+      const result = await stagehand.act(observation.data[0]!, { page });
       if (result.data.success && result.data.actions.length > 0) {
         await page.waitForLoadState("networkidle", 10_000).catch(() => {});
       }

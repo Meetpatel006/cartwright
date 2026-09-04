@@ -42,10 +42,14 @@ describe("buildOnSiteSearchFilterInstructions", () => {
     const stagehand = {
       observe: async (instruction: string) => {
         observations.push(instruction);
-        return { data: instruction.includes("price filter") ? [{}] : [] };
+        return {
+          data: instruction.includes("price filter")
+            ? [{ selector: "[data-price-filter]", description: "Price", method: "fill" }]
+            : [],
+        };
       },
-      act: async (instruction: string) => {
-        actions.push(instruction);
+      act: async (action: { selector: string }) => {
+        actions.push(action.selector);
         return { data: { success: true, actions: [{}] } };
       },
     };
@@ -64,7 +68,7 @@ describe("buildOnSiteSearchFilterInstructions", () => {
 
     expect(observations).toHaveLength(3);
     expect(actions).toEqual([
-      "Use the visible price filter to set the maximum price to 2000 INR. Do not select a product or add anything to a cart.",
+      "[data-price-filter]",
     ]);
   });
 
@@ -76,8 +80,8 @@ describe("buildOnSiteSearchFilterInstructions", () => {
       observe: async () => {
         throw new Error("merchant blocked inspection");
       },
-      act: async (instruction: string) => {
-        actions.push(instruction);
+      act: async (action: { selector: string }) => {
+        actions.push(action.selector);
         return { data: { success: true, actions: [{}] } };
       },
     };
