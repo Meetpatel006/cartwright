@@ -11,6 +11,7 @@ import {
 import {
   createMerchantSite,
   getOrCreateMerchantAccount,
+  removeMerchantSite,
   setPrimarySite,
 } from "../merchant-intelligence/merchant-account.service";
 
@@ -42,6 +43,12 @@ export const merchantIntelligenceRouter = router({
     .input(z.object({ siteId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       return setPrimarySite(ctx.session.user.id, input.siteId);
+    }),
+
+  removeSite: protectedProcedure
+    .input(z.object({ siteId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      return removeMerchantSite(ctx.session.user.id, input.siteId);
     }),
 
   overview: protectedProcedure

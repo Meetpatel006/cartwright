@@ -123,3 +123,24 @@ export async function setPrimarySite(userId: string, siteId: string): Promise<Me
     siteIds,
   };
 }
+
+/**
+ * Remove a secondary site_id from the merchant account.
+ */
+export async function removeMerchantSite(userId: string, siteId: string): Promise<MerchantAccountResult> {
+  const account = await getOrCreateMerchantAccount(userId);
+  if (account.primarySiteId === siteId) {
+    throw new Error("Cannot remove primary site. Set another site as primary first.");
+  }
+  const updatedSiteIds = account.siteIds.filter((s) => s !== siteId);
+
+  await updateMerchantAccount(userId, {
+    siteIds: updatedSiteIds,
+  });
+
+  return {
+    ...account,
+    siteIds: updatedSiteIds,
+  };
+}
+
