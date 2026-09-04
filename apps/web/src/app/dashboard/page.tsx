@@ -18,7 +18,7 @@ export default function DashboardPage() {
   const hasTransactions = (txQuery.data || []).length > 0;
 
   useEffect(() => {
-    if (!sessionLoading && !session?.user) router.push("/signin");
+    if (!sessionLoading && !session?.user) router.push("/login");
   }, [session, sessionLoading, router]);
 
   useEffect(() => {

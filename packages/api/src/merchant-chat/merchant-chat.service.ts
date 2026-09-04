@@ -305,7 +305,6 @@ export async function sendMessage(
       role: m.role as "user" | "assistant",
       content: m.content,
     })),
-    { role: "user" as const, content },
   ];
 
   const assistantContent = await callChatLLM(llmMessages);

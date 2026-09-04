@@ -168,7 +168,6 @@
         "@tailwindcss/postcss": "catalog:",
         "@types/react": "catalog:",
         "@types/react-dom": "catalog:",
-        "next": "catalog:",
         "tailwindcss": "catalog:",
         "typescript": "catalog:",
       },

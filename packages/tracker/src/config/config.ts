@@ -20,7 +20,8 @@ export interface SiteConfig {
 }
 
 const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com";
-const DEFAULT_POSTHOG_KEY = "phc_fIKSiffTRgwauMers7ntbnaJR3TsOw3xmnxvE26ZTYH";
+const DEFAULT_POSTHOG_KEY =
+  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_POSTHOG_KEY) || "";
 
 /**
  * Extracts configuration attributes from the active script tag.

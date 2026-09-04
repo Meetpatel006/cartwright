@@ -10,7 +10,7 @@ export default async function MerchantDashboardPage() {
   });
 
   if (!session?.user) {
-    redirect("/signin");
+    redirect("/login");
   }
 
   return (

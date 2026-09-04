@@ -16,7 +16,7 @@ export default async function PolicyPage() {
   });
 
   if (!session?.user) {
-    redirect("/signin");
+    redirect("/login");
   }
 
   return <PolicySettings />;
