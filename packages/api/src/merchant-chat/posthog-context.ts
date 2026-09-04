@@ -13,6 +13,10 @@ import { queryHogQL, buildFilterClause, isPostHogConfigured } from "../posthog/c
 // ── Types ──────────────────────────────────────────────────────────────
 
 export interface PostHogContext {
+  period: {
+    label: string;
+    days: number;
+  };
   kpis: {
     totalOrders: number;
     grossRevenue: number;
@@ -30,6 +34,15 @@ export interface PostHogContext {
     checkouts: number;
     purchases: number;
   };
+  dailySeries: Array<{
+    date: string;
+    visits: number;
+    productViews: number;
+    cartAdds: number;
+    checkouts: number;
+    purchases: number;
+    failedPurchases: number;
+  }>;
   topSearchQueries: Array<{ query: string; searches: number }>;
   recentOrders: Array<{
     date: string;
@@ -52,8 +65,11 @@ export async function fetchPostHogContext(
   }
 
   const filter = buildFilterClause(merchantId, { siteId, range: "30d" });
+  // Live analytics is supplemental context; it must not make chat wait on a
+  // degraded PostHog service when the DB-backed context is still available.
+  const queryOptions = { timeoutMs: 5_000 };
 
-  const [kpiRes, funnelRes, searchRes, ordersRes] = await Promise.all([
+  const [kpiRes, seriesRes, funnelRes, searchRes, ordersRes] = await Promise.all([
     queryHogQL(`
       SELECT
         count() AS total_orders,
@@ -63,7 +79,21 @@ export async function fetchPostHogContext(
       FROM events
       WHERE event = 'cartwright_purchase_completed'
         AND ${filter}
-    `),
+    `, queryOptions),
+    queryHogQL(`
+      SELECT
+        formatDateTime(toDate(timestamp), '%Y-%m-%d') AS day,
+        countIf(event = 'cartwright_page_viewed') AS visits,
+        countIf(event = 'cartwright_product_viewed') AS product_views,
+        countIf(event = 'cartwright_add_to_cart') AS cart_adds,
+        countIf(event = 'cartwright_checkout_started') AS checkouts,
+        countIf(event = 'cartwright_purchase_completed') AS purchases,
+        countIf(event = 'cartwright_purchase_failed') AS failed_purchases
+      FROM events
+      WHERE ${filter}
+      GROUP BY day
+      ORDER BY day ASC
+    `, queryOptions),
     queryHogQL(`
       SELECT
         countIf(event = 'cartwright_page_viewed') AS visits,
@@ -73,7 +103,7 @@ export async function fetchPostHogContext(
         countIf(event = 'cartwright_purchase_completed') AS purchases
       FROM events
       WHERE ${filter}
-    `),
+    `, queryOptions),
     queryHogQL(`
       SELECT
         properties.search_query AS query,
@@ -85,7 +115,7 @@ export async function fetchPostHogContext(
       GROUP BY query
       ORDER BY searches DESC
       LIMIT 10
-    `),
+    `, queryOptions),
     queryHogQL(`
       SELECT
         timestamp,
@@ -104,7 +134,7 @@ export async function fetchPostHogContext(
         AND ${filter}
       ORDER BY timestamp DESC
       LIMIT 20
-    `),
+    `, queryOptions),
   ]);
 
   // Parse KPIs
@@ -121,6 +151,16 @@ export async function fetchPostHogContext(
   const cartAdds = Number(fnRow[2]) || 0;
   const checkouts = Number(fnRow[3]) || 0;
   const purchases = Number(fnRow[4]) || totalOrders;
+
+  const dailySeries = (seriesRes || []).map((row) => ({
+    date: String(row[0] || ""),
+    visits: Number(row[1]) || 0,
+    productViews: Number(row[2]) || 0,
+    cartAdds: Number(row[3]) || 0,
+    checkouts: Number(row[4]) || 0,
+    purchases: Number(row[5]) || 0,
+    failedPurchases: Number(row[6]) || 0,
+  }));
 
   // Parse search queries
   const topSearchQueries = (searchRes || []).map((row) => ({
@@ -139,6 +179,7 @@ export async function fetchPostHogContext(
   }));
 
   return {
+    period: { label: "Last 30 days", days: 30 },
     kpis: {
       totalOrders,
       grossRevenue,
@@ -150,6 +191,7 @@ export async function fetchPostHogContext(
       fulfillmentRate: totalOrders > 0 ? Number(((totalOrders / (totalOrders + 1)) * 100).toFixed(1)) : 0,
     },
     funnel: { visits, productViews, cartAdds, checkouts, purchases },
+    dailySeries,
     topSearchQueries,
     recentOrders,
   };
@@ -162,6 +204,9 @@ export function formatPostHogContext(data: PostHogContext): string {
   const parts: string[] = [];
 
   parts.push("## Live Store Analytics (PostHog)\n");
+  parts.push(`### Reporting Period`);
+  parts.push(`- ${data.period.label} (${data.period.days} days)`);
+  parts.push("");
 
   parts.push("### Key Metrics");
   parts.push(`- Total orders (30d): ${data.kpis.totalOrders}`);
@@ -180,6 +225,18 @@ export function formatPostHogContext(data: PostHogContext): string {
   parts.push(`- Checkout Started: ${data.funnel.checkouts}`);
   parts.push(`- Purchases: ${data.funnel.purchases}`);
   parts.push("");
+
+  if (data.dailySeries.length > 0) {
+    parts.push("### Daily Trend (one row per day)");
+    parts.push("| Date | Visits | Product views | Cart adds | Checkouts | Purchases | Failed purchases |");
+    parts.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: |");
+    for (const day of data.dailySeries) {
+      parts.push(
+        `| ${day.date} | ${day.visits} | ${day.productViews} | ${day.cartAdds} | ${day.checkouts} | ${day.purchases} | ${day.failedPurchases} |`,
+      );
+    }
+    parts.push("");
+  }
 
   if (data.topSearchQueries.length > 0) {
     parts.push("### Top Customer Search Queries");

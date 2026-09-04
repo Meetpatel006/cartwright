@@ -29,7 +29,10 @@ export function safeId(raw: string): string {
  * Returns the results array or null on failure / missing config.
  * Never throws — callers should handle null gracefully.
  */
-export async function queryHogQL(sql: string): Promise<unknown[][] | null> {
+export async function queryHogQL(
+  sql: string,
+  options?: { timeoutMs?: number },
+): Promise<unknown[][] | null> {
   const host = env.POSTHOG_HOST;
   const apiKey = env.POSTHOG_PERSONAL_API_KEY;
   const projectId = env.POSTHOG_PROJECT_ID;
@@ -48,7 +51,7 @@ export async function queryHogQL(sql: string): Promise<unknown[][] | null> {
       body: JSON.stringify({
         query: { kind: "HogQLQuery", query: sql },
       }),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(options?.timeoutMs ?? 15_000),
     });
 
     if (!res.ok) {
