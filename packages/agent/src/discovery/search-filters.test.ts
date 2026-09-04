@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildOnSiteSearchFilterInstructions } from "./search-filters";
+import {
+  applyOnSiteSearchFilters,
+  buildOnSiteSearchFilterInstructions,
+} from "./search-filters";
 
 describe("buildOnSiteSearchFilterInstructions", () => {
   test("turns budget, rating, and feature constraints into independent browser actions", () => {
@@ -25,5 +28,67 @@ describe("buildOnSiteSearchFilterInstructions", () => {
     })).toEqual([
       "Use the visible price filter to set the maximum price to 2000 INR. Do not select a product or add anything to a cart.",
     ]);
+  });
+
+  test("only acts on facets that the current provider exposes", async () => {
+    const observations: string[] = [];
+    const actions: string[] = [];
+    const page = {
+      waitForLoadState: async () => {},
+    };
+    const context = {
+      setActivePage: async () => {},
+    };
+    const stagehand = {
+      observe: async (instruction: string) => {
+        observations.push(instruction);
+        return { data: instruction.includes("price filter") ? [{}] : [] };
+      },
+      act: async (instruction: string) => {
+        actions.push(instruction);
+        return { data: { success: true, actions: [{}] } };
+      },
+    };
+
+    await applyOnSiteSearchFilters(
+      page as never,
+      context as never,
+      stagehand as never,
+      {
+        budgetInMinor: 200_000,
+        currency: "INR",
+        minRating: 4,
+        constraints: ["low_latency"],
+      },
+    );
+
+    expect(observations).toHaveLength(3);
+    expect(actions).toEqual([
+      "Use the visible price filter to set the maximum price to 2000 INR. Do not select a product or add anything to a cart.",
+    ]);
+  });
+
+  test("does not fail discovery when a provider cannot inspect its filter controls", async () => {
+    const actions: string[] = [];
+    const page = { waitForLoadState: async () => {} };
+    const context = { setActivePage: async () => {} };
+    const stagehand = {
+      observe: async () => {
+        throw new Error("merchant blocked inspection");
+      },
+      act: async (instruction: string) => {
+        actions.push(instruction);
+        return { data: { success: true, actions: [{}] } };
+      },
+    };
+
+    await applyOnSiteSearchFilters(
+      page as never,
+      context as never,
+      stagehand as never,
+      { budgetInMinor: 200_000, currency: "INR" },
+    );
+
+    expect(actions).toEqual([]);
   });
 });

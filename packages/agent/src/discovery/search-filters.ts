@@ -35,6 +35,21 @@ export function buildOnSiteSearchFilterInstructions(
   return instructions;
 }
 
+/**
+ * Ask the current merchant page whether a relevant control is actually present
+ * before asking the browser agent to manipulate it. This keeps the flow
+ * provider-independent and avoids a model inventing a facet on stores that do
+ * not offer one.
+ */
+function filterControlDiscoveryInstruction(instruction: string): string {
+  return (
+    "Find a visible, interactive filter control on the current merchant search-results page " +
+    `that can satisfy this shopper constraint: ${instruction} ` +
+    "A visible Filters button that reveals the matching control also counts. " +
+    "Do not select a product, open a product page, or add anything to a cart."
+  );
+}
+
 /** Apply available merchant filters before extracting and ranking live listings. */
 export async function applyOnSiteSearchFilters(
   page: AgentPage,
@@ -45,6 +60,14 @@ export async function applyOnSiteSearchFilters(
   for (const instruction of buildOnSiteSearchFilterInstructions(input)) {
     try {
       await context.setActivePage(page);
+      const observation = await stagehand.observe(
+        filterControlDiscoveryInstruction(instruction),
+        { page },
+      );
+      if (observation.data.length === 0) {
+        console.info("[agent] on-site filter control not found; preserving current results");
+        continue;
+      }
       const result = await stagehand.act(instruction, { page });
       if (result.data.success && result.data.actions.length > 0) {
         await page.waitForLoadState("networkidle", 10_000).catch(() => {});
