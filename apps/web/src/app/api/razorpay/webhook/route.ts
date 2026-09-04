@@ -24,6 +24,8 @@ import {
  * service (`classifyWebhookOutcome` / `classifyWebhookError`) where it is
  * unit-tested.
  */
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const signature = req.headers.get("x-razorpay-signature");
