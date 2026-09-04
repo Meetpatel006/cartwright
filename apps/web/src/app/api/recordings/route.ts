@@ -1,10 +1,14 @@
 import { auth } from "@cartwright/auth";
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import fs from "fs";
 import path from "path";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Read the request URL up-front: under Cache Components this stops prerender
+  // attempts, keeping this session-gated + filesystem handler request-time.
+  const { pathname } = new URL(request.url);
+  void pathname;
   try {
     const session = await auth.api.getSession({ headers: await headers() });
     if (!session?.user?.id) {

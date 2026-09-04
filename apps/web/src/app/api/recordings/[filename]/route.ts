@@ -1,5 +1,5 @@
 import { auth } from "@cartwright/auth";
-import { NextRequest, NextResponse } from "next/server";
+import { connection, NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import fs from "fs";
 import path from "path";
@@ -9,6 +9,10 @@ export async function GET(
   context: { params: Promise<{ filename: string }> }
 ) {
   try {
+    // Session-gated + filesystem reads must run at request time, never during
+    // prerendering (Cache Components would otherwise try to statically render
+    // this GET route).
+    await connection();
     const session = await auth.api.getSession({ headers: await headers() });
     if (!session?.user?.id) {
       return new NextResponse("Unauthorized", { status: 401 });

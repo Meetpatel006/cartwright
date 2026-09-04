@@ -4,6 +4,10 @@ import { redirect } from "next/navigation";
 
 import { MerchantTab } from "@/components/dashboard/merchant-tab";
 
+// Session check must run per request; keep this auth-gated page out of the
+// static shell (Cache Components).
+export const instant = false;
+
 export default async function MerchantDashboardPage() {
   const session = await auth.api.getSession({
     headers: await headers(),

@@ -4,6 +4,9 @@ const nextConfig: NextConfig = {
   typedRoutes: false,
   reactCompiler: true,
   output: "standalone",
+  // Next 16 Cache Components: enables the "use cache" directive + cacheLife,
+  // Partial Prerendering, and the new GET Route Handler caching model.
+  cacheComponents: true,
   serverExternalPackages: ["@browserbasehq/stagehand"],
   experimental: {
     serverActions: {

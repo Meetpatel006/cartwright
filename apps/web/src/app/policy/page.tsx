@@ -10,6 +10,10 @@ export const metadata: Metadata = {
   description: "Configure financial boundaries, automated limits, and merchant access controls.",
 };
 
+// Session check must run per request; keep this auth-gated page out of the
+// static shell (Cache Components).
+export const instant = false;
+
 export default async function PolicyPage() {
   const session = await auth.api.getSession({
     headers: await headers(),

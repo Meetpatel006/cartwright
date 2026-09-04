@@ -23,9 +23,10 @@ import {
  * No payment/business logic lives here; the status mapping lives in the
  * service (`classifyWebhookOutcome` / `classifyWebhookError`) where it is
  * unit-tested.
+ *
+ * With Cache Components enabled the `dynamic` segment config is not allowed
+ * on route handlers; this POST handler always runs at request time.
  */
-export const dynamic = "force-dynamic";
-
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const signature = req.headers.get("x-razorpay-signature");
