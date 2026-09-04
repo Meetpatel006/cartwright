@@ -17,7 +17,9 @@ const STATUS_MAP: Record<string, StatusConfig> = {
   CREATED: { label: "Pending", className: "bg-amber-500/10 border-amber-500/30 text-amber-500" },
   POLICY_CHECKING: { label: "Pending", className: "bg-amber-500/10 border-amber-500/30 text-amber-500" },
   AWAITING_APPROVAL: { label: "Pending", className: "bg-amber-500/10 border-amber-500/30 text-amber-500" },
-  PAYMENT_PROCESSING: { label: "Processing", className: "bg-blue-500/10 border-blue-500/30 text-blue-500" },
+  PROCESSING: { label: "Processing", className: "bg-amber-500/10 border-amber-500/30 text-amber-500" },
+  IN_TRANSIT: { label: "Processing", className: "bg-amber-500/10 border-amber-500/30 text-amber-500" },
+  PAYMENT_PROCESSING: { label: "Processing", className: "bg-amber-500/10 border-amber-500/30 text-amber-500" },
 
   FAILED: { label: "Failed", className: "bg-rose-500/10 border-rose-500/30 text-rose-500" },
   CANCELLED: { label: "Failed", className: "bg-rose-500/10 border-rose-500/30 text-rose-500" },

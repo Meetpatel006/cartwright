@@ -605,8 +605,8 @@ export default function MerchantOrdersPage() {
         />
       </div>
 
-      {/* Big Unified Card for Past Orders Table & Controls */}
-      <Card className="rounded-xl border border-border bg-card p-5 space-y-4">
+      {/* Past Orders Table & Controls */}
+      <div className="space-y-4">
         {/* Card Header with Integrated Search & Filter Controls */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
@@ -672,7 +672,7 @@ export default function MerchantOrdersPage() {
 
         {/* Orders Table */}
         {filteredOrders.length === 0 ? (
-          <Empty className="h-64 rounded-xl border border-border bg-background">
+          <Empty className="h-64 rounded-xl border border-border bg-muted/40">
             <EmptyHeader>
               <EmptyMedia variant="default">
                 <ShoppingCart className="h-8 w-8 text-muted-foreground/40" />
@@ -688,22 +688,23 @@ export default function MerchantOrdersPage() {
         ) : (
           /* Table View */
           <TooltipProvider delay={100}>
+            <Card className="rounded-xl border border-border p-0 overflow-hidden shadow-none ring-0">
             <Table className="w-full text-xs text-left">
-              <TableHeader className="border-b border-border bg-muted/40 text-muted-foreground font-medium text-[11px] uppercase tracking-wider">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-12 px-4 py-3 font-mono text-muted-foreground">#</TableHead>
-                  <TableHead className="px-4 py-3">Order ID</TableHead>
-                  <TableHead className="px-4 py-3">Date & Time</TableHead>
-                  <TableHead className="px-4 py-3">Customer & City</TableHead>
-                  <TableHead className="px-4 py-3">Items Purchased</TableHead>
-                  <TableHead className="px-4 py-3">Fulfillment</TableHead>
-                  <TableHead className="px-4 py-3">Progress</TableHead>
-                  <TableHead className="px-4 py-3">Payment</TableHead>
-                  <TableHead className="px-4 py-3">Total Amount</TableHead>
-                  <TableHead className="px-4 py-3 text-right">Status</TableHead>
+              <TableHeader>
+                <TableRow className="border-border text-[11px] font-semibold tracking-wider text-muted-foreground hover:bg-transparent">
+                  <TableHead className="w-12 px-4 py-3.5 font-mono text-muted-foreground">#</TableHead>
+                  <TableHead className="px-4 py-3.5">Order ID</TableHead>
+                  <TableHead className="px-4 py-3.5">Date & Time</TableHead>
+                  <TableHead className="px-4 py-3.5">Customer & City</TableHead>
+                  <TableHead className="px-4 py-3.5">Items Purchased</TableHead>
+                  <TableHead className="px-4 py-3.5">Fulfillment</TableHead>
+                  <TableHead className="px-4 py-3.5">Progress</TableHead>
+                  <TableHead className="px-4 py-3.5">Payment</TableHead>
+                  <TableHead className="px-4 py-3.5">Total Amount</TableHead>
+                  <TableHead className="px-4 py-3.5 text-right">Status</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody className="divide-y divide-border font-normal">
+              <TableBody className="divide-y divide-border">
                 {paginatedOrders.map((o, index) => {
                   const rowNumber = (safeCurrentPage - 1) * pageSize + index + 1;
                   const isCopied = copiedId === o.id;
@@ -714,12 +715,12 @@ export default function MerchantOrdersPage() {
                       key={`${o.id}-${index}`}
                       className="hover:bg-muted/30 transition-colors"
                     >
-                      <TableCell className="px-4 py-3.5 font-mono text-xs text-muted-foreground">
+                      <TableCell className="px-4 py-4 font-mono text-xs text-muted-foreground">
                         {rowNumber}
                       </TableCell>
 
                       {/* Order ID + Copy */}
-                      <TableCell className="px-4 py-3.5 whitespace-nowrap">
+                      <TableCell className="px-4 py-4 whitespace-nowrap">
                         <Tooltip>
                           <TooltipTrigger
                             render={
@@ -744,11 +745,11 @@ export default function MerchantOrdersPage() {
                         </Tooltip>
                       </TableCell>
 
-                      <TableCell className="px-4 py-3.5 text-muted-foreground font-mono whitespace-nowrap">
+                      <TableCell className="px-4 py-4 text-muted-foreground font-mono whitespace-nowrap">
                         {o.date}
                       </TableCell>
 
-                      <TableCell className="px-4 py-3.5">
+                      <TableCell className="px-4 py-4">
                         <div className="font-medium text-foreground flex items-center gap-1.5 whitespace-nowrap">
                           {o.customer}
                           {o.actor === "agent" && (
@@ -761,7 +762,7 @@ export default function MerchantOrdersPage() {
                       </TableCell>
 
                       {/* Item with Tooltip */}
-                      <TableCell className="px-4 py-3.5 max-w-[240px]">
+                      <TableCell className="px-4 py-4 max-w-[240px]">
                         <Tooltip>
                           <TooltipTrigger
                             render={
@@ -779,25 +780,25 @@ export default function MerchantOrdersPage() {
                         </Tooltip>
                       </TableCell>
 
-                      <TableCell className="px-4 py-3.5 whitespace-nowrap">
+                      <TableCell className="px-4 py-4 whitespace-nowrap">
                         <Badge variant="outline" className={cn("rounded-full px-2.5 py-0.5 text-xs font-semibold", details.fulfillmentTone)}>
                           {details.fulfillmentLabel}
                         </Badge>
                       </TableCell>
 
-                      <TableCell className="px-4 py-3.5 whitespace-nowrap">
+                      <TableCell className="px-4 py-4 whitespace-nowrap">
                         <SegmentedProgressBar percent={details.progressPercent} />
                       </TableCell>
 
-                      <TableCell className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">
+                      <TableCell className="px-4 py-4 text-muted-foreground whitespace-nowrap">
                         {o.method}
                       </TableCell>
 
-                      <TableCell className="px-4 py-3.5 font-mono font-semibold text-emerald-500 whitespace-nowrap">
+                      <TableCell className="px-4 py-4 font-mono font-semibold text-emerald-500 whitespace-nowrap">
                         <FormattedAmount amount={o.amount} />
                       </TableCell>
 
-                      <TableCell className="px-4 py-3.5 text-right whitespace-nowrap">
+                      <TableCell className="px-4 py-4 text-right whitespace-nowrap">
                         <Badge variant="outline" className={cn("rounded-full px-2.5 py-0.5 text-[11px] font-medium border", details.statusTone)}>
                           {details.statusLabel}
                         </Badge>
@@ -807,12 +808,13 @@ export default function MerchantOrdersPage() {
                 })}
               </TableBody>
             </Table>
+            </Card>
           </TooltipProvider>
         )}
 
         {/* Pagination Controls Bar */}
         {filteredOrders.length > 0 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-3 border-t border-border/60">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-1">
             {/* Left: Count & Page Size Selector */}
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
               <div>
@@ -899,7 +901,7 @@ export default function MerchantOrdersPage() {
             </div>
           </div>
         )}
-      </Card>
+      </div>
     </div>
   );
 }

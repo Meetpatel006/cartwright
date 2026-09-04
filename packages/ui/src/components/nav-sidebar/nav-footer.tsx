@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
-import { Check, LogOut, Moon, Settings, Sun, Monitor, User } from 'lucide-react';
+import { Check, LogOut, Moon, Settings, Sun, Monitor } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@cartwright/ui/components/avatar';
 import { Button } from '@cartwright/ui/components/button';
 import {
@@ -62,24 +62,25 @@ export function NavFooter({
               >
                 <Settings className="h-3.5 w-3.5" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" align="end" className="m-2 w-48">
-                <DropdownMenuItem>
-                  <User aria-hidden="true" className="opacity-80" size={16} />
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Settings aria-hidden="true" className="opacity-80" size={16} />
-                  Settings
-                </DropdownMenuItem>
+              <DropdownMenuContent side="top" align="end" className="m-2 w-48 space-y-0.5 rounded-xl border border-border bg-popover p-1 text-xs text-popover-foreground shadow-none">
                 {mounted && themeOptions.map(({ value, label, icon: Icon }) => (
-                  <DropdownMenuItem key={value} onClick={() => setTheme(value)}>
-                    <Icon aria-hidden="true" className="opacity-80" size={16} />
+                  <DropdownMenuItem
+                    key={value}
+                    onClick={() => setTheme(value)}
+                    className={
+                      'flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ' +
+                      (theme === value
+                        ? 'bg-muted font-semibold text-foreground'
+                        : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground')
+                    }
+                  >
+                    <Icon aria-hidden="true" className="opacity-60" size={16} />
                     {label}
                     {theme === value && <Check className="ml-auto" size={14} />}
                   </DropdownMenuItem>
                 ))}
-                <DropdownMenuItem>
-                  <LogOut aria-hidden="true" className="opacity-80" size={16} />
+                <DropdownMenuItem className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground">
+                  <LogOut aria-hidden="true" className="opacity-60" size={16} />
                   Logout
                 </DropdownMenuItem>
               </DropdownMenuContent>

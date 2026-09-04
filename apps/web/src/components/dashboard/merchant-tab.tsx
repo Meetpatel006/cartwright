@@ -7,6 +7,7 @@ import { cn } from "@cartwright/ui/lib/utils";
 import { trpc } from "@/utils/trpc";
 import { BarChartStacked } from "@/components/bar-chart-stacked";
 import { FormattedAmount } from "@/components/merchant/formatted-amount";
+import { Card } from "@cartwright/ui/components/card";
 import { SelectMenu } from "@cartwright/ui/components/select-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@cartwright/ui/components/table";
 import { ConversionFunnel, InsightCard, SearchQueriesPanel, AgentRadarChart } from "@/components/dashboard/dashboard-widgets";
@@ -279,57 +280,55 @@ export function MerchantTab() {
       </div>
 
       {/* Recent Orders */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-muted/60 text-foreground">
-              <ShoppingBag className="h-4 w-4" />
-            </div>
-            <h2 className="text-sm font-semibold tracking-tight text-foreground">Recent Store Orders</h2>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-muted/60 text-foreground">
+            <ShoppingBag className="h-4 w-4" />
           </div>
-          <a href="/merchant/orders" className="text-[11px] text-purple-400 hover:text-purple-300 font-medium transition-colors">View all →</a>
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">Recent Store Orders</h2>
         </div>
-        {recentOrders.length === 0 ? (
-          <div className="flex h-32 flex-col items-center justify-center rounded-xl border border-border bg-background text-center">
-            <ShoppingBag className="mb-2 h-6 w-6 text-muted-foreground/40" />
-            <p className="text-xs font-medium text-foreground">No orders yet</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <Table className="text-left text-xs">
-              <TableHeader className="border-border bg-muted/40 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="px-4 py-2.5 font-mono">#</TableHead>
-                  <TableHead className="px-4 py-2.5">Order ID</TableHead>
-                  <TableHead className="px-4 py-2.5">Customer</TableHead>
-                  <TableHead className="px-4 py-2.5">Items</TableHead>
-                  <TableHead className="px-4 py-2.5">Payment</TableHead>
-                  <TableHead className="px-4 py-2.5 text-right">Amount</TableHead>
-                  <TableHead className="px-4 py-2.5 text-right">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody className="divide-y divide-border">
-                {recentOrders.map((o, idx) => (
-                  <TableRow key={`${o.id}-${idx}`} className="hover:bg-muted/30">
-                    <TableCell className="px-4 py-3 font-mono text-muted-foreground">{idx + 1}</TableCell>
-                    <TableCell className="px-4 py-3 font-mono font-bold text-foreground">{o.id.slice(0, 14)}</TableCell>
-                    <TableCell className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-foreground">{o.customer}</span>
-                        {o.actor === "agent" && <span className="rounded-full border border-purple-500/20 bg-purple-500/10 px-1.5 py-0.2 text-[10px] font-semibold text-purple-400">AI</span>}
-                      </div>
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate px-4 py-3 text-muted-foreground">{o.items}</TableCell>
-                    <TableCell className="px-4 py-3 text-muted-foreground">{o.method}</TableCell>
-                    <TableCell className="px-4 py-3 text-right font-mono font-semibold text-emerald-500"><FormattedAmount amount={o.amount} /></TableCell>
-                    <TableCell className="px-4 py-3 text-right"><StatusBadge status={o.status} /></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+        <a href="/merchant/orders" className="text-[11px] text-purple-400 hover:text-purple-300 font-medium transition-colors">View all →</a>
       </div>
+      {recentOrders.length === 0 ? (
+        <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-border bg-muted/40 text-center">
+          <ShoppingBag className="mb-2 h-6 w-6 text-muted-foreground/40" />
+          <p className="text-xs font-medium text-foreground">No orders yet</p>
+        </div>
+      ) : (
+        <Card className="rounded-xl border border-border p-0 overflow-hidden shadow-none ring-0">
+          <Table className="text-left text-xs">
+            <TableHeader>
+              <TableRow className="border-border text-[11px] font-semibold tracking-wider text-muted-foreground hover:bg-transparent">
+                <TableHead className="px-4 py-3.5 font-mono">#</TableHead>
+                <TableHead className="px-4 py-3.5">Order ID</TableHead>
+                <TableHead className="px-4 py-3.5">Customer</TableHead>
+                <TableHead className="px-4 py-3.5">Items</TableHead>
+                <TableHead className="px-4 py-3.5">Payment</TableHead>
+                <TableHead className="px-4 py-3.5 text-right">Amount</TableHead>
+                <TableHead className="px-4 py-3.5 text-right">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-border">
+              {recentOrders.map((o, idx) => (
+                <TableRow key={`${o.id}-${idx}`} className="hover:bg-muted/30">
+                  <TableCell className="px-4 py-4 font-mono text-muted-foreground">{idx + 1}</TableCell>
+                  <TableCell className="px-4 py-4 whitespace-nowrap font-mono font-medium text-foreground">{o.id.slice(0, 14)}</TableCell>
+                  <TableCell className="px-4 py-4">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-foreground">{o.customer}</span>
+                      {o.actor === "agent" && <span className="rounded-full border border-purple-500/20 bg-purple-500/10 px-1.5 py-0.2 text-[10px] font-semibold text-purple-400">AI Bot</span>}
+                    </div>
+                  </TableCell>
+                  <TableCell className="max-w-[220px] px-4 py-4"><span className="line-clamp-1 font-medium text-foreground">{o.items}</span></TableCell>
+                  <TableCell className="px-4 py-4 text-muted-foreground">{o.method}</TableCell>
+                  <TableCell className="px-4 py-4 text-right font-mono font-semibold text-emerald-500"><FormattedAmount amount={o.amount} /></TableCell>
+                  <TableCell className="px-4 py-4 text-right"><StatusBadge status={o.status} /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
     </div>
   );
 }

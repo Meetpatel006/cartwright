@@ -8,6 +8,7 @@ import { trpc } from "@/utils/trpc";
 import { FormattedAmount } from "@/components/merchant/formatted-amount";
 import { StatusBadge } from "./status-badge";
 import { KPICard } from "./kpi-card";
+import { Card } from "@cartwright/ui/components/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@cartwright/ui/components/table";
 
 export function ShopperTab() {
@@ -136,62 +137,67 @@ export function ShopperTab() {
       </div>
 
       {/* Recent Transactions */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-muted/60 text-foreground">
-              <CreditCard className="h-4 w-4" />
-            </div>
-            <h2 className="text-sm font-semibold tracking-tight text-foreground">Recent Transactions</h2>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-muted/60 text-foreground">
+            <CreditCard className="h-4 w-4" />
           </div>
-          <a href="/transactions" className="text-[11px] text-purple-400 hover:text-purple-300 font-medium transition-colors">View all →</a>
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">Recent Transactions</h2>
         </div>
-        {recentTx.length === 0 ? (
-          <div className="flex h-32 flex-col items-center justify-center rounded-xl border border-border bg-background text-center">
-            <CreditCard className="mb-2 h-6 w-6 text-muted-foreground/40" />
-            <p className="text-xs font-medium text-foreground">No transactions yet</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <Table className="text-left text-xs">
-              <TableHeader className="border-border bg-muted/40 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="px-4 py-2.5 font-mono">#</TableHead>
-                  <TableHead className="px-4 py-2.5">Transaction ID</TableHead>
-                  <TableHead className="px-4 py-2.5">Merchant</TableHead>
-                  <TableHead className="px-4 py-2.5">Item</TableHead>
-                  <TableHead className="px-4 py-2.5 text-right">Amount</TableHead>
-                  <TableHead className="px-4 py-2.5 text-right">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody className="divide-y divide-border">
-                {recentTx.map((tx: any, idx: number) => {
-                  const txId = tx.transactionId || tx.id;
-                  const prod = tx.items || tx.rawQuery || "—";
-                  const isCopied = copiedId === txId;
-                  return (
-                    <TableRow key={txId || idx} className="hover:bg-muted/30">
-                      <TableCell className="px-4 py-3 font-mono text-muted-foreground">{idx + 1}</TableCell>
-                      <TableCell className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-foreground">{(txId || "").slice(0, 12)}</span>
-                          <button type="button" aria-label={`Copy transaction ID ${txId}`} onClick={(e) => handleCopy(txId, e)} className="cursor-pointer rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
-                            {isCopied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                          </button>
-                        </div>
-                      </TableCell>
-                      <TableCell className="px-4 py-3 text-muted-foreground">{tx.merchantName || "—"}</TableCell>
-                      <TableCell className="max-w-[180px] truncate px-4 py-3 text-muted-foreground">{prod}</TableCell>
-                      <TableCell className="px-4 py-3 text-right font-mono font-semibold text-emerald-500"><FormattedAmount amount={(tx.amountInMinor || 0) / 100} /></TableCell>
-                      <TableCell className="px-4 py-3 text-right"><StatusBadge status={tx.status} /></TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+        <a href="/transactions" className="text-[11px] text-purple-400 hover:text-purple-300 font-medium transition-colors">View all →</a>
       </div>
+      {recentTx.length === 0 ? (
+        <div className="flex h-40 flex-col items-center justify-center rounded-xl border border-border bg-muted/40 text-center">
+          <CreditCard className="mb-2 h-6 w-6 text-muted-foreground/40" />
+          <p className="text-xs font-medium text-foreground">No transactions yet</p>
+        </div>
+      ) : (
+        <Card className="rounded-xl border border-border p-0 overflow-hidden shadow-none ring-0">
+          <Table className="text-left text-xs">
+            <TableHeader>
+              <TableRow className="border-border text-[11px] font-semibold tracking-wider text-muted-foreground hover:bg-transparent">
+                <TableHead className="px-4 py-3.5 font-mono">#</TableHead>
+                <TableHead className="px-4 py-3.5">Transaction ID</TableHead>
+                <TableHead className="px-4 py-3.5">Merchant</TableHead>
+                <TableHead className="px-4 py-3.5">Item</TableHead>
+                <TableHead className="px-4 py-3.5 text-right">Amount</TableHead>
+                <TableHead className="px-4 py-3.5 text-right">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-border">
+              {recentTx.map((tx: any, idx: number) => {
+                const txId = tx.transactionId || tx.id;
+                const prod = tx.items || tx.rawQuery || "—";
+                const isCopied = copiedId === txId;
+                return (
+                  <TableRow key={txId || idx} className="hover:bg-muted/30">
+                    <TableCell className="px-4 py-4 font-mono text-muted-foreground">{idx + 1}</TableCell>
+                    <TableCell className="px-4 py-4 whitespace-nowrap">
+                      <button
+                        type="button"
+                        aria-label={`Copy transaction ID ${txId}`}
+                        onClick={(e) => handleCopy(txId, e)}
+                        className="group/copy inline-flex cursor-pointer items-center gap-1.5 font-mono font-medium text-foreground transition-colors hover:text-primary"
+                      >
+                        <span>{(txId || "").slice(0, 12)}</span>
+                        {isCopied ? (
+                          <Check className="h-3 w-3 text-emerald-500" />
+                        ) : (
+                          <Copy className="h-3 w-3 opacity-0 text-muted-foreground transition-opacity group-hover/copy:opacity-100" />
+                        )}
+                      </button>
+                    </TableCell>
+                    <TableCell className="px-4 py-4 text-muted-foreground">{tx.merchantName || "—"}</TableCell>
+                    <TableCell className="max-w-[220px] px-4 py-4"><span className="line-clamp-1 font-medium text-foreground">{prod}</span></TableCell>
+                    <TableCell className="px-4 py-4 text-right font-mono font-semibold text-emerald-500"><FormattedAmount amount={(tx.amountInMinor || 0) / 100} /></TableCell>
+                    <TableCell className="px-4 py-4 text-right"><StatusBadge status={tx.status} /></TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
     </div>
   );
 }
