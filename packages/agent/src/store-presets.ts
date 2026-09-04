@@ -53,9 +53,17 @@ export function getStorePresets(): Record<string, StorePreset> {
 const BUILT_IN_PRESETS: Record<string, StorePreset> = {
   nike: {
     name: "Nike India",
-    baseUrl: "https://www.nike.com/in",
-    searchMode: "url",
-    searchUrlTemplate: "https://www.nike.com/in/w?q={query}",
+    // nike.com/in now redirects to the India catalogue landing page and drops
+    // its query. Start on Nike India's canonical storefront and use its search control.
+    baseUrl: "https://www.nike.in",
+    searchMode: "act",
+    actBaseUrl: "https://www.nike.in",
+  },
+  "nike-in": {
+    name: "Nike India",
+    baseUrl: "https://www.nike.in",
+    searchMode: "act",
+    actBaseUrl: "https://www.nike.in",
   },
   amazon: {
     name: "Amazon India",
