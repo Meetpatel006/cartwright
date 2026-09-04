@@ -11,7 +11,7 @@ export function CartwrightFooter() {
           {/* Bottom Bar */}
           <div className="flex flex-col justify-between gap-4 text-xs text-neutral-400 sm:flex-row sm:items-center font-ito-mono">
             <p className="m-0">
-              &copy; {new Date().getFullYear()} Cartwright Technologies Inc. All rights reserved.
+              &copy; Cartwright Technologies Inc. All rights reserved.
             </p>
             <div className="flex flex-wrap items-center gap-4 sm:gap-6">
               <span>Zero Sponsored Bias</span>
