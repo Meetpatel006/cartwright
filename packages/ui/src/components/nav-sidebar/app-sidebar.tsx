@@ -9,6 +9,7 @@ import {
   ShoppingBag,
   TrendingUp,
   Users,
+  Globe,
 } from 'lucide-react';
 import { Sidebar, SidebarContent } from '@cartwright/ui/components/sidebar';
 import { NavCollapsible } from '@cartwright/ui/components/nav-sidebar/nav-collapsible';
@@ -105,6 +106,13 @@ export function AppSidebar({
       url: '/merchant/customers',
       icon: Users,
       isActive: pathname.startsWith('/merchant/customers'),
+    },
+    {
+      id: 'merchant-sites',
+      title: 'Sites & Tracker',
+      url: '/merchant/sites',
+      icon: Globe,
+      isActive: pathname.startsWith('/merchant/sites'),
     },
   ];
 
