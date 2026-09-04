@@ -4,16 +4,19 @@ import { protectedProcedure, router } from "../index";
 import {
   getFunnel,
   getInsights,
-  getOverview,
   getProducts,
   getRecommendationPositions,
 } from "../merchant-intelligence/merchant-intelligence.service";
 import {
   createMerchantSite,
-  getOrCreateMerchantAccount,
   removeMerchantSite,
   setPrimarySite,
 } from "../merchant-intelligence/merchant-account.service";
+import {
+  cachedMerchantAccount,
+  cachedMerchantOverview,
+  invalidateMerchantCache,
+} from "../trpc-cache";
 
 /**
  * Part C — Merchant Growth & Commerce Intelligence.
@@ -31,30 +34,38 @@ const timeWindowInput = z
   .optional();
 
 export const merchantIntelligenceRouter = router({
+  /** Account + overview reads go through the server cache (see trpc-cache.ts). */
   getAccount: protectedProcedure.query(async ({ ctx }) => {
-    return getOrCreateMerchantAccount(ctx.session.user.id, ctx.session.user.name);
+    return cachedMerchantAccount(ctx.session.user.id, ctx.session.user.name);
   }),
 
   createSite: protectedProcedure.mutation(async ({ ctx }) => {
-    return createMerchantSite(ctx.session.user.id);
+    const result = await createMerchantSite(ctx.session.user.id);
+    // New storefront must appear immediately on every merchant page.
+    await invalidateMerchantCache(ctx.session.user.id);
+    return result;
   }),
 
   setPrimarySite: protectedProcedure
     .input(z.object({ siteId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      return setPrimarySite(ctx.session.user.id, input.siteId);
+      const result = await setPrimarySite(ctx.session.user.id, input.siteId);
+      await invalidateMerchantCache(ctx.session.user.id);
+      return result;
     }),
 
   removeSite: protectedProcedure
     .input(z.object({ siteId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      return removeMerchantSite(ctx.session.user.id, input.siteId);
+      const result = await removeMerchantSite(ctx.session.user.id, input.siteId);
+      await invalidateMerchantCache(ctx.session.user.id);
+      return result;
     }),
 
   overview: protectedProcedure
     .input(z.object({ window: timeWindowInput }).optional())
     .query(async ({ ctx, input }) => {
-      return getOverview(ctx.session.user.id, input?.window);
+      return cachedMerchantOverview(ctx.session.user.id, input?.window);
     }),
 
   funnel: protectedProcedure
