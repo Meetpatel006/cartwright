@@ -175,6 +175,7 @@ export const shoppingRouter = router({
         userId: ctx.session.user.id,
         sessionId: input.sessionId,
         productId: input.productId,
+        paymentMode: "cartwright",
         idempotencyKey: input.idempotencyKey,
         correlationId,
       });

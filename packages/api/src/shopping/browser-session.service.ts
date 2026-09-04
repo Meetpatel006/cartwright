@@ -230,3 +230,22 @@ export async function cleanupBrowserSessionsForShoppingSession(
   }
   return disposed;
 }
+
+/**
+ * Close every active browser retained for a shopping session after selection.
+ * Unlike expiry cleanup, this preserves the intentional `closed` lifecycle
+ * state so an already-converted session cannot be mistaken for an expired one.
+ */
+export async function closeBrowserSessionsForShoppingSession(
+  shoppingSessionId: string,
+  userId: string,
+  opts: CloseOptions = {},
+): Promise<number> {
+  const sessions = await listActiveBrowserSessionsByShoppingSession(shoppingSessionId);
+  let closed = 0;
+  for (const session of sessions) {
+    await closeBrowserSession(session.id, userId, opts);
+    closed += 1;
+  }
+  return closed;
+}

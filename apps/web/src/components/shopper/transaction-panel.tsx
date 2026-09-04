@@ -96,11 +96,15 @@ export default function TransactionPanel(props: {
         </div>
       </div>
 
-      {purchase.policyReason && (
-        <p className="text-sm sm:text-base font-medium text-foreground leading-relaxed pt-1">
-          {purchase.policyReason}
-        </p>
-      )}
+      {/* Policy reason — only shown when actionable (blocked or awaiting approval).
+          Hidden after approval/payment so a stale "exceeds limit" note does not
+          appear on a fully-settled transaction. */}
+      {purchase.policyReason &&
+        (status === "POLICY_BLOCKED" || status === "AWAITING_APPROVAL") && (
+          <p className="text-sm sm:text-base font-medium text-foreground leading-relaxed pt-1">
+            {purchase.policyReason}
+          </p>
+        )}
 
       {/* Action buttons (only rendered when active) */}
       {Boolean(
@@ -119,7 +123,7 @@ export default function TransactionPanel(props: {
               disabled={props.approveBusy}
               className="h-9 px-4 text-xs font-bold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer transition-colors"
             >
-              {props.approveBusy ? "Approving…" : "Approve & Permit Purchase"}
+              {props.approveBusy ? "Approving..." : "Approve & Permit Purchase"}
             </button>
           )}
 
@@ -130,7 +134,7 @@ export default function TransactionPanel(props: {
               disabled={props.approveBusy}
               className="h-9 px-4 text-xs font-bold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer transition-colors"
             >
-              {props.approveBusy ? "Executing on Merchant…" : "Execute Checkout on Merchant"}
+              {props.approveBusy ? "Executing on Merchant..." : "Execute Checkout on Merchant"}
             </button>
           )}
 
@@ -141,7 +145,7 @@ export default function TransactionPanel(props: {
               disabled={props.initiateBusy}
               className="h-9 px-4 text-xs font-bold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer transition-colors"
             >
-              {props.initiateBusy ? "Creating order…" : "Continue to Razorpay Checkout"}
+              {props.initiateBusy ? "Creating order..." : "Continue to Razorpay Checkout"}
             </button>
           )}
 
@@ -152,7 +156,7 @@ export default function TransactionPanel(props: {
               disabled={props.verifyBusy}
               className="h-9 px-4 text-xs font-bold rounded-lg bg-emerald-400 hover:bg-emerald-300 text-primary-foreground cursor-pointer transition-colors"
             >
-              {props.verifyBusy ? "Verifying payment…" : "Open Razorpay Test Checkout"}
+              {props.verifyBusy ? "Verifying payment..." : "Open Razorpay Test Checkout"}
             </button>
           )}
 
@@ -272,4 +276,3 @@ export default function TransactionPanel(props: {
     </div>
   );
 }
-

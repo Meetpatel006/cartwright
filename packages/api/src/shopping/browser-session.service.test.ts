@@ -7,10 +7,12 @@ import { user as userTable } from "@cartwright/db/schema";
 import {
   getBrowserSessionById,
 } from "@cartwright/db/repositories/browser-session.repository";
+import { insertShoppingSession } from "@cartwright/db/repositories/shopping.repository";
 
 import {
   BrowserSessionError,
   cleanupExpiredBrowserSessions,
+  closeBrowserSessionsForShoppingSession,
   closeBrowserSession,
   createBrowserSession,
   expireBrowserSession,
@@ -199,6 +201,43 @@ describe("browser session service (db-backed)", () => {
           closeBrowserSession(created.id, userB, { closeProvider: noopClose }),
         ).rejects.toThrow(BrowserSessionError);
       });
+    });
+  });
+
+  test("closes every retained session after provider-independent selection", async () => {
+    await withTestUser(async (userId) => {
+      const shoppingSessionId = randomUUID();
+      await insertShoppingSession({
+        id: shoppingSessionId,
+        userId,
+        rawQuery: "test product",
+        intent: {},
+        status: "recommended",
+      });
+      const first = await createBrowserSession({
+        ownerUserId: userId,
+        provider: "local",
+        providerSessionId: `local-${randomUUID()}`,
+        shoppingSessionId,
+      });
+      const second = await createBrowserSession({
+        ownerUserId: userId,
+        provider: "browserbase",
+        providerSessionId: `bb-${randomUUID()}`,
+        shoppingSessionId,
+      });
+      const closedProviderIds: string[] = [];
+
+      const closed = await closeBrowserSessionsForShoppingSession(
+        shoppingSessionId,
+        userId,
+        { closeProvider: async (providerSessionId) => { closedProviderIds.push(providerSessionId); } },
+      );
+
+      expect(closed).toBe(2);
+      expect(closedProviderIds).toEqual([first.providerSessionId, second.providerSessionId]);
+      expect((await getBrowserSessionById(first.id))?.status).toBe("closed");
+      expect((await getBrowserSessionById(second.id))?.status).toBe("closed");
     });
   });
 });

@@ -57,6 +57,7 @@ import {
 } from "./shopping-session.state";
 import {
   cleanupBrowserSessionsForShoppingSession,
+  closeBrowserSessionsForShoppingSession,
   getOwnedBrowserSession,
   type BrowserSessionCloseAdapter,
 } from "./browser-session.service";
@@ -703,6 +704,7 @@ export async function selectProductForSession(
     productId: string;
     idempotencyKey?: string;
     correlationId?: string;
+    paymentMode?: "merchant" | "cartwright";
   },
   deps: ShoppingServiceDeps = {},
 ): Promise<SelectProductOutput> {
@@ -796,7 +798,7 @@ export async function selectProductForSession(
   // created; live mode remains a hard stop.
   let selectionAddToCart: { driven: boolean; status?: string; reason?: string } | undefined;
   let selectionCheckoutBlocked = false;
-  if (session.checkoutSessionId && plan.productUrl) {
+  if (input.paymentMode !== "cartwright" && session.checkoutSessionId && plan.productUrl) {
     try {
       const ownedSession = await getOwnedBrowserSession(session.checkoutSessionId, input.userId);
       const fulfill = deps.fulfillSelection ?? fulfillSelection;
@@ -864,7 +866,7 @@ export async function selectProductForSession(
   // a hard block — amounts are never compared across currencies.
   let chargedAmountInMinor = plan.expectedAmountInMinor;
   let chargedCurrency = plan.currency;
-  if (session.checkoutSessionId && !selectionCheckoutBlocked) {
+  if (input.paymentMode !== "cartwright" && session.checkoutSessionId && !selectionCheckoutBlocked) {
     try {
       const browserSession = await getOwnedBrowserSession(
         session.checkoutSessionId,
@@ -893,7 +895,7 @@ export async function selectProductForSession(
   }
 
   // Record the authoritative amount resolution for the audit trail.
-  if (session.checkoutSessionId && !selectionCheckoutBlocked) {
+  if (input.paymentMode !== "cartwright" && session.checkoutSessionId && !selectionCheckoutBlocked) {
     await recordAuditEvent({
       eventType: "AUTHORITATIVE_AMOUNT_RESOLVED",
       userId: input.userId,
@@ -923,7 +925,10 @@ export async function selectProductForSession(
     // UI executor. In Test Mode this deliberately falls back to the server-side
     // Razorpay test path, while createPurchaseTransaction still applies every
     // policy and spending safeguard.
-    browserSessionId: selectionCheckoutBlocked ? undefined : session.checkoutSessionId ?? undefined,
+    browserSessionId:
+      input.paymentMode === "cartwright" || selectionCheckoutBlocked
+        ? undefined
+        : session.checkoutSessionId ?? undefined,
     correlationId: input.correlationId,
   });
 
@@ -951,6 +956,13 @@ export async function selectProductForSession(
       selectionAddToCart: selectionAddToCart ?? null,
     },
   });
+
+  // The Cartwright Test Gateway only needs the selected product data. Release
+  // the retained Stagehand/local Chrome session immediately after selection so
+  // it cannot remain open while the payment transaction is processed.
+  if (input.paymentMode === "cartwright" && session.checkoutSessionId) {
+    await closeBrowserSessionsForShoppingSession(session.id, input.userId);
+  }
 
   return { plan, purchase };
 }

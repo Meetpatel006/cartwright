@@ -248,6 +248,25 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
     approve.mutate({ transactionId: purchase.transactionId, method: payMethod });
   }, [selectedPurchase, approve.isPending, approve.error, approve.data, payMethod]);
 
+  // Session purchases use Cartwright's provider-independent Test Mode gateway.
+  // Policy approval still happens first; merchant checkout is never involved.
+  const gatewayPurchase =
+    (approve.data?.result as TransactionView | undefined) ?? selectedPurchase;
+  const gatewayStartRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !gatewayPurchase ||
+      gatewayPurchase.status !== "APPROVED" ||
+      gatewayPurchase.paymentSource !== "agent_razorpay" ||
+      initiatePayment.isPending ||
+      initiatePayment.data?.transactionId === gatewayPurchase.transactionId ||
+      gatewayStartRef.current === gatewayPurchase.transactionId
+    ) return;
+
+    gatewayStartRef.current = gatewayPurchase.transactionId;
+    initiatePayment.mutate({ transactionId: gatewayPurchase.transactionId });
+  }, [gatewayPurchase, initiatePayment.isPending, initiatePayment.data]);
+
   const startedSessionRef = useRef<string | null>(null);
   useEffect(() => {
     const session = loadedSession.data;
@@ -470,6 +489,17 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
     checkout.open();
   };
 
+  // Open the real Razorpay Test Mode modal as soon as the server-created order
+  // is ready. The card fields and confirmation remain visible in the checkout;
+  // only the merchant checkout was removed from the session flow.
+  const openedGatewayOrderRef = useRef<string | null>(null);
+  useEffect(() => {
+    const order = initiatePayment.data;
+    if (!order || !razorpayReady || openedGatewayOrderRef.current === order.orderId) return;
+    openedGatewayOrderRef.current = order.orderId;
+    openAgentRazorpayCheckout();
+  }, [initiatePayment.data, razorpayReady]);
+
   const startPayment = () => {
     if (!effectivePurchase || status !== "APPROVED") return;
     initiatePayment.mutate({ transactionId: effectivePurchase.transactionId });
@@ -497,6 +527,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   const onSelect = (productId: string) => {
     if (!runResult) return;
     approve.reset();
+    initiatePayment.reset();
     select.mutate({
       sessionId: runResult.sessionId,
       productId,

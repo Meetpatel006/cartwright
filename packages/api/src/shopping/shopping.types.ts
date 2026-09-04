@@ -34,6 +34,8 @@ export interface SelectProductInput {
   sessionId: string;
   productId: string;
   idempotencyKey?: string;
+  /** Use Cartwright's provider-independent Test Mode gateway for this session. */
+  paymentMode?: "merchant" | "cartwright";
 }
 
 export interface SelectProductOutput {
