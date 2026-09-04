@@ -12,7 +12,11 @@
 import { z } from "zod";
 import type { ClarifyingQuestion, ShoppingIntent } from "../commerce/types";
 import { ShoppingRequestValidationError } from "../errors";
-import { parseShoppingRequest, type ParseShoppingRequestInput } from "./parse-shopping-request";
+import {
+  cleanFallbackSearchQuery,
+  parseShoppingRequest,
+  type ParseShoppingRequestInput,
+} from "./parse-shopping-request";
 import { createOpenAICompatibleLLM, type CustomModelEndpoint } from "../custom-llm";
 
 export const ClarifyingQuestionSchema = z.object({
@@ -228,15 +232,16 @@ export async function parseShoppingRequestWithLLM(
   const fallback = parseShoppingRequest(input);
 
   if (!extracted) {
+    const cleanSearchQuery = cleanFallbackSearchQuery(fallback.rawQuery);
     const clarifyingQuestions = generateDefaultClarifyingQuestions(query, {
       budgetInMinor: fallback.budgetInMinor,
       store: fallback.store,
       category: fallback.category,
-      cleanSearchQuery: fallback.rawQuery,
+      cleanSearchQuery,
     });
     return {
       ...fallback,
-      cleanSearchQuery: fallback.rawQuery,
+      cleanSearchQuery,
       brands: fallback.preferredMerchants,
       minRating: null,
       clarifyingQuestions,

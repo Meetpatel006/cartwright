@@ -24,4 +24,5 @@ export * from "./commerce/types";
 export * from "./commerce/recommendation";
 export * from "./commerce/purchase-plan";
 export * from "./discovery/discover-products";
+export * from "./discovery/search-filters";
 export * from "./orchestration/shopping-orchestrator";

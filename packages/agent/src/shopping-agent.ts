@@ -16,6 +16,7 @@ import { createOpenAICompatibleLLM, type CustomModelEndpoint } from "./custom-ll
 import { liveBrowserSessionRegistry } from "./browser-session-registry";
 import { parseCheckoutTotal } from "./checkout-total";
 import { filterProductsByQueryRelevance } from "./filtering/query-relevance";
+import { applyOnSiteSearchFilters, type OnSiteSearchFilterInput } from "./discovery/search-filters";
 import { startLiveFeedPump } from "./live-feed";
 import {
   ensureLocalMerchantAccount,
@@ -207,6 +208,8 @@ export interface ShoppingRequest {
   budgetInMinor: number;
   /** ISO 4217 currency of `budgetInMinor` (e.g. "USD", "INR"). */
   currency: string;
+  /** Parsed filters to apply through the merchant's own results-page controls. */
+  siteFilters?: OnSiteSearchFilterInput;
   /** Which browser backend to run on. "local" launches Chrome on this machine (free);
    *  "browserbase" runs a cloud session (requires browserbaseApiKey). */
   mode: AgentBrowserMode;
@@ -2248,6 +2251,10 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       }
 
       throwIfAborted(request.signal);
+
+      if (request.siteFilters) {
+        await applyOnSiteSearchFilters(page, browser.context, stagehand, request.siteFilters);
+      }
 
       // ── Step 2: Extract products ────────────────────────────────────────
       const extracted = await stagehand.extract(

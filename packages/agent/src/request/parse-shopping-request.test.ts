@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  cleanFallbackSearchQuery,
   extractCategory,
   extractConstraints,
   extractMerchantPreferences,
@@ -66,6 +67,14 @@ describe("parseShoppingRequest — currency normalization", () => {
     });
     expect(intent.currency).toBe("INR");
     expect(intent.budgetInMinor).toBe(100_000);
+  });
+});
+
+describe("cleanFallbackSearchQuery", () => {
+  test("removes shopping prose without removing the product requirements", () => {
+    expect(
+      cleanFallbackSearchQuery("wired earbuds with low latency under 2k on Flipkart, and also any rating will be fine"),
+    ).toBe("wired earbuds with low latency");
   });
 });
 

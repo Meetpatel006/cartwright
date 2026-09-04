@@ -39,6 +39,10 @@ export interface DiscoverProductsParams {
   stores?: string[];
   budgetInMinor: number | null;
   currency: string;
+  /** Parsed constraints applied through a merchant's results UI when available. */
+  constraints?: string[];
+  /** Minimum rating requested by the shopper; null means no rating restriction. */
+  minRating?: number | null;
   mode: AgentBrowserMode;
   browserbaseApiKey?: string;
   llm?: CustomModelEndpoint;
@@ -131,6 +135,12 @@ export async function discoverProducts(params: DiscoverProductsParams): Promise<
       store,
       budgetInMinor: params.budgetInMinor ?? 0,
       currency: params.currency,
+      siteFilters: {
+        budgetInMinor: params.budgetInMinor,
+        currency: params.currency,
+        minRating: params.minRating,
+        constraints: params.constraints,
+      },
       mode: params.mode,
       browserbaseApiKey: params.browserbaseApiKey,
       llm: params.llm,
