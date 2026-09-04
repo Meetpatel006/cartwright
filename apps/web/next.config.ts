@@ -2,7 +2,7 @@ import "@cartwright/env/web";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  typedRoutes: true,
+  typedRoutes: false,
   reactCompiler: true,
   output: "standalone",
   // Stagehand resolves extension assets via `new URL("../", import.meta.url)`,
