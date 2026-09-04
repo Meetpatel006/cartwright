@@ -34,6 +34,10 @@ export class AdapterRegistry {
     this.adapters.unshift(adapter);
   }
 
+  public getAdapterByName(name: string): PlatformAdapter | undefined {
+    return this.adapters.find((a) => a.name === name);
+  }
+
   public resolveAdapter(win?: Window, doc?: Document): PlatformAdapter {
     for (const adapter of this.adapters) {
       try {

@@ -3,10 +3,12 @@
  */
 
 import { tryCatchGuard } from "../core/error-boundary";
+import type { PlatformType } from "../events/canonical-types";
 
 export interface SiteConfig {
   siteId: string;
   merchantId?: string;
+  platform?: PlatformType;
   enabled: boolean;
   posthogApiKey?: string;
   posthogHost?: string;
@@ -50,6 +52,8 @@ export function extractScriptConfig(targetDoc?: Document): Partial<SiteConfig> {
       scriptEl.getAttribute("data-merchant") ||
       scriptEl.getAttribute("data-merchant-id") ||
       undefined;
+    const rawPlatform = scriptEl.getAttribute("data-platform");
+    const platform = (rawPlatform as PlatformType) || undefined;
     const posthogApiKey = scriptEl.getAttribute("data-posthog-key") || undefined;
     const posthogHost = scriptEl.getAttribute("data-posthog-host") || undefined;
     const apiEndpoint = scriptEl.getAttribute("data-api-endpoint") || undefined;
@@ -65,6 +69,7 @@ export function extractScriptConfig(targetDoc?: Document): Partial<SiteConfig> {
     return {
       siteId,
       merchantId,
+      platform,
       posthogApiKey,
       posthogHost,
       apiEndpoint,
@@ -89,6 +94,7 @@ export async function resolveSiteConfig(
   const merged: SiteConfig = {
     siteId: inlineConfig?.siteId || scriptCfg.siteId || "",
     merchantId: inlineConfig?.merchantId || scriptCfg.merchantId,
+    platform: inlineConfig?.platform || scriptCfg.platform,
     enabled: inlineConfig?.enabled ?? scriptCfg.enabled ?? true,
     posthogApiKey: inlineConfig?.posthogApiKey || scriptCfg.posthogApiKey || DEFAULT_POSTHOG_KEY,
     posthogHost: inlineConfig?.posthogHost || scriptCfg.posthogHost || DEFAULT_POSTHOG_HOST,

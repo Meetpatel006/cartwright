@@ -92,10 +92,15 @@ export class CartwrightTracker {
       }
 
       // Select and initialize platform adapter
-      this.currentAdapter = this.adapterRegistry.resolveAdapter(
-        typeof window !== "undefined" ? window : undefined,
-        typeof document !== "undefined" ? document : undefined,
-      );
+      if (this.config.platform) {
+        this.currentAdapter = this.adapterRegistry.getAdapterByName(this.config.platform) || null;
+      }
+      if (!this.currentAdapter) {
+        this.currentAdapter = this.adapterRegistry.resolveAdapter(
+          typeof window !== "undefined" ? window : undefined,
+          typeof document !== "undefined" ? document : undefined,
+        );
+      }
 
       this.currentAdapter.init((evt) => this.processEvent(evt), {
         siteId: this.config.siteId,
