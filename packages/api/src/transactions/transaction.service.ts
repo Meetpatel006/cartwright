@@ -119,6 +119,8 @@ export async function mapToResult(transaction: TransactionRow): Promise<Transact
     paymentSource: resolvePaymentSource(transaction.browserSessionId),
     failureReason: transaction.failureReason,
     browserSessionId: transaction.browserSessionId,
+    merchantOrderId: transaction.merchantOrderId ?? null,
+    paymentMethod: transaction.paymentMethod ?? null,
   };
 }
 
@@ -366,6 +368,8 @@ export function toTransactionListView(row: TransactionRow): TransactionListView 
     paymentSource: resolvePaymentSource(row.browserSessionId),
     failureReason: row.failureReason,
     createdAt: row.createdAt,
+    merchantOrderId: row.merchantOrderId ?? null,
+    paymentMethod: row.paymentMethod ?? null,
   };
 }
 

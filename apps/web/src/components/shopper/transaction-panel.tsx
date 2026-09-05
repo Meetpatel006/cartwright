@@ -15,7 +15,7 @@ export default function TransactionPanel(props: {
   currency: string;
   status: TransactionStatus | undefined;
   paymentSource: TransactionView["paymentSource"] | undefined;
-  merchantResult?: { status: string; message: string; provider?: string };
+  merchantResult?: { status: string; message: string; provider?: string; orderConfirmation?: { orderId: string | null; url: string } | null };
   payMethod: "card" | "wallet";
   setPayMethod: (m: "card" | "wallet") => void;
   approveBusy: boolean;
@@ -161,14 +161,37 @@ export default function TransactionPanel(props: {
           )}
 
           {props.merchantResult && (
-            <p className="text-xs font-medium text-emerald-400">
-              {props.merchantResult.message}
-            </p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-emerald-400">
+                {props.merchantResult.message}
+              </p>
+              {props.merchantResult.orderConfirmation?.orderId && (
+                <p className="font-mono text-xs text-muted-foreground">
+                  Merchant order: {props.merchantResult.orderConfirmation.orderId}
+                </p>
+              )}
+            </div>
           )}
 
           {props.verifyMessage && (
             <p className="text-xs font-medium text-emerald-400">
               {props.verifyMessage}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Persisted card-drive evidence (survives reload; merchantResult is live-only) */}
+      {(purchase.merchantOrderId || purchase.paymentMethod || props.merchantResult?.orderConfirmation?.orderId) && (
+        <div className="flex flex-wrap gap-x-6 gap-y-1 pt-1">
+          {(props.merchantResult?.orderConfirmation?.orderId || purchase.merchantOrderId) && (
+            <p className="font-mono text-xs text-muted-foreground">
+              Merchant order: {props.merchantResult?.orderConfirmation?.orderId ?? purchase.merchantOrderId}
+            </p>
+          )}
+          {purchase.paymentMethod && (
+            <p className="text-xs text-muted-foreground capitalize">
+              Method: {purchase.paymentMethod}
             </p>
           )}
         </div>

@@ -37,6 +37,10 @@ export interface TransactionResult {
   paymentSource: PaymentSource;
   failureReason?: string | null;
   browserSessionId?: string | null;
+  /** Merchant's own order id (merchant_ui path) for cross-verification. */
+  merchantOrderId?: string | null;
+  /** card | wallet — method label only, never PAN/CVV. */
+  paymentMethod?: string | null;
 }
 
 /**
@@ -53,6 +57,8 @@ export interface TransactionListView {
   paymentSource: PaymentSource;
   failureReason: string | null;
   createdAt: Date;
+  merchantOrderId: string | null;
+  paymentMethod: string | null;
   items?: string | null;
   rawQuery?: string | null;
 }

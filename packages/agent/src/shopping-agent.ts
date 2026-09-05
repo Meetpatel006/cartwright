@@ -23,9 +23,11 @@ import {
   ensureLocalMerchantAccount,
   findLocalMerchant,
   findLocalMerchantForUrl,
+  matchCatalogProduct,
   merchantStorePreset,
   runLocalMerchantBasket,
   runLocalMerchantCheckout,
+  scrapeMerchantCatalog,
   type LocalMerchantProfile,
 } from "./local-merchant";
 // Store search presets (registry + built-ins; see ./store-presets).
@@ -60,6 +62,12 @@ import {
  * scalar types ("49.99" vs 49.99 vs null). Everything is normalized into the
  * strict `Product` shape by {@link normalizeExtractedProducts} right after.
  *
+ * Every field is required-but-nullable (never `.optional()`): the
+ * Browserbase-hosted extractor enforces strict structured outputs, where
+ * `required` must list EVERY key in `properties` and a missing key is a
+ * hard schema error ("Missing 'currency'"). Absent values come back as
+ * `null`, which the normalizer already handles (`== null` checks).
+ *
  * After normalization:
  * - `price` is the human-readable string (kept for display);
  * - `priceValue` is numeric MAJOR units (e.g. 49.99 for $49.99, 7995 for ₹7,995)
@@ -67,7 +75,7 @@ import {
  * - `currency`/`rating`/`availability`/`url` stay optional so one bad field
  *   never drops a real product.
  */
-const Scalar = z.union([z.string(), z.number(), z.null()]).optional();
+const Scalar = z.union([z.string(), z.number(), z.null()]);
 
 const ProductListSchema = z.object({
   products: z.array(
@@ -159,16 +167,19 @@ function normalizeExtractedProducts(
   return out;
 }
 
-/** Order summary extracted from a checkout page (best-effort). */
+/** Order summary extracted from a checkout page (best-effort).
+ *  Required-but-nullable (never `.optional()`): the Browserbase-hosted
+ *  extractor enforces strict structured outputs where `required` must list
+ *  every key in `properties`. */
 const OrderSummarySchema = z.object({
   items: z
     .array(z.object({ name: z.string(), price: z.string() }))
     .describe("line items in the cart/order")
-    .optional(),
-  subtotal: z.string().optional(),
-  tax: z.string().optional(),
-  shipping: z.string().optional(),
-  total: z.string().optional(),
+    .nullable(),
+  subtotal: z.string().nullable(),
+  tax: z.string().nullable(),
+  shipping: z.string().nullable(),
+  total: z.string().nullable(),
 });
 
 export type OrderSummary = z.infer<typeof OrderSummarySchema>;
@@ -394,13 +405,17 @@ function retainMerchantPaymentSession(
 ): RetainedSession {
   const sessionId = requestedId ?? `merchant-${randomUUID()}`;
   const providerSessionId = getProviderSessionId(stagehand) ?? sessionId;
-  liveBrowserSessionRegistry.register(sessionId, {
+  const sessionEntry: MerchantPaymentSession = {
     browser,
     stagehand,
     page,
     createdAt: Date.now(),
     ...(recording ? { recording } : {}),
-  });
+  };
+  liveBrowserSessionRegistry.register(sessionId, sessionEntry);
+  if (providerSessionId && providerSessionId !== sessionId) {
+    liveBrowserSessionRegistry.register(providerSessionId, sessionEntry);
+  }
   return { sessionId, providerSessionId };
 }
 
@@ -423,6 +438,81 @@ async function clickVisibleTextRoot(root: BrowserRoot, pattern: RegExp): Promise
 
 async function clickVisibleText(page: AgentPage, pattern: RegExp): Promise<boolean> {
   return clickVisibleTextRoot(page, pattern);
+}
+
+/**
+ * Log every visible button/link on the page (label-truncated). Called before
+ * driving intermediate checkout steps so the server log proves what the agent
+ * actually saw — e.g. whether "Continue to Review →" exists, is hidden, or
+ * has split text nodes.
+ */
+async function dumpVisibleButtons(page: AgentPage, label: string): Promise<void> {
+  try {
+    const items = (await page.evaluate(`
+      (() => {
+        const out = [];
+        for (const el of document.querySelectorAll('button, [role="button"], a, input[type="submit"], input[type="button"]')) {
+          const style = window.getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          if (style.display === 'none' || style.visibility === 'hidden' || rect.width === 0 || rect.height === 0) continue;
+          const t = [el.innerText, el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('value')]
+            .filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim();
+          if (t) out.push(t.slice(0, 60));
+          if (out.length >= 25) break;
+        }
+        return out;
+      })()
+    `).catch(() => [])) as string[];
+    console.log(
+      `[agent:${label}] visible buttons (${items.length}): ${items.map((t) => JSON.stringify(t)).join(" | ")}`,
+    );
+  } catch {
+    /* ignore — diagnostics only */
+  }
+}
+
+/**
+ * Click Raven's intermediate "Continue to Review →" control (Shipping →
+ * Review & Pay). Tries the DOM-evaluate click first (same mechanism that
+ * reliably clicks the payment gate — immune to split text nodes like
+ * "Continue to Review" + "→"), then locator text, then the LLM as fallback.
+ */
+async function clickContinueToReview(page: AgentPage, stagehand: Stagehand): Promise<boolean> {
+  const viaDom = await page.evaluate(`
+    (() => {
+      const re = /continue to review/i;
+      const candidates = Array.from(document.querySelectorAll(
+        'button, [role="button"], a, input[type="submit"], input[type="button"]'
+      ));
+      for (const element of candidates) {
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        if (style.display === 'none' || style.visibility === 'hidden' || rect.width === 0 || rect.height === 0) continue;
+        const label = [element.innerText, element.getAttribute('aria-label'), element.getAttribute('title'), element.getAttribute('value')]
+          .filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim();
+        if (re.test(label)) {
+          element.click();
+          return true;
+        }
+      }
+      return false;
+    })()
+  `).catch(() => false);
+  if (viaDom) {
+    console.log(`[agent:continueReview] ✔ clicked via DOM evaluate`);
+    return true;
+  }
+  if (await clickVisibleText(page, /continue to review/i).catch(() => false)) {
+    console.log(`[agent:continueReview] ✔ clicked via locator`);
+    return true;
+  }
+  const act = await stagehand.act(
+    "Click the 'Continue to Review' button to advance from Shipping to Review & Pay. If a saved address is shown, select it first.",
+    { page },
+  ).catch(() => undefined);
+  const ok = !!(act?.data?.success && (act?.data?.actions?.length ?? 0) > 0);
+  console.log(`[agent:continueReview] act: success=${act?.data?.success} actions=${act?.data?.actions?.length}`);
+  return ok;
 }
 
 /**
@@ -729,21 +819,54 @@ async function fillRazorpayTestCard(
 
   // Give the Razorpay modal a moment to mount its iframe, then inspect reality.
   await page.waitForSelector("iframe", { state: "visible", timeout: 15_000 }).catch(() => false);
+  // The outer checkout frame mounts first; the payment-method list inside the
+  // cross-origin iframe renders a few seconds later. Acting too early makes
+  // the LLM see no actionable element (success=false, actions=0) — the exact
+  // shopper-flow failure. Wait for the inner render before revealing.
+  await page.waitForTimeout(4_000).catch(() => {});
   await inspectRazorpayDom(page, "fillCard:initial");
 
-  // 1) Reveal the card form if a method picker is showing.
-  const revealed = await stagehand.act(
-    `In the open Razorpay checkout, if a list of payment methods is visible, click "Card" or "Add a new card" (Credit/Debit Card) to reveal the card entry form. If the card form is already visible, do nothing.`,
-    { page },
-  );
-  console.log(
-    `[agent:fillCard] reveal step: success=${revealed.data.success} actions=${revealed.data.actions.length}`,
-  );
+  // 1) Reveal the card form if a method picker is showing. Locator-first
+  // (same proven mechanism as the wallet flow's Wallets tab): the method tabs
+  // are <label>/<div> rows inside the cross-origin iframe, which locators can
+  // pierce but the small LLM often reports as "no actionable element".
+  const revealedByLocator = await clickRazorpayElement(page, [
+    `[data-testid="card"]`,
+    `[data-value="card"]`,
+    `label:has-text("Card")`,
+    `div[role="button"][data-value="card"]`,
+    `[data-testid*="card" i]`,
+  ]);
+  if (revealedByLocator) console.log(`[agent:fillCard] ✔ revealed card form via locator`);
+  await page.waitForTimeout(1_500).catch(() => {});
+
+  // LLM reveal as fallback, retried: the modal may still be rendering.
+  // Every act() is throw-guarded — a model garbage response (Zod
+  // invalid_union on structuredContent.action) must degrade to "not
+  // revealed", never crash the payment flow or the dev server.
+  let revealed = revealedByLocator;
+  for (let attempt = 0; attempt < 3 && !revealed; attempt++) {
+    if (attempt > 0) await page.waitForTimeout(2_500).catch(() => {});
+    const step = await stagehand.act(
+      `In the open Razorpay checkout, if a list of payment methods is visible, click "Card" or "Add a new card" (Credit/Debit Card) to reveal the card entry form. If the card form is already visible, do nothing.`,
+      { page },
+    ).catch(() => undefined);
+    revealed = !!(step?.data?.success && (step?.data?.actions?.length ?? 0) > 0);
+    console.log(
+      `[agent:fillCard] reveal attempt ${attempt + 1}: success=${step?.data?.success} actions=${step?.data?.actions?.length}`,
+    );
+  }
   await page.waitForTimeout(1_500).catch(() => {});
   await inspectRazorpayDom(page, "fillCard:afterReveal");
 
   // 2) Try deterministic locator fill (logged so we learn whether it pierces the iframe).
-  const viaLocator = await fillViaLocators(page, number, cardExpiry, cardCvv);
+  // Retry once after a wait — the card inputs mount after the method reveal.
+  let viaLocator = await fillViaLocators(page, number, cardExpiry, cardCvv);
+  if (!viaLocator) {
+    console.log(`[agent:fillCard] locator fill missed — waiting for card inputs to mount, retrying…`);
+    await page.waitForTimeout(3_000).catch(() => {});
+    viaLocator = await fillViaLocators(page, number, cardExpiry, cardCvv);
+  }
   if (viaLocator) {
     console.log(`[agent:fillCard] ✔ filled via locators`);
     await inspectRazorpayDom(page, "fillCard:afterLocatorFill");
@@ -752,13 +875,15 @@ async function fillRazorpayTestCard(
   console.log(`[agent:fillCard] locator fill failed — using stagehand.act() to fill fields`);
 
   // 3) Fallback: AI-driven fill (proven to reach the form through CDP).
+  // Throw-guarded like the reveal above: model garbage must return false,
+  // never escape as an exception.
   const filled = await stagehand.act(
     `In the Razorpay card form, fill: Card Number = ${number}, Expiry = ${cardExpiry}, CVV = ${cardCvv}. Use ONLY these test values; do not click decorative icons or SVGs.`,
     { page },
-  );
-  const ok = filled.data.success && filled.data.actions.length > 0;
+  ).catch(() => undefined);
+  const ok = !!(filled?.data?.success && (filled?.data?.actions?.length ?? 0) > 0);
   console.log(
-    `[agent:fillCard] act fill: success=${filled.data.success} actions=${filled.data.actions.length}`,
+    `[agent:fillCard] act fill: success=${filled?.data?.success} actions=${filled?.data?.actions?.length}`,
   );
   await inspectRazorpayDom(page, "fillCard:afterFill");
   return ok;
@@ -1150,9 +1275,9 @@ async function completeRazorpayTestPayment(
       const cont = await stagehand.act(
         `In the Razorpay card form, click the "Continue" button to proceed with the test payment. Do not close the checkout.`,
         { page },
-      );
-      console.log(`[agent:rzPay] continue act: success=${cont.data.success} actions=${cont.data.actions.length}`);
-      if (!cont.data.success || cont.data.actions.length === 0) {
+      ).catch(() => undefined);
+      console.log(`[agent:rzPay] continue act: success=${cont?.data?.success} actions=${cont?.data?.actions?.length}`);
+      if (!cont?.data?.success || (cont?.data?.actions?.length ?? 0) === 0) {
         return { status: "failed", message: "Razorpay Test Mode card Continue control was not available; payment was not attempted." };
       }
     } else {
@@ -1591,6 +1716,51 @@ export interface MerchantPaymentDriveOptions {
   browserbaseApiKey?: string;
 }
 
+/**
+ * Fallback for merchants whose Razorpay iframe never renders its method list
+ * (observed repeatedly: outer checkout frame mounts, inner content stays
+ * empty, no Card tab exists for locator or LLM). Some merchants expose their
+ * own designated test control — Raven's Review step renders
+ * "⚡ Mock Payment (Test)", which runs the merchant backend's real order
+ * pipeline (stock reservation, order row, confirmation page) without
+ * Razorpay. Clicking it is an honest, merchant-sanctioned test payment: the
+ * confirmation page is genuine merchant state, and the audit message records
+ * that the mock control (not Razorpay) was used.
+ */
+async function tryMerchantMockPayment(
+  context: AgentBrowserContext,
+  main: AgentPage,
+): Promise<{ clicked: boolean; orderConfirmation: OrderConfirmation | null; closedWindows: number }> {
+  const merchantPage = await findMerchantPage(context, main);
+  await context.setActivePage(merchantPage).catch(() => {});
+  const clicked = await merchantPage.evaluate(`
+    (() => {
+      const re = /mock payment/i;
+      const candidates = Array.from(document.querySelectorAll(
+        'button, [role="button"], a, input[type="submit"], input[type="button"]'
+      ));
+      for (const element of candidates) {
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        if (style.display === 'none' || style.visibility === 'hidden' || rect.width === 0 || rect.height === 0) continue;
+        if ((element as HTMLButtonElement).disabled) continue;
+        const label = [element.innerText, element.getAttribute('aria-label'), element.getAttribute('title'), element.getAttribute('value')]
+          .filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim();
+        if (re.test(label)) {
+          element.click();
+          return true;
+        }
+      }
+      return false;
+    })()
+  `).catch(() => false);
+  console.log(`[agent:mockPay] mock control clicked=${clicked}`);
+  if (!clicked) return { clicked: false, orderConfirmation: null, closedWindows: 0 };
+  const orderConfirmation = await captureOrderConfirmation(context, merchantPage);
+  const closedWindows = await closeRazorpayWindows(context, merchantPage);
+  return { clicked: true, orderConfirmation, closedWindows };
+}
+
 export async function approveMerchantPayment(
   sessionId: string,
   options: MerchantPaymentDriveOptions = {},
@@ -1632,14 +1802,66 @@ export async function approveMerchantPayment(
       }
     }
     await session.browser.context.setActivePage(session.page).catch(() => {});
-    const gate = await clickPaymentGate(session.page);
+    await dumpVisibleButtons(session.page, "approve:beforeGate");
+    let gate = await clickPaymentGate(session.page);
+    // An `unknown`-provider gate (e.g. Raven's cart-drawer "Checkout · ₹X",
+    // which only NAVIGATES to /checkout) is not the payment control — it just
+    // moved us. Keep advancing (Shipping → Continue to Review → Review & Pay)
+    // and re-detect until the real Razorpay control ("Pay Now") is clicked.
+    for (let round = 0; round < 3 && gate && gate.provider !== "razorpay"; round++) {
+      const advanced = await clickContinueToReview(session.page, session.stagehand);
+      await session.page.waitForLoadState("networkidle", 15_000).catch(() => {});
+      await session.page.waitForTimeout(800).catch(() => {});
+      await dumpVisibleButtons(session.page, `approve:afterContinue${round + 1}`);
+      const next = await clickPaymentGate(session.page);
+      if (next) gate = next;
+      if (gate?.provider === "razorpay") break;
+      if (!advanced && !next) break;
+    }
     if (!gate) {
+      // Session may still sit on an intermediate checkout step (e.g. Raven
+      // Shipping with "Continue to Review →" instead of the Review & Pay
+      // "Pay Now" control). Advance through continue/review controls first,
+      // then retry the gate once before failing.
+      for (let round = 0; round < 3; round++) {
+        const advanced = await clickContinueToReview(session.page, session.stagehand);
+        if (!advanced) break;
+        await session.page.waitForLoadState("networkidle", 15_000).catch(() => {});
+        await session.page.waitForTimeout(800).catch(() => {});
+        await dumpVisibleButtons(session.page, `approve:afterContinue${round + 1}`);
+        gate = await clickPaymentGate(session.page);
+        if (gate) break;
+      }
+    }
+    if (!gate) {
+      // No gate even after advancing: dump inline validation errors (Raven
+      // stays on Shipping when its form validation fails) so the failure
+      // message says WHY instead of a generic "no payment control".
+      const fieldErrors = (await session.page.evaluate(`
+        (() => {
+          const out = [];
+          for (const el of document.querySelectorAll('p, span')) {
+            const t = (el.innerText || "").replace(/\\s+/g, " ").trim();
+            if (/^(required|valid email required|10-digit number required|6-digit pincode required)$/i.test(t)) out.push(t);
+            if (out.length >= 8) break;
+          }
+          return out;
+        })()
+      `).catch(() => [])) as string[];
+      const detail = fieldErrors.length
+        ? ` Shipping validation blocks progress: ${fieldErrors.join("; ")}.`
+        : "";
       return {
         status: "failed",
-        message: "The merchant checkout has no visible Razorpay payment control. Automatic Test Mode payment is unavailable for this shop.",
+        message: `The merchant checkout has no visible Razorpay payment control. Automatic Test Mode payment is unavailable for this shop.${detail}`,
       };
     }
-    if (options.completeTestPayment && gate.provider === "razorpay") {
+    if (options.completeTestPayment) {
+      // Raven's Review & Pay control reads "Pay Now" with no "Razorpay" label,
+      // so the gate detects as `unknown` — but clicking it still mounts the
+      // merchant's Razorpay checkout.js modal. Attempt the Test Mode payment
+      // for either provider; the helper fails gracefully when no Razorpay
+      // iframe appears.
       const paymentPage = await paymentPageAfterGate(session.browser.context, session.page);
       await session.browser.context.setActivePage(paymentPage).catch(() => {});
       const payment = await completeRazorpayTestPayment(
@@ -1648,6 +1870,33 @@ export async function approveMerchantPayment(
         session.browser.context,
         options.method ?? "card",
       );
+      if (payment.status === "submitted") {
+        return { status: payment.status, message: payment.message, provider: gate.provider, orderConfirmation: payment.orderConfirmation, closedWindows: payment.closedWindows };
+      }
+      // Razorpay iframe never rendered its method list (no Card tab for
+      // locator or LLM) — fall back to the merchant's own designated test
+      // control when one exists (Raven: "⚡ Mock Payment (Test)"). This runs
+      // the merchant backend's real order pipeline; the message records that
+      // the mock control was used so the audit trail stays honest.
+      const mock = await tryMerchantMockPayment(session.browser.context, session.page);
+      if (mock.clicked) {
+        return {
+          status: "submitted",
+          message: `Razorpay card form did not render (${payment.message}); completed via the merchant's Mock Payment test control instead.`,
+          provider: gate.provider,
+          orderConfirmation: mock.orderConfirmation,
+          closedWindows: mock.closedWindows,
+        };
+      }
+      // No Razorpay surface (merchant's own card form, 3DS, etc.): report the
+      // opened gate honestly instead of a fake failure of the click itself.
+      if (gate.provider !== "razorpay") {
+        return {
+          status: "opened",
+          message: `Opened the merchant's ${gate.provider} payment control (${gate.label}). ${payment.message}`,
+          provider: gate.provider,
+        };
+      }
       return { status: payment.status, message: payment.message, provider: gate.provider, orderConfirmation: payment.orderConfirmation, closedWindows: payment.closedWindows };
     }
     return {
@@ -1758,11 +2007,11 @@ async function runCheckout(
         paymentStepReached: z
           .boolean()
           .describe("true if a 'Pay Now' / 'Place Order' / Razorpay payment button or payment form is now visible"),
-        orderSummary: OrderSummarySchema.optional(),
+        orderSummary: OrderSummarySchema.nullable(),
       }),
     );
     reachedPayment = detect.data.paymentStepReached;
-    orderSummary = detect.data.orderSummary;
+    orderSummary = detect.data.orderSummary ?? undefined;
   } catch (err) {
     console.warn(`[agent] payment-step detection skipped: ${(err as Error).message}`);
   }
@@ -2166,7 +2415,14 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
 
       throwIfAborted(request.signal);
 
-      if (request.basket?.length && localMerchantProfile) {
+      // Discovery is deliberately selection-gated: even when the query can
+      // be parsed as a local-merchant basket, do not add items or enter
+      // checkout before the shopper chooses a candidate. The basket runner is
+      // reserved for explicit checkout runs (for example, a direct API/CLI
+      // basket request). Otherwise it returns here and the normal search
+      // extraction below retains the browser at the results page for
+      // fulfillSelection.
+      if (request.basket?.length && localMerchantProfile && request.checkout !== false) {
         const basketResult = await runLocalMerchantBasket(
           page,
           browser.context,
@@ -2275,6 +2531,32 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       // extracted URL is kept as a minimal same-origin fallback when Firecrawl
       // misses a product (off-origin / placeholder URLs are dropped).
       const products = normalizeExtractedProducts(extracted.data.products);
+      // Local SPAs can expose product cards without including their href in
+      // the accessibility snapshot. Resolve those URLs from the merchant's
+      // live catalog before the generic Firecrawl/LLM URL path runs. Without
+      // this, discovery can show a product but selection has no URL to drive
+      // the retained browser session.
+      if (localMerchantProfile) {
+        try {
+          const catalog = await scrapeMerchantCatalog(page, localMerchantProfile);
+          for (const product of products) {
+            if (product.url) continue;
+            const match = matchCatalogProduct(product.name, catalog, {
+              stopTokens: localMerchantProfile.basketStopTokens,
+            });
+            if (match) product.url = match.product.url;
+          }
+          console.log(
+            `[agent] local catalog resolved ${products.filter((p) => p.url).length}/${products.length} product URLs`,
+          );
+        } catch (localCatalogError) {
+          console.warn(
+            `[agent] local catalog URL resolution unavailable: ${
+              localCatalogError instanceof Error ? localCatalogError.message : String(localCatalogError)
+            }`,
+          );
+        }
+      }
       const storeDomain = storeDomainFromUrl(store.baseUrl);
       const pageUrl = await page.url();
       try {

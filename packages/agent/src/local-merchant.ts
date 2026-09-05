@@ -47,6 +47,11 @@ export interface LocalMerchantProfile {
    * the storage shape.
    */
   persistedCartCountExpr?: string;
+  /** JS expression clearing the merchant's persisted cart (e.g. a localStorage
+   * key). Run before adding so only the explicitly selected item is ever
+   * charged — local SPAs persist carts across navigations and repeated
+   * add-to-cart retries otherwise accumulate phantom units. */
+  clearCartExpr?: string;
   /** Free-shipping / flat-rate rule in MAJOR units. */
   shippingRule?: (subtotalMajor: number) => number;
   /** How to fill the checkout's shipping form. */
@@ -80,10 +85,12 @@ export function getRegisteredLocalMerchants(): readonly LocalMerchantProfile[] {
   return [...registry.values()];
 }
 
-/** Look a profile up by store key ("raven") — case-insensitive. */
+/** Look a profile up by store key ("raven", "local-merchant", "local merchant") — case-insensitive. */
 export function findLocalMerchant(storeKey: string | undefined): LocalMerchantProfile | undefined {
   if (!storeKey) return undefined;
-  return registry.get(storeKey.trim().toLowerCase());
+  const key = storeKey.trim().toLowerCase();
+  const normalized = key.replace(/[\s_]+/g, "-");
+  return registry.get(key) ?? registry.get(normalized);
 }
 
 /** Find the profile whose origin matches a full target URL, if any. */
@@ -343,6 +350,27 @@ export async function ensureLocalMerchantAccount(
 // ── Deterministic checkout (no payment) ──────────────────────────────────────
 
 /**
+ * Empty the merchant's persisted cart (when the profile knows how) and reload
+ * so the UI reflects it. Best-effort: profiles without `clearCartExpr` keep
+ * whatever the browser holds. Returns the post-clear item count.
+ */
+export async function clearMerchantCart(
+  page: AgentPage,
+  profile: LocalMerchantProfile,
+): Promise<number> {
+  if (!profile.clearCartExpr) return -1;
+  await page.evaluate(profile.clearCartExpr).catch(() => {});
+  const here = await page.url().catch(() => "");
+  if (here) await page.goto(here, { waitUntil: "domcontentloaded" }).catch(() => {});
+  await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+  const count = profile.persistedCartCountExpr
+    ? Number(await page.evaluate(profile.persistedCartCountExpr).catch(() => -1))
+    : -1;
+  console.log(`[agent] cleared ${profile.name} cart (items now: ${count})`);
+  return count;
+}
+
+/**
  * Drive a local merchant's deterministic add-to-cart → checkout flow using the
  * profile's form description. Stops before any payment control — completing
  * the purchase requires explicit approval (see approveMerchantPayment).
@@ -366,6 +394,10 @@ export async function runLocalMerchantCheckout(
   const context = opts?.context;
   if (stagehand && context) {
     if (!alreadyAdded) {
+      // Start from an empty merchant cart so only the selected item is ever
+      // charged (Raven persists its cart in localStorage — stale runs left
+      // 3× Dark Ocean + extras behind, producing ₹3,246 totals).
+      await clearMerchantCart(page, profile);
       const cart = await llmAddToCart(page, context, stagehand);
       if (cart.status !== "added_to_cart") return cart;
       // Default: stop once the item is in the cart. Only continue to the
@@ -421,15 +453,135 @@ export async function runLocalMerchantCheckout(
       }
     }
 
-    const continued = await actWithFallback(
-      page,
-      context,
-      stagehand,
-      "Click the button to continue, review, or place the order.",
-      "Click the continue, review, or proceed button.",
-    );
+    // Raven-style checkouts are multi-step (Shipping → "Continue to Review →"
+    // → Review & Pay → "Pay Now" → Razorpay). The old code clicked continue
+    // once and then gave up, leaving the retained session parked on the
+    // Shipping step — approveMerchantPayment later found no gate and failed
+    // with "no visible Razorpay payment control". Advance step-by-step until
+    // a payment gate appears (or we run out of continue controls).
+    // Best-effort: select a saved address when the merchant offers one, so
+    // "Continue to Review" is enabled.
+    await page.evaluate(`
+      (() => {
+        const els = Array.from(document.querySelectorAll('input[type="radio"], [role="radio"]'));
+        const target = els.find((el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && el.getAttribute('aria-checked') !== 'true' && !(el instanceof HTMLInputElement && el.checked);
+        });
+        if (target) target.click();
+      })()
+    `).catch(() => {});
+    let continued = false;
+    for (let round = 0; round < 3; round++) {
+      const gateEarly = await detectPaymentGate(page);
+      if (gateEarly) break;
+      // DOM-evaluate click first: immune to split text nodes
+      // ("Continue to Review" + "→") that locator innerText matching can miss.
+      const viaDom = await page.evaluate(`
+        (() => {
+          const re = /continue to review/i;
+          const candidates = Array.from(document.querySelectorAll(
+            'button, [role="button"], a, input[type="submit"], input[type="button"]'
+          ));
+          for (const element of candidates) {
+            const style = window.getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            if (style.display === 'none' || style.visibility === 'hidden' || rect.width === 0 || rect.height === 0) continue;
+            const label = [element.innerText, element.getAttribute('aria-label'), element.getAttribute('title'), element.getAttribute('value')]
+              .filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim();
+            if (re.test(label)) {
+              element.click();
+              return true;
+            }
+          }
+          return false;
+        })()
+      `).catch(() => false);
+      const clicked =
+        viaDom ||
+        (await clickVisibleText(page, /continue to review/i).catch(() => false)) ||
+        (await actWithFallback(
+          page,
+          context,
+          stagehand,
+          "Click the 'Continue to Review' button to advance from Shipping to Review & Pay. If a saved address is shown, select it first.",
+          "Click the continue to review button.",
+        ));
+      if (!clicked) {
+        // Diagnostics: prove what controls the agent actually saw.
+        const visible = await page.evaluate(`
+          (() => {
+            const out = [];
+            for (const el of document.querySelectorAll('button, [role="button"], a')) {
+              const r = el.getBoundingClientRect();
+              if (r.width === 0 || r.height === 0) continue;
+              const t = (el.innerText || "").replace(/\\s+/g, " ").trim();
+              if (t) out.push(t.slice(0, 60));
+              if (out.length >= 25) break;
+            }
+            return out;
+          })()
+        `).catch(() => [] as string[]);
+        console.log(`[agent:checkout] no continue control clicked; visible: ${JSON.stringify(visible)}`);
+        break;
+      }
+      continued = true;
+      await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+      await page.waitForTimeout(800).catch(() => {});
+    }
+    // One final generic continue attempt for non-Raven copy ("Continue",
+    // "Review order", ...), then stop — payment itself needs approval.
+    if (!(await detectPaymentGate(page))) {
+      const generic = await actWithFallback(
+        page,
+        context,
+        stagehand,
+        "Click the button to continue, review, or place the order.",
+        "Click the continue, review, or proceed button.",
+      );
+      continued = continued || generic;
+      await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+    }
     log("fill_shipping", continued ? "done" : "skipped");
-    await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+
+    // Verify the step actually advanced. Raven's handleNext() (Checkout.tsx)
+    // stays on Shipping when validateShipping() fails — the click "lands" but
+    // nothing moves, which previously looked like "Continue to Review was
+    // never clicked". Surface the inline validation errors and make one
+    // targeted repair attempt instead of failing blind.
+    const readPageText = async (): Promise<string> =>
+      ((await page.evaluate(`(document.body?.innerText || "")`).catch(() => "")) as string);
+    let pageText = await readPageText();
+    let onReviewStep = /review your order|pay now/i.test(pageText);
+    if (!onReviewStep && /shipping information/i.test(pageText)) {
+      const fieldErrors = (await page.evaluate(`
+        (() => {
+          const out = [];
+          for (const el of document.querySelectorAll('p, span')) {
+            const t = (el.innerText || "").replace(/\\s+/g, " ").trim();
+            if (/^(required|valid email required|10-digit number required|6-digit pincode required)$/i.test(t)) out.push(t);
+            if (out.length >= 8) break;
+          }
+          return out;
+        })()
+      `).catch(() => [])) as string[];
+      console.log(`[agent:checkout] still on Shipping; validation errors: ${JSON.stringify(fieldErrors)}`);
+      log("fill_shipping", "failed", fieldErrors.length ? `Validation: ${fieldErrors.join("; ")}` : "Still on Shipping step");
+      const repaired = await actWithFallback(
+        page,
+        context,
+        stagehand,
+        `The checkout is stuck on Shipping Information${fieldErrors.length ? ` with validation errors: ${fieldErrors.join("; ")}` : ""}. Fix it: ${fieldErrors.length ? "fill each flagged field with valid test data (names/address/city non-empty, valid email, 10-digit phone, 6-digit pincode, state Maharashtra)" : "select the shown saved address card"} — then click 'Continue to Review →' to reach Review & Pay.`,
+        "Fix the flagged shipping fields with valid test data, then click continue to review.",
+      );
+      if (repaired) {
+        await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+        await page.waitForTimeout(800).catch(() => {});
+        pageText = await readPageText();
+        onReviewStep = /review your order|pay now/i.test(pageText);
+        log("repair_shipping", onReviewStep ? "done" : "failed");
+      }
+    }
 
     const paymentGate = await detectPaymentGate(page);
     log("reach_payment_gate", paymentGate ? "done" : "skipped", paymentGate?.label);
@@ -495,9 +647,18 @@ export async function runLocalMerchantCheckout(
     }
   }
 
-  const continued = await clickVisibleText(page, /continue|review|place order|proceed/i).catch(() => false);
+  // Multi-step checkouts (Shipping → Continue to Review → Review & Pay):
+  // keep clicking continue controls until the payment gate appears.
+  let continued = false;
+  for (let round = 0; round < 3; round++) {
+    if (await detectPaymentGate(page)) break;
+    const clicked = await clickVisibleText(page, /continue to review|continue|review|place order|proceed/i).catch(() => false);
+    if (!clicked) break;
+    continued = true;
+    await page.waitForLoadState("networkidle", 15_000).catch(() => {});
+    await page.waitForTimeout(800).catch(() => {});
+  }
   log("fill_shipping", continued ? "done" : "skipped");
-  await page.waitForLoadState("networkidle", 15_000).catch(() => {});
 
   const paymentGate = await detectPaymentGate(page);
   log("reach_payment_gate", paymentGate ? "done" : "skipped", paymentGate?.label);
@@ -577,6 +738,7 @@ export async function runLocalMerchantBasket(
 ): Promise<{ matches: Product[]; picked: Product; basket: BasketItem[]; checkout: CheckoutResult }> {
   // Resolve EVERY requested item against the live catalog up front so we fail
   // fast (with a helpful listing) instead of mid-checkout.
+  await clearMerchantCart(page, profile);
   const catalog = await scrapeMerchantCatalog(page, profile);
   if (!catalog.length) {
     throw new Error(`Could not read the ${profile.name} product catalog from ${profile.shopPath}.`);
@@ -690,6 +852,7 @@ export async function runLocalMerchantBasket(
         price: `${profile.currencySymbol}${((product.priceValue ?? 0) * item.quantity).toLocaleString()}`,
       })),
       subtotal: `${profile.currencySymbol}${total.toLocaleString()}`,
+      tax: null,
       shipping: `${profile.currencySymbol}${shipping.toLocaleString()}`,
       total: `${profile.currencySymbol}${merchantTotal.toLocaleString()}`,
     };
