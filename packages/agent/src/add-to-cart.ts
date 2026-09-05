@@ -73,9 +73,12 @@ async function getAuthenticationRequirement(
   try {
     const result = await stagehand.extract(
       "Is sign-in or account creation required before this shopper can add the product to the cart or continue? Answer true only when the page is blocked by a login/register screen, modal, or required account action. A normal sign-in link that is not blocking the current action is false.",
-      z.object({ required: z.boolean(), reason: z.string().optional() }),
+      // Required-but-nullable (never `.optional()`): the Browserbase-hosted
+      // extractor enforces strict structured outputs where `required` must
+      // list every key in `properties`.
+      z.object({ required: z.boolean(), reason: z.string().nullable() }),
     );
-    return result.data;
+    return { required: result.data.required, reason: result.data.reason ?? undefined };
   } catch (err) {
     console.warn(`[agent] authentication check skipped: ${(err as Error).message}`);
     return { required: false };

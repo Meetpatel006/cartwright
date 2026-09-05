@@ -37,10 +37,12 @@ export function registerStorePresets(presets: Record<string, StorePreset>): void
   for (const [key, preset] of Object.entries(presets)) registerStorePreset(key, preset);
 }
 
-/** Look a preset up by key ("amazon-in") — case-insensitive. */
+/** Look a preset up by key ("amazon-in", "local-merchant", "raven") — case-insensitive and dash/space flexible. */
 export function findStorePreset(storeKey: string | undefined): StorePreset | undefined {
   if (!storeKey) return undefined;
-  return registry.get(storeKey.trim().toLowerCase());
+  const key = storeKey.trim().toLowerCase();
+  const normalized = key.replace(/[\s_]+/g, "-");
+  return registry.get(key) ?? registry.get(normalized);
 }
 
 /** All registered presets keyed by store key. */
@@ -50,20 +52,27 @@ export function getStorePresets(): Record<string, StorePreset> {
 
 // ── Built-in presets ─────────────────────────────────────────────────────────
 
+const LOCAL_MERCHANT_BASE =
+  (typeof process !== "undefined" && process.env?.LOCAL_MERCHANT_URL) || "http://localhost:5173";
+
 const BUILT_IN_PRESETS: Record<string, StorePreset> = {
   nike: {
     name: "Nike India",
-    // nike.com/in now redirects to the India catalogue landing page and drops
-    // its query. Start on Nike India's canonical storefront and use its search control.
+    // Nike India is operated by Nykaa E-Retail at nike.in (confirmed via TLS cert).
+    // nike.com/in/w?q= always redirects to nike.in/nike_store/c/2 (losing the query)
+    // so url-mode with a search template doesn't work — the query is stripped.
+    // nike.in/search is a 404; the only 200 landing page is nike.in/nike_store/c/2.
+    // The search control there is a click-to-open icon + hidden <input>; store-search.ts
+    // handles this with a click-then-fill sequence before looking for a fillable input.
     baseUrl: "https://www.nike.in",
     searchMode: "act",
-    actBaseUrl: "https://www.nike.in",
+    actBaseUrl: "https://www.nike.in/nike_store/c/2",
   },
   "nike-in": {
     name: "Nike India",
     baseUrl: "https://www.nike.in",
     searchMode: "act",
-    actBaseUrl: "https://www.nike.in",
+    actBaseUrl: "https://www.nike.in/nike_store/c/2",
   },
   amazon: {
     name: "Amazon India",
@@ -91,6 +100,36 @@ const BUILT_IN_PRESETS: Record<string, StorePreset> = {
     // slower natural-language search-box flow. Optional params: &page=N&sort=…
     searchMode: "url",
     searchUrlTemplate: "https://www.flipkart.com/search?q={query}",
+  },
+  raven: {
+    name: "Raven Scents",
+    baseUrl: LOCAL_MERCHANT_BASE,
+    searchMode: "act",
+    actBaseUrl: `${LOCAL_MERCHANT_BASE}/shop`,
+  },
+  "raven-scents": {
+    name: "Raven Scents",
+    baseUrl: LOCAL_MERCHANT_BASE,
+    searchMode: "act",
+    actBaseUrl: `${LOCAL_MERCHANT_BASE}/shop`,
+  },
+  "raven scents": {
+    name: "Raven Scents",
+    baseUrl: LOCAL_MERCHANT_BASE,
+    searchMode: "act",
+    actBaseUrl: `${LOCAL_MERCHANT_BASE}/shop`,
+  },
+  "local-merchant": {
+    name: "Raven Scents",
+    baseUrl: LOCAL_MERCHANT_BASE,
+    searchMode: "act",
+    actBaseUrl: `${LOCAL_MERCHANT_BASE}/shop`,
+  },
+  "local merchant": {
+    name: "Raven Scents",
+    baseUrl: LOCAL_MERCHANT_BASE,
+    searchMode: "act",
+    actBaseUrl: `${LOCAL_MERCHANT_BASE}/shop`,
   },
 };
 

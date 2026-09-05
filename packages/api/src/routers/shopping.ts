@@ -165,6 +165,7 @@ export const shoppingRouter = router({
       z.object({
         sessionId: z.string().min(1),
         productId: z.string().min(1),
+        paymentMode: z.enum(["merchant", "cartwright"]).optional(),
         /** Client idempotency key for the resulting purchase request. */
         idempotencyKey: z.string().min(1).optional(),
       }),
@@ -175,7 +176,7 @@ export const shoppingRouter = router({
         userId: ctx.session.user.id,
         sessionId: input.sessionId,
         productId: input.productId,
-        paymentMode: "cartwright",
+        paymentMode: input.paymentMode,
         idempotencyKey: input.idempotencyKey,
         correlationId,
       });

@@ -122,6 +122,11 @@ describe("parseShoppingRequest — merchant preferences", () => {
     const { preferred } = extractMerchantPreferences("perfume from raven scents under ₹2000");
     expect(preferred).toContain("raven scents");
   });
+
+  test("merchant 'local-merchant' is recognized as preference", () => {
+    const { preferred } = extractMerchantPreferences("perfume from local-merchant under ₹2000");
+    expect(preferred).toContain("local-merchant");
+  });
 });
 
 describe("parseShoppingRequest — constraints", () => {

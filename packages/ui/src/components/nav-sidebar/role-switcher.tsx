@@ -64,8 +64,8 @@ export function RoleSwitcher() {
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="start" side="bottom" className="z-50 w-(--anchor-width) space-y-0.5 rounded-xl border border-border bg-popover p-1 text-xs text-popover-foreground shadow-none backdrop-blur-md">
-          <DropdownMenuGroup>
+        <DropdownMenuContent align="start" side="bottom" className="z-50 w-(--anchor-width) rounded-xl border border-border bg-popover p-1 text-xs text-popover-foreground shadow-none backdrop-blur-md">
+          <DropdownMenuGroup className="flex flex-col gap-y-0.5">
             {ROLES.map((option) => {
               const Icon = option.icon;
               const isActive = option.value === currentRole;
@@ -74,7 +74,7 @@ export function RoleSwitcher() {
                   key={option.value}
                   onClick={() => handleSwitch(option)}
                   className={
-                    'flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ' +
+                    'flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors ' +
                     (isActive
                       ? 'bg-muted font-semibold text-foreground'
                       : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground')

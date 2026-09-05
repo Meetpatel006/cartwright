@@ -26,7 +26,7 @@ export const ClarifyingQuestionSchema = z.object({
 });
 
 export const ExtractedShoppingIntentSchema = z.object({
-  store: z.string().nullable().optional().describe("Store name, preset key, or website URL (e.g., 'amazon', 'flipkart', 'raven', 'https://ravenscents.com')"),
+  store: z.string().nullable().optional().describe("Store name, preset key, or website URL (e.g., 'amazon', 'flipkart', 'raven', 'local-merchant', 'https://ravenscents.com')"),
   cleanSearchQuery: z.string().min(1).describe("Concise keywords suitable for a store search bar (e.g., 'mechanical keyboard') stripped of filler phrases and budget/rating constraints"),
   brands: z.array(z.string()).default([]).describe("Explicit brand names mentioned by user (e.g., ['Keychron', 'Royal Kludge'])"),
   category: z.string().nullable().optional().describe("High-level category (e.g., 'electronics', 'apparel', 'beauty', 'home')"),

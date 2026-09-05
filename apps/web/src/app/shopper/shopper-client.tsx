@@ -36,6 +36,7 @@ import {
   Maximize2,
   Video,
   Plus,
+  Sparkles,
 } from "lucide-react";
 
 export type TransactionStatus =
@@ -65,6 +66,26 @@ declare global {
 /*  Helpers                                                                   */
 /* -------------------------------------------------------------------------- */
 
+const BROWSER_MODE_STORAGE_KEY = "cartwright:browserMode";
+
+/** Mode the user picked, surviving the /shopper -> /shopper/[id] remount. */
+function readPersistedBrowserMode(): "local" | "browserbase" {
+  if (typeof window === "undefined") return "local";
+  try {
+    const param = new URLSearchParams(window.location.search).get("browser");
+    if (param === "browserbase" || param === "local") {
+      window.sessionStorage.setItem(BROWSER_MODE_STORAGE_KEY, param);
+      return param;
+    }
+    if (window.sessionStorage.getItem(BROWSER_MODE_STORAGE_KEY) === "browserbase") {
+      return "browserbase";
+    }
+  } catch {
+    /* storage/URL unavailable (SSR) — fall through to local */
+  }
+  return "local";
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Page                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -78,7 +99,21 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
   const pathname = usePathname();
 
   const [query, setQuery] = useState("wireless headphones under 5000");
-  const [browserMode, setBrowserMode] = useState<"local" | "browserbase">("local");
+  // The create->run flow navigates to /shopper/[id], which remounts this
+  // component and resets useState — silently dropping a "Cloud" pick back to
+  // "local". Persist the choice in sessionStorage (written on every toggle and
+  // read on mount) so the auto-run on the session page uses the mode the user
+  // actually picked. The ?browser= URL param is kept for shareable links and
+  // takes precedence when present.
+  const [browserMode, setBrowserModeState] = useState<"local" | "browserbase">(readPersistedBrowserMode);
+  const setBrowserMode = (mode: "local" | "browserbase") => {
+    try {
+      window.sessionStorage.setItem(BROWSER_MODE_STORAGE_KEY, mode);
+    } catch {
+      /* storage unavailable — state still updates for this view */
+    }
+    setBrowserModeState(mode);
+  };
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialSessionId ?? null);
 
@@ -97,9 +132,9 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
     ...trpc.shopping.run.mutationOptions(),
     onSuccess: (data) => {
       setSelectedSessionId(data.sessionId);
-      const target = `/shopper/${data.sessionId}`;
-      if (pathname !== target) {
-        router.push(target as any, { scroll: false });
+      const targetPath = `/shopper/${data.sessionId}`;
+      if (pathname !== targetPath) {
+        router.push(`${targetPath}?browser=${browserMode}` as any, { scroll: false });
       }
     },
   });
@@ -514,12 +549,20 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
     setSelectedSessionId(null);
     setPendingClarification(null);
 
+    // Persist the picked backend before navigating: the session page remounts
+    // this component and its auto-run must reuse this exact mode.
+    try {
+      window.sessionStorage.setItem(BROWSER_MODE_STORAGE_KEY, browserMode);
+    } catch {
+      /* storage unavailable — URL param still carries the mode */
+    }
+
     const key = crypto.randomUUID();
     setIdempotencyKey(key);
     createSession.mutate({ query: cleanQ, idempotencyKey: key }, {
       onSuccess: ({ sessionId }) => {
         setSelectedSessionId(sessionId);
-        router.push(`/shopper/${sessionId}`, { scroll: false });
+        router.push(`/shopper/${sessionId}?browser=${browserMode}`, { scroll: false });
       },
     });
   };
@@ -528,9 +571,16 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
     if (!runResult) return;
     approve.reset();
     initiatePayment.reset();
+    const candidate = runResult.recommendations?.find((r) => r.product.id === productId);
+    const merchantName = candidate?.product?.merchant || targetStoreDisplay;
+    const isLocalStore =
+      merchantName.toLowerCase().includes("raven") ||
+      merchantName.toLowerCase().includes("local-merchant") ||
+      merchantName.toLowerCase().includes("local merchant");
     select.mutate({
       sessionId: runResult.sessionId,
       productId,
+      paymentMode: isLocalStore ? "merchant" : "cartwright",
       idempotencyKey: crypto.randomUUID(),
     });
   };
@@ -684,7 +734,7 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                   <span className="text-muted-foreground font-medium">Try:</span>
                   {[
                     { label: "Wireless Headphones on Amazon under ₹5k", icon: Headphones, q: "wireless headphones on amazon under 5000" },
-                    { label: "Espresso Coffee Machine on Raven under ₹15k", icon: Coffee, q: "espresso coffee maker on raven under 15000" },
+                    { label: "Gardenia Perfume on Raven Scents under ₹5k", icon: Sparkles, q: "gardenia perfume on raven scents under 5000" },
                     { label: "Nike Running Shoes under ₹6k", icon: Footprints, q: "running shoes from nike under 6000" },
                   ].map((item) => {
                     const Icon = item.icon;
@@ -719,6 +769,28 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
                   <h1 className="text-xl font-bold tracking-tight text-foreground capitalize truncate max-w-lg">
                     {loadedSession.data?.rawQuery || query || "Shopping Session"}
                   </h1>
+                  {/* Backend that actually executed this run (echoed by the server). */}
+                  {runResult?.browserMode && (
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold shrink-0",
+                        runResult.browserMode === "browserbase"
+                          ? "border-sky-500/40 bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400"
+                          : "border-border bg-muted text-muted-foreground"
+                      )}
+                      title={
+                        runResult.browserMode === "browserbase"
+                          ? "This run executed on Browserbase cloud"
+                          : "This run executed on local Chrome"
+                      }
+                    >
+                      {run.isPending
+                        ? `Running on ${runResult.browserMode === "browserbase" ? "Cloud" : "Local"}…`
+                        : runResult.browserMode === "browserbase"
+                          ? "Cloud · Browserbase"
+                          : "Local Chrome"}
+                    </span>
+                  )}
                 </div>
 
                 {/* Right: Actions */}
@@ -980,8 +1052,11 @@ export default function ShopperPage({ initialSessionId }: ShopperPageProps) {
             runResult?.recommendations?.[0]?.product?.productUrl ||
             (typeof targetStoreDisplay === "string" && targetStoreDisplay.startsWith("http")
               ? targetStoreDisplay
-              : targetStoreDisplay.toLowerCase() === "raven"
-              ? "https://ravenscents.com"
+              : targetStoreDisplay.toLowerCase() === "raven" ||
+                targetStoreDisplay.toLowerCase().includes("raven") ||
+                targetStoreDisplay.toLowerCase().includes("local-merchant") ||
+                targetStoreDisplay.toLowerCase().includes("local merchant")
+              ? (process.env.NEXT_PUBLIC_LOCAL_MERCHANT_URL || "http://localhost:5173")
               : targetStoreDisplay.toLowerCase().includes("boat")
               ? "https://www.boat-lifestyle.com"
               : "https://www.boat-lifestyle.com")

@@ -8,7 +8,7 @@ describe("India store presets", () => {
       name: "Nike India",
       baseUrl: "https://www.nike.in",
       searchMode: "act",
-      actBaseUrl: "https://www.nike.in",
+      actBaseUrl: "https://www.nike.in/nike_store/c/2",
     });
     expect(findStorePreset("nike-in")).toEqual(findStorePreset("nike"));
   });
@@ -19,5 +19,20 @@ describe("India store presets", () => {
       baseUrl: "https://www.amazon.in",
       searchUrlTemplate: "https://www.amazon.in/s?k={query}",
     });
+  });
+
+  test("resolves local-merchant and raven scents store presets", () => {
+    const expected = {
+      name: "Raven Scents",
+      baseUrl: "http://localhost:5173",
+      searchMode: "act",
+      actBaseUrl: "http://localhost:5173/shop",
+    };
+
+    expect(findStorePreset("raven")).toMatchObject(expected);
+    expect(findStorePreset("raven-scents")).toMatchObject(expected);
+    expect(findStorePreset("raven scents")).toMatchObject(expected);
+    expect(findStorePreset("local-merchant")).toMatchObject(expected);
+    expect(findStorePreset("local merchant")).toMatchObject(expected);
   });
 });

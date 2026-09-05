@@ -39,6 +39,8 @@ const MERCHANT_TOKENS = [
   "adidas",
   "apple",
   "samsung",
+  "local-merchant",
+  "local merchant",
   "raven",
   "raven scents",
   "sony",

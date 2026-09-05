@@ -10,6 +10,7 @@ import "./merchants/raven-scents";
 
 export * from "./razorpay";
 export * from "./shopping-agent";
+export * from "./local-merchant";
 export * from "./live-feed";
 
 // ── Part B: Agentic Shopping & Commerce Intelligence ────────────────────────
