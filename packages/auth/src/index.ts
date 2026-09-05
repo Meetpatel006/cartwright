@@ -16,6 +16,7 @@ export function createAuth() {
     }),
     trustedOrigins: [
       env.BETTER_AUTH_URL,
+      "https://cartwright-kappa.vercel.app",
       "http://localhost:3000",
       "http://localhost:3001",
       "http://localhost:3002",
