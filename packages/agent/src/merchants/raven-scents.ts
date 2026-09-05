@@ -12,10 +12,13 @@
  */
 import { registerLocalMerchant, type LocalMerchantProfile } from "../local-merchant";
 
+const LOCAL_MERCHANT_URL =
+  (typeof process !== "undefined" && process.env?.LOCAL_MERCHANT_URL) || "http://localhost:5173";
+
 export const RAVEN_SCENTS_PROFILE: LocalMerchantProfile = {
   key: "raven",
   name: "Raven Scents",
-  baseUrl: "http://localhost:5173",
+  baseUrl: LOCAL_MERCHANT_URL,
   shopPath: "/shop",
   cartPath: "/cart",
   loginPath: "/login",
@@ -31,6 +34,15 @@ export const RAVEN_SCENTS_PROFILE: LocalMerchantProfile = {
         const state = raw ? JSON.parse(raw)?.state : null;
         return (state?.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
       } catch { return 0; }
+    })()
+  `,
+
+  // Raven persists its cart in localStorage, so every add accumulates unless
+  // the cart is cleared first (stale runs left 3× Dark Ocean + extras in it).
+  clearCartExpr: `
+    (() => {
+      try { localStorage.removeItem('raven-cart'); } catch {}
+      try { sessionStorage.removeItem('raven_coupon'); } catch {}
     })()
   `,
 
@@ -66,3 +78,7 @@ export const RAVEN_SCENTS_PROFILE: LocalMerchantProfile = {
 };
 
 registerLocalMerchant(RAVEN_SCENTS_PROFILE);
+registerLocalMerchant({ ...RAVEN_SCENTS_PROFILE, key: "raven-scents" });
+registerLocalMerchant({ ...RAVEN_SCENTS_PROFILE, key: "raven scents" });
+registerLocalMerchant({ ...RAVEN_SCENTS_PROFILE, key: "local-merchant" });
+registerLocalMerchant({ ...RAVEN_SCENTS_PROFILE, key: "local merchant" });

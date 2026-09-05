@@ -167,9 +167,15 @@ export async function approveTransaction(
 
     if (decision.outcome === "confirmed") {
       assertTransition("PAYMENT_PROCESSING", "PAYMENT_SUCCEEDED");
+      // Persist the card-drive evidence on the row itself for
+      // cross-verification (merchant order id + method + captured amount),
+      // not just inside audit metadata. Card PAN/CVV are never stored.
+      const confirmedOrderId = merchantResult.orderConfirmation?.orderId ?? null;
       const settledRow = await updateTransaction(transaction.id, {
         status: "PAYMENT_SUCCEEDED",
         approvedAmountInMinor: transaction.amountInMinor,
+        ...(confirmedOrderId ? { merchantOrderId: confirmedOrderId } : {}),
+        paymentMethod: input.method ?? "card",
       });
       if (!settledRow) throw new TransactionNotFoundError();
       await settleReservation(transaction.id);
@@ -184,6 +190,9 @@ export async function approveTransaction(
         metadata: {
           merchantStatus: merchantResult.status,
           provider: merchantResult.provider ?? null,
+          paymentMethod: input.method ?? "card",
+          merchantMessage: merchantResult.message,
+          merchantOrderId: merchantResult.orderConfirmation?.orderId ?? null,
           orderConfirmation: merchantResult.orderConfirmation ?? null,
         },
       });
