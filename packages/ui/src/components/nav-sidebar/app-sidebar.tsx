@@ -30,6 +30,7 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   activeChatId?: string | null;
   onSelectChat?: (chatId: string) => void;
   onNewChat?: () => void;
+  onLogout?: () => void;
 }
 
 export function AppSidebar({
@@ -42,6 +43,7 @@ export function AppSidebar({
   activeChatId,
   onSelectChat,
   onNewChat,
+  onLogout,
   ...props
 }: AppSidebarProps) {
   const pathname = usePathname();
@@ -146,7 +148,7 @@ export function AppSidebar({
           />
         )}
       </SidebarContent>
-      <NavFooter user={data.user} />
+      <NavFooter user={data.user} onLogout={onLogout} />
     </Sidebar>
   );
 }

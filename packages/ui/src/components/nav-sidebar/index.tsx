@@ -17,6 +17,7 @@ interface NavSidebarProps {
   activeChatId?: string | null;
   onSelectChat?: (chatId: string) => void;
   onNewChat?: () => void;
+  onLogout?: () => void;
 }
 
 export default function NavSidebar({
@@ -30,6 +31,7 @@ export default function NavSidebar({
   activeChatId,
   onSelectChat,
   onNewChat,
+  onLogout,
 }: NavSidebarProps) {
   return (
     <SidebarProvider>
@@ -43,6 +45,7 @@ export default function NavSidebar({
         activeChatId={activeChatId}
         onSelectChat={onSelectChat}
         onNewChat={onNewChat}
+        onLogout={onLogout}
       />
       <SidebarInset className="overflow-hidden h-screen max-h-screen flex flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 sm:hidden">

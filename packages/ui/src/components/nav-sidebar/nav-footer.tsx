@@ -25,12 +25,14 @@ const themeOptions = [
 
 export function NavFooter({
   user,
+  onLogout,
 }: {
   user: {
     name: string;
     email: string;
     avatar: string;
   };
+  onLogout?: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
   const { theme, setTheme } = useTheme();
@@ -79,7 +81,9 @@ export function NavFooter({
                     {theme === value && <Check className="ml-auto" size={14} />}
                   </DropdownMenuItem>
                 ))}
-                <DropdownMenuItem className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground">
+                <DropdownMenuItem
+                  onClick={onLogout}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground">
                   <LogOut aria-hidden="true" className="opacity-60" size={16} />
                   Logout
                 </DropdownMenuItem>

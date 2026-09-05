@@ -6,6 +6,7 @@ import { useMemo } from "react";
 
 import NavSidebar from "@cartwright/ui/components/nav-sidebar";
 import type { ShoppingSession, MerchantChat } from "@cartwright/ui/components/nav-sidebar/types";
+import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/utils/trpc";
 
@@ -82,6 +83,20 @@ export default function SidebarWrapper({
     router.push('/merchant/chat' as any);
   };
 
+  const handleLogout = async () => {
+    await authClient.signOut({
+      fetchOptions: {
+        onSuccess: () => {
+          router.push("/login");
+          router.refresh();
+        },
+        onError: (ctx) => {
+          toast.error(ctx.error.message || "Failed to log out. Please try again.");
+        },
+      },
+    });
+  };
+
   if (!showSidebar) {
     return <>{children}</>;
   }
@@ -97,6 +112,7 @@ export default function SidebarWrapper({
       activeChatId={activeChatId}
       onSelectChat={handleSelectChat}
       onNewChat={handleNewChat}
+      onLogout={handleLogout}
     >
       {children}
     </NavSidebar>
