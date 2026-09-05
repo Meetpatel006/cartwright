@@ -10,7 +10,8 @@
         "DATABASE_URL",
         "BETTER_AUTH_SECRET",
         "BETTER_AUTH_URL",
-        "RAZORPAY_WEBHOOK_SECRET"
+        "RAZORPAY_WEBHOOK_SECRET",
+        "VERCEL"
       ]
     },
     "lint": {
