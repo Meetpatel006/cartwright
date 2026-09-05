@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  cleanFallbackSearchQuery,
   extractCategory,
   extractConstraints,
   extractMerchantPreferences,
@@ -69,6 +70,14 @@ describe("parseShoppingRequest — currency normalization", () => {
   });
 });
 
+describe("cleanFallbackSearchQuery", () => {
+  test("removes shopping prose without removing the product requirements", () => {
+    expect(
+      cleanFallbackSearchQuery("wired earbuds with low latency under 2k on Flipkart, and also any rating will be fine"),
+    ).toBe("wired earbuds with low latency");
+  });
+});
+
 describe("parseShoppingRequest — quantity extraction", () => {
   test("extractQuantity handles common phrasings", () => {
     expect(extractQuantity("buy 3 t-shirts under $50")).toBe(3);
@@ -112,6 +121,11 @@ describe("parseShoppingRequest — merchant preferences", () => {
   test("multi-word merchant 'raven scents' is captured whole", () => {
     const { preferred } = extractMerchantPreferences("perfume from raven scents under ₹2000");
     expect(preferred).toContain("raven scents");
+  });
+
+  test("merchant 'local-merchant' is recognized as preference", () => {
+    const { preferred } = extractMerchantPreferences("perfume from local-merchant under ₹2000");
+    expect(preferred).toContain("local-merchant");
   });
 });
 

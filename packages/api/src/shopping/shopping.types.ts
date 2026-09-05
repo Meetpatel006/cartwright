@@ -27,6 +27,9 @@ export interface ShoppingSessionView {
   intent: ShoppingIntent;
   recommendations: Recommendation[];
   createdAt: string;
+  /** Browser backend that executed this run ("local" Chrome or "browserbase"
+   *  cloud). Absent on idempotent replays of an earlier session. */
+  browserMode?: "local" | "browserbase";
 }
 
 export interface SelectProductInput {

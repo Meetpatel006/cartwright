@@ -31,6 +31,8 @@ import {
   selectProduct,
   splitStoreInput,
   findStorePreset,
+  findLocalMerchant,
+  findLocalMerchantForUrl,
   type ShoppingOrchestratorDeps,
 } from "@cartwright/agent";
 
@@ -272,6 +274,7 @@ function buildRecommendationsFromDb(
 function mapSessionToView(
   session: ShoppingSessionRow,
   recommendations: Recommendation[],
+  browserMode?: "local" | "browserbase",
 ): ShoppingSessionView {
   return {
     sessionId: session.id,
@@ -280,6 +283,7 @@ function mapSessionToView(
     intent: session.intent as unknown as ShoppingIntent,
     recommendations,
     createdAt: session.createdAt.toISOString(),
+    ...(browserMode ? { browserMode } : {}),
   };
 }
 
@@ -352,6 +356,12 @@ export async function runShoppingSession(
   // an India-geo session) display rupee prices, so budgets must parse as INR.
   const defaultCurrency = "INR";
   const mode = input.browserMode ?? resolveAgentBrowserMode();
+  console.log("[shopping] run:", {
+    query: JSON.stringify(input.query),
+    requestedBrowserMode: input.browserMode ?? null,
+    resolvedBrowserMode: mode,
+    hasBrowserbaseKey: Boolean(env.BROWSERBASE_API_KEY),
+  });
   let existingSession = input.sessionId
     ? await getShoppingSessionForUser(input.sessionId, input.userId)
     : undefined;
@@ -401,6 +411,8 @@ export async function runShoppingSession(
           stores,
           budgetInMinor: it.budgetInMinor,
           currency: it.currency,
+          constraints: it.constraints,
+          minRating: it.minRating,
           mode,
           browserbaseApiKey:
             mode === "browserbase" ? env.BROWSERBASE_API_KEY : undefined,
@@ -617,7 +629,7 @@ export async function runShoppingSession(
     },
   });
 
-  return mapSessionToView(persisted ?? session, draft.recommendations);
+  return mapSessionToView(persisted ?? session, draft.recommendations, mode);
 }
 
 /**
@@ -786,6 +798,23 @@ export async function selectProductForSession(
 
   const plan = selectProduct(draft, input.productId);
 
+  // ── Merchant UI vs Cartwright Gateway Mode ─────────────────────────────────
+  // For registered local merchants (like Raven Scents), the merchant checkout
+  // supports Razorpay Test Mode end-to-end (add to cart -> proceed -> fill shipping
+  // -> payment gate -> Razorpay test payment -> order confirmation).
+  // Other stores (Amazon, Nike, etc.) do not have our test credentials on their
+  // checkout, so they use Cartwright's provider-independent test gateway.
+  const storeKey = session.intent ? (session.intent as any).store : undefined;
+  const isLocalMerchant =
+    Boolean(findLocalMerchant(storeKey)) ||
+    Boolean(findLocalMerchant(plan.merchant)) ||
+    Boolean(findLocalMerchantForUrl(plan.productUrl ?? "")) ||
+    /raven/i.test(plan.merchant ?? "") ||
+    /raven/i.test(storeKey ?? "") ||
+    /localhost:5173/i.test(plan.productUrl ?? "");
+
+  const effectivePaymentMode = input.paymentMode ?? (isLocalMerchant ? "merchant" : "cartwright");
+
   // ── Selection-gated add-to-cart (human-in-the-loop) ───────────────────────
   // Discovery (`shop`) deliberately did NOT add anything to the cart — it only
   // retained the browser session at the search-results page. Now that the human
@@ -798,7 +827,7 @@ export async function selectProductForSession(
   // created; live mode remains a hard stop.
   let selectionAddToCart: { driven: boolean; status?: string; reason?: string } | undefined;
   let selectionCheckoutBlocked = false;
-  if (input.paymentMode !== "cartwright" && session.checkoutSessionId && plan.productUrl) {
+  if (effectivePaymentMode !== "cartwright" && session.checkoutSessionId && plan.productUrl) {
     try {
       const ownedSession = await getOwnedBrowserSession(session.checkoutSessionId, input.userId);
       const fulfill = deps.fulfillSelection ?? fulfillSelection;
@@ -866,7 +895,7 @@ export async function selectProductForSession(
   // a hard block — amounts are never compared across currencies.
   let chargedAmountInMinor = plan.expectedAmountInMinor;
   let chargedCurrency = plan.currency;
-  if (input.paymentMode !== "cartwright" && session.checkoutSessionId && !selectionCheckoutBlocked) {
+  if (effectivePaymentMode !== "cartwright" && session.checkoutSessionId && !selectionCheckoutBlocked) {
     try {
       const browserSession = await getOwnedBrowserSession(
         session.checkoutSessionId,
@@ -895,7 +924,7 @@ export async function selectProductForSession(
   }
 
   // Record the authoritative amount resolution for the audit trail.
-  if (input.paymentMode !== "cartwright" && session.checkoutSessionId && !selectionCheckoutBlocked) {
+  if (effectivePaymentMode !== "cartwright" && session.checkoutSessionId && !selectionCheckoutBlocked) {
     await recordAuditEvent({
       eventType: "AUTHORITATIVE_AMOUNT_RESOLVED",
       userId: input.userId,
@@ -926,7 +955,7 @@ export async function selectProductForSession(
     // Razorpay test path, while createPurchaseTransaction still applies every
     // policy and spending safeguard.
     browserSessionId:
-      input.paymentMode === "cartwright" || selectionCheckoutBlocked
+      effectivePaymentMode === "cartwright" || selectionCheckoutBlocked
         ? undefined
         : session.checkoutSessionId ?? undefined,
     correlationId: input.correlationId,
@@ -960,7 +989,7 @@ export async function selectProductForSession(
   // The Cartwright Test Gateway only needs the selected product data. Release
   // the retained Stagehand/local Chrome session immediately after selection so
   // it cannot remain open while the payment transaction is processed.
-  if (input.paymentMode === "cartwright" && session.checkoutSessionId) {
+  if (effectivePaymentMode === "cartwright" && session.checkoutSessionId) {
     await closeBrowserSessionsForShoppingSession(session.id, input.userId);
   }
 

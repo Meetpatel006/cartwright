@@ -52,7 +52,7 @@ export function SelectMenu({
         sideOffset={4}
         className="z-50 w-max min-w-full rounded-xl border border-border bg-popover p-1 text-xs text-popover-foreground shadow-none backdrop-blur-md"
       >
-        <DropdownMenuGroup>
+        <DropdownMenuGroup className="flex flex-col gap-y-0.5">
           {options.map((option) => {
             const isSelected = String(option.value) === String(value)
 
@@ -61,7 +61,7 @@ export function SelectMenu({
                 key={String(option.value)}
                 onClick={() => onChange(String(option.value))}
                 className={cn(
-                  "flex cursor-pointer items-center whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  "flex cursor-pointer items-center whitespace-nowrap rounded-lg px-2.5 py-2 text-xs font-medium transition-colors",
                   isSelected
                     ? "bg-muted font-semibold text-foreground"
                     : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",

@@ -16,6 +16,8 @@ import { createOpenAICompatibleLLM, type CustomModelEndpoint } from "./custom-ll
 import { liveBrowserSessionRegistry } from "./browser-session-registry";
 import { parseCheckoutTotal } from "./checkout-total";
 import { filterProductsByQueryRelevance } from "./filtering/query-relevance";
+import { applyOnSiteSearchFilters, type OnSiteSearchFilterInput } from "./discovery/search-filters";
+import { searchStorefront } from "./discovery/store-search";
 import { startLiveFeedPump } from "./live-feed";
 import {
   ensureLocalMerchantAccount,
@@ -207,6 +209,8 @@ export interface ShoppingRequest {
   budgetInMinor: number;
   /** ISO 4217 currency of `budgetInMinor` (e.g. "USD", "INR"). */
   currency: string;
+  /** Parsed filters to apply through the merchant's own results-page controls. */
+  siteFilters?: OnSiteSearchFilterInput;
   /** Which browser backend to run on. "local" launches Chrome on this machine (free);
    *  "browserbase" runs a cloud session (requires browserbaseApiKey). */
   mode: AgentBrowserMode;
@@ -2211,13 +2215,13 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
           console.log(`[agent] navigating to ${searchUrl}`);
           await page.goto(searchUrl, { waitUntil: "domcontentloaded" });
         } else {
-          // Generic path: navigate to homepage, then let the model find & use the search box.
-          // Works on ANY site, which is what makes the agent store-agnostic.
+          // Generic path: navigate to the India storefront and use its live search control.
+          // Stagehand observes the input, then the browser fills and submits it directly.
           const startUrl = store.actBaseUrl ?? store.baseUrl;
-          console.log(`[agent] navigating to ${startUrl} (will drive search via LLM)`);
+          console.log(`[agent] navigating to ${startUrl} (will drive its search control)`);
           await page.goto(startUrl);
           await page.waitForLoadState("networkidle", 15_000).catch(() => {});
-          await stagehand.act(`Find the search box and search for: ${searchQuery}`);
+          await searchStorefront(page, browser.context, stagehand, searchQuery);
         }
         await page.waitForLoadState("networkidle", 15_000).catch(() => {});
       };
@@ -2248,6 +2252,10 @@ export async function runShoppingAgent(request: ShoppingRequest): Promise<Shoppi
       }
 
       throwIfAborted(request.signal);
+
+      if (request.siteFilters) {
+        await applyOnSiteSearchFilters(page, browser.context, stagehand, request.siteFilters);
+      }
 
       // ── Step 2: Extract products ────────────────────────────────────────
       const extracted = await stagehand.extract(
