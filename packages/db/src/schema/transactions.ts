@@ -42,6 +42,13 @@ export const transactions = pgTable(
     browserSessionId: text("browser_session_id"),
     razorpayOrderId: text("razorpay_order_id").unique(),
     razorpayPaymentId: text("razorpay_payment_id").unique(),
+    /** Merchant's own order id captured from its confirmation page
+     *  (merchant_ui path). Independent cross-verification key — never a
+     *  Razorpay id, so it lives in its own column. */
+    merchantOrderId: text("merchant_order_id"),
+    /** Card/wallet method used for the merchant-UI drive. Card PAN/CVV are
+     *  never stored — only the method label. */
+    paymentMethod: text("payment_method"),
     /** Client-supplied idempotency key; unique per user to dedupe retries. */
     idempotencyKey: text("idempotency_key").notNull(),
     failureReason: text("failure_reason"),
