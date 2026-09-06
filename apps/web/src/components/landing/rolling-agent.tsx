@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 
 const AGENTS = [
-  { name: "Claude 3.7", logo: { src: "/logos/claude.svg", width: 100, em: 0.8 } },
-  { name: "ChatGPT Operator", logo: { src: "/logos/chatgpt.svg", width: 114, em: 0.82 } },
-  { name: "DeepSeek R1", logo: { src: "/logos/deepseek.svg", width: 136, em: 0.8 } },
-  { name: "Gemini Pro", logo: { src: "/logos/gemini.svg", width: 100, em: 0.9 } },
-  { name: "Perplexity Comet", logo: { src: "/logos/perplexity.svg", width: 76, em: 0.82 } },
+  { name: "Claude Sonnet 5", logo: { src: "/logos/claude.svg", width: 100, em: 0.8 } },
+  { name: "GPT-6 Astra", logo: { src: "/logos/chatgpt.svg", width: 114, em: 0.82 } },
+  { name: "DeepSeek V4", logo: { src: "/logos/deepseek.svg", width: 136, em: 0.8 } },
+  { name: "Gemini 3.8 Flash", logo: { src: "/logos/gemini.svg", width: 100, em: 0.9 } },
+  { name: "Perplexity Sonar", logo: { src: "/logos/perplexity.svg", width: 76, em: 0.82 } },
   { name: "GitHub Copilot", logo: { src: "/logos/copilot.svg", width: 110, em: 0.8 } },
-  { name: "Grok 3", logo: { src: "/logos/grok.svg", width: 91, em: 0.72 } },
+  { name: "Grok 4.6", logo: { src: "/logos/grok.svg", width: 91, em: 0.72 } },
   { name: "OpenClaw Agent", logo: { src: "/logos/openclaw.svg", width: 111, em: 0.82 } },
 ];
 

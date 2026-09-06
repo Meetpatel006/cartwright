@@ -87,22 +87,36 @@ export function CartwrightHero() {
           >
             <div className="flex items-center justify-between px-3 py-2 text-white">
               <span className="font-ito-mono text-xs uppercase tracking-wider text-neutral-400">
-                Cartwright Autonomous Shopping & Checkout Demo
+                Cartwright Autonomous Shopping &amp; Checkout Demo
               </span>
-              <button
-                type="button"
-                onClick={() => setDemoOpen(false)}
-                className="text-neutral-400 hover:text-white"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-3">
+                <a
+                  href="https://youtu.be/Dcm_cUj0LmY"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-neutral-400 hover:text-white underline underline-offset-2 transition-colors flex items-center gap-1"
+                >
+                  <span>Open in YouTube</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 256 256">
+                    <path d="M200,64V168a8,8,0,0,1-16,0V83.31L69.66,197.66a8,8,0,0,1-11.32-11.32L172.69,72H88a8,8,0,0,1,0-16H192A8,8,0,0,1,200,64Z"></path>
+                  </svg>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setDemoOpen(false)}
+                  className="text-neutral-400 hover:text-white px-1 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
             <div className="aspect-video w-full overflow-hidden rounded bg-black">
-              <video
-                src="/logos/videos/plan-every-change.webm"
-                controls
-                autoPlay
-                className="size-full object-contain"
+              <iframe
+                src="https://www.youtube-nocookie.com/embed/Dcm_cUj0LmY?autoplay=1&rel=0"
+                title="Cartwright Autonomous Shopping &amp; Checkout Demo"
+                className="size-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
               />
             </div>
           </div>

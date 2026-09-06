@@ -49,7 +49,8 @@
     "seed:boat-db": "bun run scripts/seed-boat-db.ts",
     "preview:boat-db": "bun run scripts/seed-boat-db.ts --dry-run",
     "preview:15days": "bun run scripts/preview-15days-data.ts",
-    "create:15days-dashboard": "bun run scripts/create-15days-dashboard.ts"
+    "create:15days-dashboard": "bun run scripts/create-15days-dashboard.ts",
+    "build:tracker": "bun --filter @cartwright/tracker build"
   },
   "dependencies": {
     "@cartwright/db": "workspace:*",

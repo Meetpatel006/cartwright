@@ -388,7 +388,8 @@ export default function MerchantSitesPage() {
                           className="h-7.5 px-3 text-xs border-border text-foreground hover:bg-accent cursor-pointer rounded-full"
                           onClick={() => {
                             const platformAttr = storeType !== "normal" ? ` data-platform="${storeType}"` : "";
-                            const snippet = `<script defer src="https://cdn.cartwright.com/tracker/v1.js" data-site="${sId}"${platformAttr}${activeMerchantId ? ` data-merchant="${activeMerchantId}"` : ""}></script>`;
+                            const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin : "https://cartwright.store";
+                            const snippet = `<script defer src="${origin}/tracker/v1.js" data-site="${sId}"${platformAttr}${activeMerchantId ? ` data-merchant="${activeMerchantId}"` : ""}></script>`;
                             handleCopy(snippet, `snippet_${sId}`);
                           }}
                         >

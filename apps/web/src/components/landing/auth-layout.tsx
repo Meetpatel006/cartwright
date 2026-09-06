@@ -78,7 +78,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
             </div>
 
             <p className="mt-8 text-[10px] uppercase tracking-widest text-neutral-600">
-              © Cartwright Platform · All rights reserved
+              © Cartwright by Meet Patel · Open Source
             </p>
           </div>
         </div>

@@ -5,7 +5,7 @@
  * for distribution via CDN / public static serving.
  */
 
-import { mkdir, copyFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 declare const Bun: {
@@ -43,12 +43,6 @@ async function build() {
   }
 
   console.log("Build succeeded:", result.outputs.map((o: { path: string }) => o.path).join(", "));
-
-  // Also copy to apps/web/public/tracker/v1.js so it can be served locally at http://localhost:3001/tracker/v1.js
-  const webPublicDir = resolve(baseDir, "../../apps/web/public/tracker");
-  await mkdir(webPublicDir, { recursive: true });
-  await copyFile(resolve(distDir, "v1.js"), resolve(webPublicDir, "v1.js"));
-  console.log(`Copied bundle to: ${resolve(webPublicDir, "v1.js")}`);
 }
 
 build().catch((err) => {
